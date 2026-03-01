@@ -6,79 +6,79 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 215 28% 17%;
+    --background: 0 0% 97%;
+    --foreground: 0 0% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 215 28% 17%;
+    --card-foreground: 0 0% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 28% 17%;
+    --popover-foreground: 0 0% 10%;
 
-    --primary: 215 65% 25%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 0 72% 51%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 150 35% 35%;
+    --secondary: 0 0% 12%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 20% 94%;
-    --muted-foreground: 215 15% 47%;
+    --muted: 0 0% 93%;
+    --muted-foreground: 0 0% 40%;
 
-    --accent: 185 55% 65%;
-    --accent-foreground: 215 28% 17%;
+    --accent: 0 50% 96%;
+    --accent-foreground: 0 0% 10%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 55% 45%;
+    --success: 142 55% 42%;
     --success-foreground: 0 0% 100%;
 
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 205 85% 55%;
+    --info: 210 85% 55%;
     --info-foreground: 0 0% 100%;
 
-    --border: 214 20% 90%;
-    --input: 214 20% 90%;
-    --ring: 215 65% 25%;
+    --border: 0 0% 89%;
+    --input: 0 0% 89%;
+    --ring: 0 72% 51%;
 
     --radius: 0.625rem;
 
-    --sidebar-background: 215 65% 25%;
-    --sidebar-foreground: 210 40% 95%;
-    --sidebar-primary: 185 55% 65%;
-    --sidebar-primary-foreground: 215 28% 17%;
-    --sidebar-accent: 215 55% 30%;
-    --sidebar-accent-foreground: 210 40% 95%;
-    --sidebar-border: 215 45% 32%;
-    --sidebar-ring: 185 55% 65%;
+    --sidebar-background: 0 0% 7%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 0 72% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 14%;
+    --sidebar-accent-foreground: 0 0% 92%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 0 72% 51%;
   }
 
   .dark {
-    --background: 222 47% 6%;
-    --foreground: 210 40% 95%;
+    --background: 0 0% 5%;
+    --foreground: 0 0% 92%;
 
-    --card: 222 47% 9%;
-    --card-foreground: 210 40% 95%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 92%;
 
-    --popover: 222 47% 9%;
-    --popover-foreground: 210 40% 95%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 92%;
 
-    --primary: 185 55% 65%;
-    --primary-foreground: 215 28% 17%;
+    --primary: 0 72% 55%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 150 35% 35%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 0 0% 85%;
+    --secondary-foreground: 0 0% 7%;
 
-    --muted: 217 33% 14%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 55%;
 
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 95%;
+    --accent: 0 0% 14%;
+    --accent-foreground: 0 0% 92%;
 
-    --destructive: 0 62% 30%;
-    --destructive-foreground: 210 40% 95%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 95%;
 
     --success: 142 55% 40%;
     --success-foreground: 0 0% 100%;
@@ -86,21 +86,21 @@
     --warning: 38 92% 45%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 205 85% 50%;
+    --info: 210 85% 50%;
     --info-foreground: 0 0% 100%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 185 55% 65%;
+    --border: 0 0% 16%;
+    --input: 0 0% 16%;
+    --ring: 0 72% 55%;
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 40% 95%;
-    --sidebar-primary: 185 55% 65%;
-    --sidebar-primary-foreground: 215 28% 17%;
-    --sidebar-accent: 222 47% 12%;
-    --sidebar-accent-foreground: 210 40% 95%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 185 55% 65%;
+    --sidebar-background: 0 0% 4%;
+    --sidebar-foreground: 0 0% 85%;
+    --sidebar-primary: 0 72% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 10%;
+    --sidebar-accent-foreground: 0 0% 85%;
+    --sidebar-border: 0 0% 14%;
+    --sidebar-ring: 0 72% 55%;
   }
 }
 
