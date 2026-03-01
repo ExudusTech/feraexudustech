@@ -122,6 +122,66 @@ export type Database = {
           },
         ]
       }
+      client_visits: {
+        Row: {
+          client_id: string
+          created_at: string
+          id: string
+          next_visit_date: string | null
+          notes: string | null
+          organization_id: string
+          outcome: string | null
+          subject: string | null
+          updated_at: string | null
+          visit_date: string
+          visit_type: string
+          visited_by: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          id?: string
+          next_visit_date?: string | null
+          notes?: string | null
+          organization_id: string
+          outcome?: string | null
+          subject?: string | null
+          updated_at?: string | null
+          visit_date?: string
+          visit_type?: string
+          visited_by: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          id?: string
+          next_visit_date?: string | null
+          notes?: string | null
+          organization_id?: string
+          outcome?: string | null
+          subject?: string | null
+          updated_at?: string | null
+          visit_date?: string
+          visit_type?: string
+          visited_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_visits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_visits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           address: string | null
@@ -482,6 +542,68 @@ export type Database = {
           },
         ]
       }
+      ekkoa_coverage_areas: {
+        Row: {
+          city: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_active: boolean
+          latitude: number | null
+          longitude: number | null
+          name: string
+          organization_id: string
+          radius_km: number | null
+          state: string | null
+          updated_at: string | null
+          zip_code_end: string | null
+          zip_code_start: string | null
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          organization_id: string
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          organization_id?: string
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_coverage_areas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ekkoa_equipment: {
         Row: {
           brand: string | null
@@ -540,6 +662,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ekkoa_equipment_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_fragrance_lines: {
+        Row: {
+          category: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          intensity: string | null
+          is_active: boolean
+          name: string
+          notes: string | null
+          organization_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          intensity?: string | null
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          organization_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          intensity?: string | null
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_fragrance_lines_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -760,6 +932,140 @@ export type Database = {
           },
           {
             foreignKeyName: "ekkoa_leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_product_fragrance_lines: {
+        Row: {
+          created_at: string
+          fragrance_line_id: string
+          id: string
+          is_active: boolean
+          notes: string | null
+          organization_id: string
+          product_id: string
+        }
+        Insert: {
+          created_at?: string
+          fragrance_line_id: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          organization_id: string
+          product_id: string
+        }
+        Update: {
+          created_at?: string
+          fragrance_line_id?: string
+          id?: string
+          is_active?: boolean
+          notes?: string | null
+          organization_id?: string
+          product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_product_fragrance_lines_fragrance_line_id_fkey"
+            columns: ["fragrance_line_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_fragrance_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_product_fragrance_lines_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_product_fragrance_lines_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_technical_visits: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          duration_minutes: number | null
+          findings: string | null
+          id: string
+          installation_id: string | null
+          next_visit_date: string | null
+          notes: string | null
+          organization_id: string
+          recommendations: string | null
+          status: string
+          technician_id: string | null
+          updated_at: string | null
+          visit_date: string
+          visit_type: string
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          duration_minutes?: number | null
+          findings?: string | null
+          id?: string
+          installation_id?: string | null
+          next_visit_date?: string | null
+          notes?: string | null
+          organization_id: string
+          recommendations?: string | null
+          status?: string
+          technician_id?: string | null
+          updated_at?: string | null
+          visit_date?: string
+          visit_type?: string
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          duration_minutes?: number | null
+          findings?: string | null
+          id?: string
+          installation_id?: string | null
+          next_visit_date?: string | null
+          notes?: string | null
+          organization_id?: string
+          recommendations?: string | null
+          status?: string
+          technician_id?: string | null
+          updated_at?: string | null
+          visit_date?: string
+          visit_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_technical_visits_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_technical_visits_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_technical_visits_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
