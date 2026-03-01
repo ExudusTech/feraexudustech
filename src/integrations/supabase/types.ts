@@ -14,6 +14,61 @@ export type Database = {
   }
   public: {
     Tables: {
+      catalog_items: {
+        Row: {
+          catalog_id: string
+          created_at: string
+          custom_price: number | null
+          id: string
+          is_active: boolean
+          organization_id: string
+          product_id: string
+          sort_order: number | null
+        }
+        Insert: {
+          catalog_id: string
+          created_at?: string
+          custom_price?: number | null
+          id?: string
+          is_active?: boolean
+          organization_id: string
+          product_id: string
+          sort_order?: number | null
+        }
+        Update: {
+          catalog_id?: string
+          created_at?: string
+          custom_price?: number | null
+          id?: string
+          is_active?: boolean
+          organization_id?: string
+          product_id?: string
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "catalog_items_catalog_id_fkey"
+            columns: ["catalog_id"]
+            isOneToOne: false
+            referencedRelation: "organization_catalogs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "catalog_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           address: string | null
@@ -326,6 +381,123 @@ export type Database = {
           },
         ]
       }
+      orders: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          created_by: string
+          delivery_address: string | null
+          delivery_date: string | null
+          id: string
+          notes: string | null
+          order_number: string | null
+          organization_id: string
+          payment_method: string | null
+          payment_status: string | null
+          proposal_id: string | null
+          status: string
+          total_value: number
+          updated_at: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          created_by: string
+          delivery_address?: string | null
+          delivery_date?: string | null
+          id?: string
+          notes?: string | null
+          order_number?: string | null
+          organization_id: string
+          payment_method?: string | null
+          payment_status?: string | null
+          proposal_id?: string | null
+          status?: string
+          total_value?: number
+          updated_at?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          created_by?: string
+          delivery_address?: string | null
+          delivery_date?: string | null
+          id?: string
+          notes?: string | null
+          order_number?: string | null
+          organization_id?: string
+          payment_method?: string | null
+          payment_status?: string | null
+          proposal_id?: string | null
+          status?: string
+          total_value?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_catalogs: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_catalogs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           accent_color: string | null
@@ -509,6 +681,139 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "profiles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposal_items: {
+        Row: {
+          created_at: string
+          description: string
+          discount_percent: number | null
+          id: string
+          organization_id: string
+          product_id: string | null
+          proposal_id: string
+          quantity: number
+          sort_order: number | null
+          total_price: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          discount_percent?: number | null
+          id?: string
+          organization_id: string
+          product_id?: string | null
+          proposal_id: string
+          quantity?: number
+          sort_order?: number | null
+          total_price?: number
+          unit_price?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          discount_percent?: number | null
+          id?: string
+          organization_id?: string
+          product_id?: string | null
+          proposal_id?: string
+          quantity?: number
+          sort_order?: number | null
+          total_price?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_items_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposals: {
+        Row: {
+          client_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          discount_percent: number | null
+          discount_value: number | null
+          final_value: number
+          id: string
+          notes: string | null
+          organization_id: string
+          status: string
+          title: string
+          total_value: number
+          updated_at: string | null
+          valid_until: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          discount_percent?: number | null
+          discount_value?: number | null
+          final_value?: number
+          id?: string
+          notes?: string | null
+          organization_id: string
+          status?: string
+          title: string
+          total_value?: number
+          updated_at?: string | null
+          valid_until?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          discount_percent?: number | null
+          discount_value?: number | null
+          final_value?: number
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          status?: string
+          title?: string
+          total_value?: number
+          updated_at?: string | null
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
