@@ -175,6 +175,545 @@ export type Database = {
           },
         ]
       }
+      ekkoa_billing: {
+        Row: {
+          amount: number
+          billing_type: string
+          client_id: string | null
+          contract_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          due_date: string | null
+          id: string
+          installation_id: string | null
+          invoice_number: string | null
+          notes: string | null
+          organization_id: string
+          paid_amount: number | null
+          payment_date: string | null
+          payment_method: string | null
+          status: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          amount?: number
+          billing_type?: string
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          installation_id?: string | null
+          invoice_number?: string | null
+          notes?: string | null
+          organization_id: string
+          paid_amount?: number | null
+          payment_date?: string | null
+          payment_method?: string | null
+          status?: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          amount?: number
+          billing_type?: string
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          installation_id?: string | null
+          invoice_number?: string | null
+          notes?: string | null
+          organization_id?: string
+          paid_amount?: number | null
+          payment_date?: string | null
+          payment_method?: string | null
+          status?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_billing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_billing_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_billing_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_billing_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_clients: {
+        Row: {
+          address: string | null
+          city: string | null
+          client_type: string
+          company: string | null
+          created_at: string
+          created_by: string
+          document: string | null
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          state: string | null
+          status: string
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          client_type?: string
+          company?: string | null
+          created_at?: string
+          created_by: string
+          document?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          state?: string | null
+          status?: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          client_type?: string
+          company?: string | null
+          created_at?: string
+          created_by?: string
+          document?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          state?: string | null
+          status?: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_contracts: {
+        Row: {
+          client_id: string | null
+          contract_number: string | null
+          contract_type: string
+          created_at: string
+          created_by: string
+          description: string | null
+          end_date: string | null
+          id: string
+          installation_id: string | null
+          monthly_value: number | null
+          notes: string | null
+          organization_id: string
+          payment_method: string | null
+          payment_terms: string | null
+          signed_at: string | null
+          start_date: string | null
+          status: string
+          title: string
+          total_value: number
+          updated_at: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          contract_number?: string | null
+          contract_type?: string
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          installation_id?: string | null
+          monthly_value?: number | null
+          notes?: string | null
+          organization_id: string
+          payment_method?: string | null
+          payment_terms?: string | null
+          signed_at?: string | null
+          start_date?: string | null
+          status?: string
+          title: string
+          total_value?: number
+          updated_at?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          contract_number?: string | null
+          contract_type?: string
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          installation_id?: string | null
+          monthly_value?: number | null
+          notes?: string | null
+          organization_id?: string
+          payment_method?: string | null
+          payment_terms?: string | null
+          signed_at?: string | null
+          start_date?: string | null
+          status?: string
+          title?: string
+          total_value?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_contracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_contracts_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_contracts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_equipment: {
+        Row: {
+          brand: string | null
+          category: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          model: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          power_watts: number | null
+          quantity: number
+          serial_number: string | null
+          status: string
+          unit_cost: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          model?: string | null
+          name: string
+          notes?: string | null
+          organization_id: string
+          power_watts?: number | null
+          quantity?: number
+          serial_number?: string | null
+          status?: string
+          unit_cost?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          model?: string | null
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          power_watts?: number | null
+          quantity?: number
+          serial_number?: string | null
+          status?: string
+          unit_cost?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_equipment_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_installation_equipment: {
+        Row: {
+          created_at: string
+          equipment_id: string
+          id: string
+          installation_id: string
+          notes: string | null
+          organization_id: string
+          quantity: number
+        }
+        Insert: {
+          created_at?: string
+          equipment_id: string
+          id?: string
+          installation_id: string
+          notes?: string | null
+          organization_id: string
+          quantity?: number
+        }
+        Update: {
+          created_at?: string
+          equipment_id?: string
+          id?: string
+          installation_id?: string
+          notes?: string | null
+          organization_id?: string
+          quantity?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_installation_equipment_equipment_id_fkey"
+            columns: ["equipment_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_equipment"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_installation_equipment_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_installation_equipment_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_installations: {
+        Row: {
+          address: string | null
+          assigned_to: string | null
+          city: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          end_date: string | null
+          id: string
+          installation_type: string
+          inverter_model: string | null
+          latitude: number | null
+          longitude: number | null
+          notes: string | null
+          organization_id: string
+          panels_count: number | null
+          power_kwp: number | null
+          start_date: string | null
+          state: string | null
+          status: string
+          title: string
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          assigned_to?: string | null
+          city?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          installation_type?: string
+          inverter_model?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          notes?: string | null
+          organization_id: string
+          panels_count?: number | null
+          power_kwp?: number | null
+          start_date?: string | null
+          state?: string | null
+          status?: string
+          title: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          assigned_to?: string | null
+          city?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          installation_type?: string
+          inverter_model?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          notes?: string | null
+          organization_id?: string
+          panels_count?: number | null
+          power_kwp?: number | null
+          start_date?: string | null
+          state?: string | null
+          status?: string
+          title?: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_installations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_installations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ekkoa_leads: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          expected_close_date: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          source: string | null
+          stage: string
+          title: string
+          updated_at: string | null
+          value: number | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          expected_close_date?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          source?: string | null
+          stage?: string
+          title: string
+          updated_at?: string | null
+          value?: number | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          expected_close_date?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          source?: string | null
+          stage?: string
+          title?: string
+          updated_at?: string | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ekkoa_leads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ekkoa_leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           category: string | null
