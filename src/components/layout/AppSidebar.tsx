@@ -104,17 +104,15 @@ export default function AppSidebar() {
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-4">
+      <div className="flex items-center gap-2 px-3 py-3">
         <img
           src={logoExudus}
           alt="ExudusTech"
-          className="w-9 h-9 rounded-lg object-cover shrink-0"
+          className={cn(
+            "rounded-lg object-contain shrink-0 transition-all",
+            collapsed ? "w-10 h-10" : "w-full max-h-14"
+          )}
         />
-        {!collapsed && (
-          <span className="text-lg font-bold text-sidebar-foreground tracking-tight">
-            ExudusTech
-          </span>
-        )}
         <Button
           variant="ghost"
           size="icon"
