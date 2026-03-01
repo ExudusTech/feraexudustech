@@ -14,6 +14,71 @@ export type Database = {
   }
   public: {
     Tables: {
+      clients: {
+        Row: {
+          address: string | null
+          city: string | null
+          company: string | null
+          created_at: string
+          created_by: string
+          document: string | null
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          state: string | null
+          status: string
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          company?: string | null
+          created_at?: string
+          created_by: string
+          document?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          state?: string | null
+          status?: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          company?: string | null
+          created_at?: string
+          created_by?: string
+          document?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          state?: string | null
+          status?: string
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           created_at: string
@@ -48,6 +113,81 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "departments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          expected_close_date: string | null
+          id: string
+          organization_id: string
+          position: number
+          source: string | null
+          stage: Database["public"]["Enums"]["lead_stage"]
+          title: string
+          updated_at: string | null
+          value: number | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          expected_close_date?: string | null
+          id?: string
+          organization_id: string
+          position?: number
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"]
+          title: string
+          updated_at?: string | null
+          value?: number | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          expected_close_date?: string | null
+          id?: string
+          organization_id?: string
+          position?: number
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"]
+          title?: string
+          updated_at?: string | null
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -214,6 +354,13 @@ export type Database = {
         | "user"
         | "visitante"
         | "financeiro"
+      lead_stage:
+        | "novo"
+        | "qualificacao"
+        | "proposta"
+        | "negociacao"
+        | "fechado_ganho"
+        | "fechado_perdido"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -348,6 +495,14 @@ export const Constants = {
         "user",
         "visitante",
         "financeiro",
+      ],
+      lead_stage: [
+        "novo",
+        "qualificacao",
+        "proposta",
+        "negociacao",
+        "fechado_ganho",
+        "fechado_perdido",
       ],
     },
   },
