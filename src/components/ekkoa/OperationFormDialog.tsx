@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateOperation, useUpdateOperation, type Operation, type OperationStatus } from "@/hooks/use-operations";
+import { Play, Clock, MessageSquare, CheckCircle, XCircle } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 interface Props {
   open: boolean;
@@ -50,10 +52,94 @@ export default function OperationFormDialog({ open, onOpenChange, operation }: P
 
   const isPending = create.isPending || update.isPending;
 
+  // Workflow actions
+  const handleStartTest = async () => {
+    if (!operation) return;
+    const now = new Date().toISOString();
+    const endDate = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(); // 15 days
+    await update.mutateAsync({
+      id: operation.id,
+      status: "em_andamento",
+      start_date: now,
+      end_date: endDate,
+      notes: `${operation.notes || ""}\n[${new Date().toLocaleDateString("pt-BR")}] Teste iniciado - duração de 15 dias.`.trim(),
+    });
+    onOpenChange(false);
+  };
+
+  const handleExtendTest = async () => {
+    if (!operation) return;
+    const currentEnd = operation.end_date ? new Date(operation.end_date) : new Date();
+    const newEnd = new Date(currentEnd.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString(); // +10 days
+    await update.mutateAsync({
+      id: operation.id,
+      end_date: newEnd,
+      notes: `${operation.notes || ""}\n[${new Date().toLocaleDateString("pt-BR")}] Teste estendido por +10 dias.`.trim(),
+    });
+    onOpenChange(false);
+  };
+
+  const handleComplete = async () => {
+    if (!operation) return;
+    await update.mutateAsync({
+      id: operation.id,
+      status: "concluida",
+      end_date: new Date().toISOString(),
+      notes: `${operation.notes || ""}\n[${new Date().toLocaleDateString("pt-BR")}] Operação concluída com sucesso.`.trim(),
+    });
+    onOpenChange(false);
+  };
+
+  const handleCancel = async () => {
+    if (!operation) return;
+    await update.mutateAsync({
+      id: operation.id,
+      status: "cancelada",
+      end_date: new Date().toISOString(),
+      notes: `${operation.notes || ""}\n[${new Date().toLocaleDateString("pt-BR")}] Operação cancelada.`.trim(),
+    });
+    onOpenChange(false);
+  };
+
+  const canStartTest = isEdit && operation?.status === "pendente";
+  const canExtendTest = isEdit && operation?.status === "em_andamento";
+  const canComplete = isEdit && (operation?.status === "em_andamento" || operation?.status === "pendente");
+  const canCancel = isEdit && operation?.status !== "concluida" && operation?.status !== "cancelada";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Operação" : "Nova Operação"}</DialogTitle></DialogHeader>
+
+        {/* Workflow Actions */}
+        {isEdit && (canStartTest || canExtendTest || canComplete || canCancel) && (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {canStartTest && (
+                <Button type="button" size="sm" variant="default" onClick={handleStartTest} disabled={isPending}>
+                  <Play className="h-4 w-4 mr-1" />Iniciar Teste
+                </Button>
+              )}
+              {canExtendTest && (
+                <Button type="button" size="sm" variant="secondary" onClick={handleExtendTest} disabled={isPending}>
+                  <Clock className="h-4 w-4 mr-1" />Estender Teste (+10d)
+                </Button>
+              )}
+              {canComplete && (
+                <Button type="button" size="sm" variant="default" onClick={handleComplete} disabled={isPending} className="bg-emerald-600 hover:bg-emerald-700">
+                  <CheckCircle className="h-4 w-4 mr-1" />Concluir
+                </Button>
+              )}
+              {canCancel && (
+                <Button type="button" size="sm" variant="destructive" onClick={handleCancel} disabled={isPending}>
+                  <XCircle className="h-4 w-4 mr-1" />Cancelar Op.
+                </Button>
+              )}
+            </div>
+            <Separator />
+          </>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>

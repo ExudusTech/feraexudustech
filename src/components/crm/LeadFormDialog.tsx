@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateLead, useUpdateLead, STAGE_CONFIG, PIPELINE_STAGES, type Lead, type LeadStage } from "@/hooks/use-leads";
+import { useConvertLeadToClient } from "@/hooks/use-lead-conversion";
+import { UserPlus } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -23,7 +25,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const [form, setForm] = useState(empty);
   const create = useCreateLead();
   const update = useUpdateLead();
+  const convert = useConvertLeadToClient();
   const isEdit = !!lead;
+  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
 
   useEffect(() => {
     if (lead) {
@@ -69,7 +73,13 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     onOpenChange(false);
   };
 
-  const isPending = create.isPending || update.isPending;
+  const isPending = create.isPending || update.isPending || convert.isPending;
+
+  const handleConvert = async () => {
+    if (!lead) return;
+    await convert.mutateAsync(lead);
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -123,9 +133,16 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
             </div>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
+          <div className="flex justify-between gap-2">
+            {canConvert ? (
+              <Button type="button" variant="secondary" onClick={handleConvert} disabled={isPending}>
+                <UserPlus className="h-4 w-4 mr-2" />Converter em Cliente
+              </Button>
+            ) : <div />}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
+            </div>
           </div>
         </form>
       </DialogContent>

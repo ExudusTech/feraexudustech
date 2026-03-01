@@ -1,5 +1,6 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -7,6 +8,8 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { session, isLoading } = useAuth();
+  const { canAccessRoute } = usePermissions();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -21,6 +24,10 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (!session) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if (!canAccessRoute(location.pathname)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

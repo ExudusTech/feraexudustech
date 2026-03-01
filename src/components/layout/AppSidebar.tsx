@@ -1,4 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useUnreadMessageCount } from "@/hooks/use-unread-messages";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
@@ -29,11 +31,13 @@ const mainNavItems = [
 const bottomNavItems = [
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
-  { icon: HelpCircle, label: "Suporte", path: "/suporte" },
+  { icon: HelpCircle, label: "Suporte", path: "/suporte", showBadge: true },
 ];
 
 export default function AppSidebar() {
   const { user, signOut } = useAuth();
+  const { canAccessRoute, roleLabel } = usePermissions();
+  const { data: unreadCount = 0 } = useUnreadMessageCount();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -66,8 +70,9 @@ export default function AppSidebar() {
     .toUpperCase()
     .slice(0, 2) || "U";
 
-  const NavItem = ({ icon: Icon, label, path }: { icon: any; label: string; path: string }) => {
+  const NavItem = ({ icon: Icon, label, path, showBadge }: { icon: any; label: string; path: string; showBadge?: boolean }) => {
     const isActive = location.pathname === path;
+    const badgeCount = showBadge ? unreadCount : 0;
 
     const button = (
       <button
@@ -81,13 +86,27 @@ export default function AppSidebar() {
       >
         <Icon className="h-5 w-5 shrink-0" />
         {!collapsed && <span className="truncate">{label}</span>}
+        {badgeCount > 0 && (
+          <span className="ml-auto bg-destructive text-destructive-foreground text-xs rounded-full h-5 min-w-5 flex items-center justify-center px-1.5">
+            {badgeCount > 99 ? "99+" : badgeCount}
+          </span>
+        )}
       </button>
     );
 
     if (collapsed) {
       return (
         <Tooltip>
-          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          <TooltipTrigger asChild>
+            <div className="relative">
+              {button}
+              {badgeCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                  {badgeCount > 9 ? "9+" : badgeCount}
+                </span>
+              )}
+            </div>
+          </TooltipTrigger>
           <TooltipContent side="right">{label}</TooltipContent>
         </Tooltip>
       );
@@ -131,7 +150,7 @@ export default function AppSidebar() {
       {/* Navigation */}
       <ScrollArea className="flex-1 px-3 py-3">
         <nav className="space-y-1">
-          {mainNavItems.map((item) => (
+          {mainNavItems.filter((item) => canAccessRoute(item.path)).map((item) => (
             <NavItem key={item.path} {...item} />
           ))}
         </nav>
@@ -141,7 +160,7 @@ export default function AppSidebar() {
 
       {/* Bottom nav */}
       <div className="px-3 py-2 space-y-1">
-        {bottomNavItems.map((item) => (
+        {bottomNavItems.filter((item) => canAccessRoute(item.path)).map((item) => (
           <NavItem key={item.path} {...item} />
         ))}
         {/* Theme toggle */}
@@ -172,7 +191,7 @@ export default function AppSidebar() {
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.name}</p>
-              <p className="text-xs text-sidebar-foreground/60 truncate capitalize">{user?.role}</p>
+              <p className="text-xs text-sidebar-foreground/60 truncate">{roleLabel}</p>
             </div>
           )}
           <Tooltip>
