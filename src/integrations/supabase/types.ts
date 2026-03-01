@@ -14,6 +14,59 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          ip_address: string | null
+          new_data: Json | null
+          old_data: Json | null
+          organization_id: string | null
+          user_agent: string | null
+          user_email: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          organization_id?: string | null
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          organization_id?: string | null
+          user_agent?: string | null
+          user_email?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -714,6 +767,60 @@ export type Database = {
           },
         ]
       }
+      internal_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          is_internal: boolean
+          message_type: string
+          organization_id: string
+          sender_id: string
+          subject: string | null
+          ticket_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          message_type?: string
+          organization_id: string
+          sender_id: string
+          subject?: string | null
+          ticket_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          is_internal?: boolean
+          message_type?: string
+          organization_id?: string
+          sender_id?: string
+          subject?: string | null
+          ticket_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "internal_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "internal_messages_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_items: {
         Row: {
           category: string | null
@@ -844,6 +951,48 @@ export type Database = {
           },
           {
             foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_participants: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          organization_id: string
+          read_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          organization_id: string
+          read_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          organization_id?: string
+          read_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_participants_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "internal_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_participants_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1360,6 +1509,126 @@ export type Database = {
           },
         ]
       }
+      saas_modules: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_name: string
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_name: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      saas_plan_modules: {
+        Row: {
+          created_at: string
+          id: string
+          module_id: string
+          plan_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          module_id: string
+          plan_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          module_id?: string
+          plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saas_plan_modules_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "saas_modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saas_plan_modules_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "saas_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saas_plans: {
+        Row: {
+          created_at: string
+          description: string | null
+          display_name: string
+          features: Json | null
+          id: string
+          is_active: boolean
+          max_storage_mb: number
+          max_users: number
+          name: string
+          price_monthly: number
+          price_yearly: number | null
+          sort_order: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          display_name: string
+          features?: Json | null
+          id?: string
+          is_active?: boolean
+          max_storage_mb?: number
+          max_users?: number
+          name: string
+          price_monthly?: number
+          price_yearly?: number | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          display_name?: string
+          features?: Json | null
+          id?: string
+          is_active?: boolean
+          max_storage_mb?: number
+          max_users?: number
+          name?: string
+          price_monthly?: number
+          price_yearly?: number | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       schedules: {
         Row: {
           assigned_to: string | null
@@ -1432,6 +1701,95 @@ export type Database = {
           },
           {
             foreignKeyName: "schedules_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      super_admins: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      support_tickets: {
+        Row: {
+          assigned_to: string | null
+          category: string
+          closed_at: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          organization_id: string
+          priority: string
+          resolved_at: string | null
+          status: string
+          ticket_number: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          category?: string
+          closed_at?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          priority?: string
+          resolved_at?: string | null
+          status?: string
+          ticket_number?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          category?: string
+          closed_at?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          priority?: string
+          resolved_at?: string | null
+          status?: string
+          ticket_number?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_tickets_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
