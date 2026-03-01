@@ -7,178 +7,397 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle, Users, Target, Cpu, Zap, FileText, DollarSign } from "lucide-react";
 
 import { useOperations, useDeleteOperation, STATUS_CONFIG, type Operation } from "@/hooks/use-operations";
 import { useSchedules, useDeleteSchedule, type Schedule } from "@/hooks/use-schedules";
 import { useInventory, useDeleteInventoryItem, type InventoryItem } from "@/hooks/use-inventory";
+import { useEkkoaClients, useDeleteEkkoaClient, type EkkoaClient } from "@/hooks/use-ekkoa-clients";
+import { useEkkoaLeads, useDeleteEkkoaLead, type EkkoaLead } from "@/hooks/use-ekkoa-leads";
+import { useEkkoaEquipment, useDeleteEkkoaEquipment, type EkkoaEquipment } from "@/hooks/use-ekkoa-equipment";
+import { useEkkoaInstallations, useDeleteEkkoaInstallation, type EkkoaInstallation } from "@/hooks/use-ekkoa-installations";
+import { useEkkoaContracts, useDeleteEkkoaContract, type EkkoaContract } from "@/hooks/use-ekkoa-contracts";
+import { useEkkoaBilling, useDeleteEkkoaBilling, type EkkoaBilling } from "@/hooks/use-ekkoa-billing";
+
 import OperationFormDialog from "@/components/ekkoa/OperationFormDialog";
 import ScheduleFormDialog from "@/components/ekkoa/ScheduleFormDialog";
 import InventoryFormDialog from "@/components/ekkoa/InventoryFormDialog";
+import EkkoaClientFormDialog from "@/components/ekkoa/EkkoaClientFormDialog";
+import EkkoaLeadFormDialog from "@/components/ekkoa/EkkoaLeadFormDialog";
+import EkkoaEquipmentFormDialog from "@/components/ekkoa/EkkoaEquipmentFormDialog";
+import EkkoaInstallationFormDialog from "@/components/ekkoa/EkkoaInstallationFormDialog";
+import EkkoaContractFormDialog from "@/components/ekkoa/EkkoaContractFormDialog";
+import EkkoaBillingFormDialog from "@/components/ekkoa/EkkoaBillingFormDialog";
+
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+
+type TabKey = "clientes" | "leads" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario";
+
+const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
+  clientes: { label: "Clientes", icon: Users, newLabel: "Novo Cliente" },
+  leads: { label: "Leads", icon: Target, newLabel: "Novo Lead" },
+  equipamentos: { label: "Equipamentos", icon: Cpu, newLabel: "Novo Equipamento" },
+  instalacoes: { label: "Instalações", icon: Zap, newLabel: "Nova Instalação" },
+  contratos: { label: "Contratos", icon: FileText, newLabel: "Novo Contrato" },
+  faturamento: { label: "Faturamento", icon: DollarSign, newLabel: "Novo Faturamento" },
+  operacoes: { label: "Operações", icon: Wrench, newLabel: "Nova Operação" },
+  agendamentos: { label: "Agendamentos", icon: CalendarDays, newLabel: "Novo Agendamento" },
+  inventario: { label: "Inventário", icon: Package, newLabel: "Novo Item" },
+};
+
+const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
 export default function Ekkoa() {
-  const [tab, setTab] = useState("operacoes");
+  const [tab, setTab] = useState<TabKey>("clientes");
   const [search, setSearch] = useState("");
+  const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
 
   const { data: operations = [], isLoading: opsLoading } = useOperations();
   const deleteOp = useDeleteOperation();
   const [opDialog, setOpDialog] = useState(false);
   const [selectedOp, setSelectedOp] = useState<Operation | null>(null);
-  const [deleteOpId, setDeleteOpId] = useState<string | null>(null);
 
   const { data: schedules = [], isLoading: schLoading } = useSchedules();
   const deleteSch = useDeleteSchedule();
   const [schDialog, setSchDialog] = useState(false);
   const [selectedSch, setSelectedSch] = useState<Schedule | null>(null);
-  const [deleteSchId, setDeleteSchId] = useState<string | null>(null);
 
   const { data: inventory = [], isLoading: invLoading } = useInventory();
   const deleteInv = useDeleteInventoryItem();
   const [invDialog, setInvDialog] = useState(false);
   const [selectedInv, setSelectedInv] = useState<InventoryItem | null>(null);
-  const [deleteInvId, setDeleteInvId] = useState<string | null>(null);
 
-  const filteredOps = operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(search.toLowerCase())));
-  const filteredSch = schedules.filter((s) => [s.title, s.location].some((f) => f?.toLowerCase().includes(search.toLowerCase())));
-  const filteredInv = inventory.filter((i) => [i.name, i.sku, i.category].some((f) => f?.toLowerCase().includes(search.toLowerCase())));
+  const { data: ekClients = [], isLoading: ekCliLoading } = useEkkoaClients();
+  const deleteEkCli = useDeleteEkkoaClient();
+  const [ekCliDialog, setEkCliDialog] = useState(false);
+  const [selectedEkCli, setSelectedEkCli] = useState<EkkoaClient | null>(null);
 
-  const handleNewClick = () => {
-    if (tab === "operacoes") { setSelectedOp(null); setOpDialog(true); }
-    else if (tab === "agendamentos") { setSelectedSch(null); setSchDialog(true); }
-    else { setSelectedInv(null); setInvDialog(true); }
+  const { data: ekLeads = [], isLoading: ekLeadLoading } = useEkkoaLeads();
+  const deleteEkLead = useDeleteEkkoaLead();
+  const [ekLeadDialog, setEkLeadDialog] = useState(false);
+  const [selectedEkLead, setSelectedEkLead] = useState<EkkoaLead | null>(null);
+
+  const { data: ekEquip = [], isLoading: ekEquipLoading } = useEkkoaEquipment();
+  const deleteEkEquip = useDeleteEkkoaEquipment();
+  const [ekEquipDialog, setEkEquipDialog] = useState(false);
+  const [selectedEkEquip, setSelectedEkEquip] = useState<EkkoaEquipment | null>(null);
+
+  const { data: ekInstall = [], isLoading: ekInstallLoading } = useEkkoaInstallations();
+  const deleteEkInstall = useDeleteEkkoaInstallation();
+  const [ekInstallDialog, setEkInstallDialog] = useState(false);
+  const [selectedEkInstall, setSelectedEkInstall] = useState<EkkoaInstallation | null>(null);
+
+  const { data: ekContracts = [], isLoading: ekContractLoading } = useEkkoaContracts();
+  const deleteEkContract = useDeleteEkkoaContract();
+  const [ekContractDialog, setEkContractDialog] = useState(false);
+  const [selectedEkContract, setSelectedEkContract] = useState<EkkoaContract | null>(null);
+
+  const { data: ekBilling = [], isLoading: ekBillingLoading } = useEkkoaBilling();
+  const deleteEkBilling = useDeleteEkkoaBilling();
+  const [ekBillingDialog, setEkBillingDialog] = useState(false);
+  const [selectedEkBilling, setSelectedEkBilling] = useState<EkkoaBilling | null>(null);
+
+  const s = search.toLowerCase();
+
+  const handleNew = () => {
+    const actions: Record<TabKey, () => void> = {
+      clientes: () => { setSelectedEkCli(null); setEkCliDialog(true); },
+      leads: () => { setSelectedEkLead(null); setEkLeadDialog(true); },
+      equipamentos: () => { setSelectedEkEquip(null); setEkEquipDialog(true); },
+      instalacoes: () => { setSelectedEkInstall(null); setEkInstallDialog(true); },
+      contratos: () => { setSelectedEkContract(null); setEkContractDialog(true); },
+      faturamento: () => { setSelectedEkBilling(null); setEkBillingDialog(true); },
+      operacoes: () => { setSelectedOp(null); setOpDialog(true); },
+      agendamentos: () => { setSelectedSch(null); setSchDialog(true); },
+      inventario: () => { setSelectedInv(null); setInvDialog(true); },
+    };
+    actions[tab]();
   };
 
-  const buttonLabel = tab === "operacoes" ? "Nova Operação" : tab === "agendamentos" ? "Novo Agendamento" : "Novo Item";
+  const handleDelete = () => {
+    if (!deleteId) return;
+    const deleters: Record<TabKey, (id: string) => void> = {
+      clientes: (id) => deleteEkCli.mutate(id),
+      leads: (id) => deleteEkLead.mutate(id),
+      equipamentos: (id) => deleteEkEquip.mutate(id),
+      instalacoes: (id) => deleteEkInstall.mutate(id),
+      contratos: (id) => deleteEkContract.mutate(id),
+      faturamento: (id) => deleteEkBilling.mutate(id),
+      operacoes: (id) => deleteOp.mutate(id),
+      agendamentos: (id) => deleteSch.mutate(id),
+      inventario: (id) => deleteInv.mutate(id),
+    };
+    deleters[deleteId.type](deleteId.id);
+    setDeleteId(null);
+  };
 
   return (
     <AppLayout
       title="Ekkoa"
-      subtitle="Operações, Agendamentos e Inventário"
-      actions={<Button onClick={handleNewClick}><Plus className="h-4 w-4 mr-2" />{buttonLabel}</Button>}
+      subtitle="Gestão completa do módulo Ekkoa"
+      actions={<Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button>}
     >
-      <Tabs value={tab} onValueChange={(v) => { setTab(v); setSearch(""); }} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="operacoes" className="gap-2"><Wrench className="h-4 w-4" />Operações</TabsTrigger>
-          <TabsTrigger value="agendamentos" className="gap-2"><CalendarDays className="h-4 w-4" />Agendamentos</TabsTrigger>
-          <TabsTrigger value="inventario" className="gap-2"><Package className="h-4 w-4" />Inventário</TabsTrigger>
-        </TabsList>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setSearch(""); }} className="space-y-4">
+        <ScrollArea className="w-full">
+          <TabsList className="inline-flex w-auto">
+            {(Object.keys(TAB_CONFIG) as TabKey[]).map((key) => {
+              const { label, icon: Icon } = TAB_CONFIG[key];
+              return <TabsTrigger key={key} value={key} className="gap-2"><Icon className="h-4 w-4" />{label}</TabsTrigger>;
+            })}
+          </TabsList>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
 
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
 
-        <TabsContent value="operacoes">
-          {opsLoading ? <LoadingState /> : filteredOps.length === 0 ? (
-            <EmptyState icon={<Wrench className="h-12 w-12" />} msg={search ? "Nenhuma operação encontrada." : "Nenhuma operação cadastrada."} onAdd={!search ? () => { setSelectedOp(null); setOpDialog(true); } : undefined} />
-          ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Título</TableHead><TableHead>Status</TableHead><TableHead>Prioridade</TableHead>
-                    <TableHead>Local</TableHead><TableHead>Início</TableHead><TableHead className="w-10" />
+        <TabsContent value="clientes">
+          <DataTable
+            loading={ekCliLoading}
+            empty={ekClients.length === 0}
+            filtered={ekClients.filter((c) => [c.name, c.email, c.company].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekClients.length > 0}
+            icon={<Users className="h-12 w-12" />}
+            search={search}
+            onAdd={handleNew}
+          >
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Nome</TableHead><TableHead>Tipo</TableHead><TableHead>Email</TableHead><TableHead>Telefone</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekClients.filter((c) => [c.name, c.email, c.company].some((f) => f?.toLowerCase().includes(s))).map((c) => (
+                  <TableRow key={c.id} className="cursor-pointer" onClick={() => { setSelectedEkCli(c); setEkCliDialog(true); }}>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell><Badge variant="secondary">{c.client_type}</Badge></TableCell>
+                    <TableCell>{c.email || "—"}</TableCell>
+                    <TableCell>{c.phone || "—"}</TableCell>
+                    <TableCell><Badge variant={c.status === "active" ? "default" : "secondary"}>{c.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkCli(c); setEkCliDialog(true); }} onDelete={() => setDeleteId({ type: "clientes", id: c.id })} />
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredOps.map((o) => (
-                    <TableRow key={o.id} className="cursor-pointer" onClick={() => { setSelectedOp(o); setOpDialog(true); }}>
-                      <TableCell className="font-medium">{o.title}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className={`h-2 w-2 rounded-full ${STATUS_CONFIG[o.status].color}`} />
-                          {STATUS_CONFIG[o.status].label}
-                        </div>
-                      </TableCell>
-                      <TableCell><Badge variant={o.priority === "alta" || o.priority === "urgente" ? "destructive" : o.priority === "media" ? "default" : "secondary"}>{o.priority.charAt(0).toUpperCase() + o.priority.slice(1)}</Badge></TableCell>
-                      <TableCell>{o.location || "—"}</TableCell>
-                      <TableCell>{o.start_date ? new Date(o.start_date).toLocaleDateString("pt-BR") : "—"}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <ActionMenu onEdit={() => { setSelectedOp(o); setOpDialog(true); }} onDelete={() => setDeleteOpId(o.id)} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="leads">
+          <DataTable loading={ekLeadLoading} empty={ekLeads.length === 0} filtered={ekLeads.filter((l) => [l.title, l.contact_name].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekLeads.length > 0} icon={<Target className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Contato</TableHead><TableHead>Estágio</TableHead><TableHead>Valor</TableHead><TableHead>Origem</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekLeads.filter((l) => [l.title, l.contact_name].some((f) => f?.toLowerCase().includes(s))).map((l) => (
+                  <TableRow key={l.id} className="cursor-pointer" onClick={() => { setSelectedEkLead(l); setEkLeadDialog(true); }}>
+                    <TableCell className="font-medium">{l.title}</TableCell>
+                    <TableCell>{l.contact_name || "—"}</TableCell>
+                    <TableCell><Badge variant={l.stage === "fechado_ganho" ? "default" : l.stage === "fechado_perdido" ? "destructive" : "secondary"}>{l.stage}</Badge></TableCell>
+                    <TableCell>{BRL(l.value || 0)}</TableCell>
+                    <TableCell>{l.source || "—"}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkLead(l); setEkLeadDialog(true); }} onDelete={() => setDeleteId({ type: "leads", id: l.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="equipamentos">
+          <DataTable loading={ekEquipLoading} empty={ekEquip.length === 0} filtered={ekEquip.filter((e) => [e.name, e.brand, e.category].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekEquip.length > 0} icon={<Cpu className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Nome</TableHead><TableHead>Marca</TableHead><TableHead>Modelo</TableHead><TableHead>Categoria</TableHead><TableHead>Potência</TableHead><TableHead>Qtd.</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekEquip.filter((e) => [e.name, e.brand, e.category].some((f) => f?.toLowerCase().includes(s))).map((e) => (
+                  <TableRow key={e.id} className="cursor-pointer" onClick={() => { setSelectedEkEquip(e); setEkEquipDialog(true); }}>
+                    <TableCell className="font-medium">{e.name}</TableCell>
+                    <TableCell>{e.brand || "—"}</TableCell>
+                    <TableCell>{e.model || "—"}</TableCell>
+                    <TableCell>{e.category || "—"}</TableCell>
+                    <TableCell>{e.power_watts ? `${e.power_watts}W` : "—"}</TableCell>
+                    <TableCell>{e.quantity}</TableCell>
+                    <TableCell><Badge variant={e.status === "disponivel" ? "default" : e.status === "em_uso" ? "secondary" : "destructive"}>{e.status}</Badge></TableCell>
+                    <TableCell onClick={(ev) => ev.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkEquip(e); setEkEquipDialog(true); }} onDelete={() => setDeleteId({ type: "equipamentos", id: e.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="instalacoes">
+          <DataTable loading={ekInstallLoading} empty={ekInstall.length === 0} filtered={ekInstall.filter((i) => [i.title, i.city, i.address].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekInstall.length > 0} icon={<Zap className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Tipo</TableHead><TableHead>kWp</TableHead><TableHead>Painéis</TableHead><TableHead>Cidade</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekInstall.filter((i) => [i.title, i.city, i.address].some((f) => f?.toLowerCase().includes(s))).map((i) => (
+                  <TableRow key={i.id} className="cursor-pointer" onClick={() => { setSelectedEkInstall(i); setEkInstallDialog(true); }}>
+                    <TableCell className="font-medium">{i.title}</TableCell>
+                    <TableCell><Badge variant="secondary">{i.installation_type}</Badge></TableCell>
+                    <TableCell>{i.power_kwp ? `${i.power_kwp} kWp` : "—"}</TableCell>
+                    <TableCell>{i.panels_count || "—"}</TableCell>
+                    <TableCell>{i.city || "—"}</TableCell>
+                    <TableCell><Badge variant={i.status === "concluida" ? "default" : i.status === "cancelada" ? "destructive" : "secondary"}>{i.status}</Badge></TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkInstall(i); setEkInstallDialog(true); }} onDelete={() => setDeleteId({ type: "instalacoes", id: i.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="contratos">
+          <DataTable loading={ekContractLoading} empty={ekContracts.length === 0} filtered={ekContracts.filter((c) => [c.title, c.contract_number].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekContracts.length > 0} icon={<FileText className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Nº</TableHead><TableHead>Tipo</TableHead><TableHead>Valor Total</TableHead><TableHead>Mensal</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekContracts.filter((c) => [c.title, c.contract_number].some((f) => f?.toLowerCase().includes(s))).map((c) => (
+                  <TableRow key={c.id} className="cursor-pointer" onClick={() => { setSelectedEkContract(c); setEkContractDialog(true); }}>
+                    <TableCell className="font-medium">{c.title}</TableCell>
+                    <TableCell className="text-muted-foreground">{c.contract_number || "—"}</TableCell>
+                    <TableCell><Badge variant="secondary">{c.contract_type}</Badge></TableCell>
+                    <TableCell>{BRL(c.total_value)}</TableCell>
+                    <TableCell>{c.monthly_value ? BRL(c.monthly_value) : "—"}</TableCell>
+                    <TableCell><Badge variant={c.status === "ativo" ? "default" : c.status === "cancelado" ? "destructive" : "secondary"}>{c.status}</Badge></TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkContract(c); setEkContractDialog(true); }} onDelete={() => setDeleteId({ type: "contratos", id: c.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="faturamento">
+          <DataTable loading={ekBillingLoading} empty={ekBilling.length === 0} filtered={ekBilling.filter((b) => [b.title, b.invoice_number].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekBilling.length > 0} icon={<DollarSign className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Nº Fatura</TableHead><TableHead>Tipo</TableHead><TableHead>Valor</TableHead><TableHead>Vencimento</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {ekBilling.filter((b) => [b.title, b.invoice_number].some((f) => f?.toLowerCase().includes(s))).map((b) => (
+                  <TableRow key={b.id} className="cursor-pointer" onClick={() => { setSelectedEkBilling(b); setEkBillingDialog(true); }}>
+                    <TableCell className="font-medium">{b.title}</TableCell>
+                    <TableCell className="text-muted-foreground">{b.invoice_number || "—"}</TableCell>
+                    <TableCell><Badge variant="secondary">{b.billing_type}</Badge></TableCell>
+                    <TableCell>{BRL(b.amount)}</TableCell>
+                    <TableCell>{b.due_date ? new Date(b.due_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</TableCell>
+                    <TableCell><Badge variant={b.status === "pago" ? "default" : b.status === "atrasado" ? "destructive" : "secondary"}>{b.status}</Badge></TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedEkBilling(b); setEkBillingDialog(true); }} onDelete={() => setDeleteId({ type: "faturamento", id: b.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
+        </TabsContent>
+
+        <TabsContent value="operacoes">
+          <DataTable loading={opsLoading} empty={operations.length === 0} filtered={operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).length === 0 && operations.length > 0} icon={<Wrench className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Status</TableHead><TableHead>Prioridade</TableHead><TableHead>Local</TableHead><TableHead>Início</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).map((o) => (
+                  <TableRow key={o.id} className="cursor-pointer" onClick={() => { setSelectedOp(o); setOpDialog(true); }}>
+                    <TableCell className="font-medium">{o.title}</TableCell>
+                    <TableCell><div className="flex items-center gap-2"><div className={`h-2 w-2 rounded-full ${STATUS_CONFIG[o.status].color}`} />{STATUS_CONFIG[o.status].label}</div></TableCell>
+                    <TableCell><Badge variant={o.priority === "alta" || o.priority === "urgente" ? "destructive" : o.priority === "media" ? "default" : "secondary"}>{o.priority.charAt(0).toUpperCase() + o.priority.slice(1)}</Badge></TableCell>
+                    <TableCell>{o.location || "—"}</TableCell>
+                    <TableCell>{o.start_date ? new Date(o.start_date).toLocaleDateString("pt-BR") : "—"}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedOp(o); setOpDialog(true); }} onDelete={() => setDeleteId({ type: "operacoes", id: o.id })} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
         </TabsContent>
 
         <TabsContent value="agendamentos">
-          {schLoading ? <LoadingState /> : filteredSch.length === 0 ? (
-            <EmptyState icon={<CalendarDays className="h-12 w-12" />} msg={search ? "Nenhum agendamento encontrado." : "Nenhum agendamento cadastrado."} onAdd={!search ? () => { setSelectedSch(null); setSchDialog(true); } : undefined} />
-          ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Título</TableHead><TableHead>Data</TableHead><TableHead>Horário</TableHead>
-                    <TableHead>Status</TableHead><TableHead>Local</TableHead><TableHead className="w-10" />
+          <DataTable loading={schLoading} empty={schedules.length === 0} filtered={schedules.filter((s2) => [s2.title, s2.location].some((f) => f?.toLowerCase().includes(s))).length === 0 && schedules.length > 0} icon={<CalendarDays className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Título</TableHead><TableHead>Data</TableHead><TableHead>Horário</TableHead><TableHead>Status</TableHead><TableHead>Local</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {schedules.filter((s2) => [s2.title, s2.location].some((f) => f?.toLowerCase().includes(s))).map((s2) => (
+                  <TableRow key={s2.id} className="cursor-pointer" onClick={() => { setSelectedSch(s2); setSchDialog(true); }}>
+                    <TableCell className="font-medium">{s2.title}</TableCell>
+                    <TableCell>{new Date(s2.scheduled_date + "T12:00:00").toLocaleDateString("pt-BR")}</TableCell>
+                    <TableCell>{s2.start_time ? `${s2.start_time.slice(0, 5)}${s2.end_time ? ` - ${s2.end_time.slice(0, 5)}` : ""}` : "—"}</TableCell>
+                    <TableCell><Badge variant={s2.status === "cancelado" ? "destructive" : s2.status === "realizado" ? "default" : "secondary"}>{s2.status.charAt(0).toUpperCase() + s2.status.slice(1)}</Badge></TableCell>
+                    <TableCell>{s2.location || "—"}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedSch(s2); setSchDialog(true); }} onDelete={() => setDeleteId({ type: "agendamentos", id: s2.id })} />
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSch.map((s) => (
-                    <TableRow key={s.id} className="cursor-pointer" onClick={() => { setSelectedSch(s); setSchDialog(true); }}>
-                      <TableCell className="font-medium">{s.title}</TableCell>
-                      <TableCell>{new Date(s.scheduled_date + "T12:00:00").toLocaleDateString("pt-BR")}</TableCell>
-                      <TableCell>{s.start_time ? `${s.start_time.slice(0, 5)}${s.end_time ? ` - ${s.end_time.slice(0, 5)}` : ""}` : "—"}</TableCell>
-                      <TableCell><Badge variant={s.status === "cancelado" ? "destructive" : s.status === "realizado" ? "default" : "secondary"}>{s.status.charAt(0).toUpperCase() + s.status.slice(1)}</Badge></TableCell>
-                      <TableCell>{s.location || "—"}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <ActionMenu onEdit={() => { setSelectedSch(s); setSchDialog(true); }} onDelete={() => setDeleteSchId(s.id)} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
         </TabsContent>
 
         <TabsContent value="inventario">
-          {invLoading ? <LoadingState /> : filteredInv.length === 0 ? (
-            <EmptyState icon={<Package className="h-12 w-12" />} msg={search ? "Nenhum item encontrado." : "Nenhum item no inventário."} onAdd={!search ? () => { setSelectedInv(null); setInvDialog(true); } : undefined} />
-          ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead>
-                    <TableHead>Qtd.</TableHead><TableHead>Custo Unit.</TableHead><TableHead>Alerta</TableHead><TableHead className="w-10" />
+          <DataTable loading={invLoading} empty={inventory.length === 0} filtered={inventory.filter((i) => [i.name, i.sku, i.category].some((f) => f?.toLowerCase().includes(s))).length === 0 && inventory.length > 0} icon={<Package className="h-12 w-12" />} search={search} onAdd={handleNew}>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Nome</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead><TableHead>Qtd.</TableHead><TableHead>Custo Unit.</TableHead><TableHead>Alerta</TableHead><TableHead className="w-10" />
+              </TableRow></TableHeader>
+              <TableBody>
+                {inventory.filter((i) => [i.name, i.sku, i.category].some((f) => f?.toLowerCase().includes(s))).map((i) => (
+                  <TableRow key={i.id} className="cursor-pointer" onClick={() => { setSelectedInv(i); setInvDialog(true); }}>
+                    <TableCell className="font-medium">{i.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{i.sku || "—"}</TableCell>
+                    <TableCell>{i.category || "—"}</TableCell>
+                    <TableCell>{i.quantity} {i.unit}</TableCell>
+                    <TableCell>{BRL(i.unit_cost)}</TableCell>
+                    <TableCell>
+                      {i.quantity <= i.min_quantity && i.min_quantity > 0 ? (
+                        <div className="flex items-center gap-1 text-amber-600"><AlertTriangle className="h-4 w-4" /><span className="text-xs">Baixo</span></div>
+                      ) : <span className="text-xs text-muted-foreground">OK</span>}
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ActionMenu onEdit={() => { setSelectedInv(i); setInvDialog(true); }} onDelete={() => setDeleteId({ type: "inventario", id: i.id })} />
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInv.map((i) => (
-                    <TableRow key={i.id} className="cursor-pointer" onClick={() => { setSelectedInv(i); setInvDialog(true); }}>
-                      <TableCell className="font-medium">{i.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{i.sku || "—"}</TableCell>
-                      <TableCell>{i.category || "—"}</TableCell>
-                      <TableCell>{i.quantity} {i.unit}</TableCell>
-                      <TableCell>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(i.unit_cost)}</TableCell>
-                      <TableCell>
-                        {i.quantity <= i.min_quantity && i.min_quantity > 0 ? (
-                          <div className="flex items-center gap-1 text-amber-600"><AlertTriangle className="h-4 w-4" /><span className="text-xs">Baixo</span></div>
-                        ) : <span className="text-xs text-muted-foreground">OK</span>}
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <ActionMenu onEdit={() => { setSelectedInv(i); setInvDialog(true); }} onDelete={() => setDeleteInvId(i.id)} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                ))}
+              </TableBody>
+            </Table>
+          </DataTable>
         </TabsContent>
       </Tabs>
 
       <OperationFormDialog open={opDialog} onOpenChange={setOpDialog} operation={selectedOp} />
       <ScheduleFormDialog open={schDialog} onOpenChange={setSchDialog} schedule={selectedSch} />
       <InventoryFormDialog open={invDialog} onOpenChange={setInvDialog} item={selectedInv} />
+      <EkkoaClientFormDialog open={ekCliDialog} onOpenChange={setEkCliDialog} client={selectedEkCli} />
+      <EkkoaLeadFormDialog open={ekLeadDialog} onOpenChange={setEkLeadDialog} lead={selectedEkLead} />
+      <EkkoaEquipmentFormDialog open={ekEquipDialog} onOpenChange={setEkEquipDialog} equipment={selectedEkEquip} />
+      <EkkoaInstallationFormDialog open={ekInstallDialog} onOpenChange={setEkInstallDialog} installation={selectedEkInstall} />
+      <EkkoaContractFormDialog open={ekContractDialog} onOpenChange={setEkContractDialog} contract={selectedEkContract} />
+      <EkkoaBillingFormDialog open={ekBillingDialog} onOpenChange={setEkBillingDialog} billing={selectedEkBilling} />
 
-      <DeleteConfirmDialog open={!!deleteOpId} onCancel={() => setDeleteOpId(null)} onConfirm={() => { if (deleteOpId) deleteOp.mutate(deleteOpId); setDeleteOpId(null); }} />
-      <DeleteConfirmDialog open={!!deleteSchId} onCancel={() => setDeleteSchId(null)} onConfirm={() => { if (deleteSchId) deleteSch.mutate(deleteSchId); setDeleteSchId(null); }} />
-      <DeleteConfirmDialog open={!!deleteInvId} onCancel={() => setDeleteInvId(null)} onConfirm={() => { if (deleteInvId) deleteInv.mutate(deleteInvId); setDeleteInvId(null); }} />
+      <DeleteConfirmDialog open={!!deleteId} onCancel={() => setDeleteId(null)} onConfirm={handleDelete} />
     </AppLayout>
   );
 }
@@ -197,6 +416,15 @@ function EmptyState({ icon, msg, onAdd }: { icon: React.ReactNode; msg: string; 
       </div>
     </div>
   );
+}
+
+function DataTable({ loading, empty, filtered, icon, search, onAdd, children }: {
+  loading: boolean; empty: boolean; filtered: boolean; icon: React.ReactNode; search: string; onAdd: () => void; children: React.ReactNode;
+}) {
+  if (loading) return <LoadingState />;
+  if (empty) return <EmptyState icon={icon} msg="Nenhum registro cadastrado." onAdd={onAdd} />;
+  if (filtered) return <EmptyState icon={icon} msg="Nenhum resultado encontrado." />;
+  return <div className="rounded-lg border bg-card">{children}</div>;
 }
 
 function ActionMenu({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
