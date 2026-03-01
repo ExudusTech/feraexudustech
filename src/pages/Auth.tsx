@@ -75,7 +75,7 @@ export default function Auth() {
         <div className="absolute bottom-0 left-0 w-72 h-72 bg-primary/15 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl" />
         <div className="relative z-10 text-center space-y-6 max-w-md">
           <div className="flex flex-col items-center gap-4 mb-8">
-            <img src={logoExudus} alt="ExudusTech" className="w-32 h-32 rounded-2xl object-cover shadow-2xl shadow-primary/20" />
+            <img src={logoExudus} alt="ExudusTech" className="w-32 h-32 rounded-2xl object-contain shadow-2xl shadow-primary/20" />
             <h1 className="text-4xl font-bold text-secondary-foreground tracking-tight">
               ExudusTech
             </h1>
