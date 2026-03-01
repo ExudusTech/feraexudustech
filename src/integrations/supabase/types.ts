@@ -395,6 +395,77 @@ export type Database = {
         }
         Relationships: []
       }
+      products: {
+        Row: {
+          brand: string | null
+          category: string | null
+          cost: number | null
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          min_stock: number
+          name: string
+          organization_id: string
+          price: number
+          sku: string | null
+          specifications: Json | null
+          stock: number
+          unit: string
+          updated_at: string | null
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          min_stock?: number
+          name: string
+          organization_id: string
+          price?: number
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number
+          unit?: string
+          updated_at?: string | null
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          cost?: number | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          min_stock?: number
+          name?: string
+          organization_id?: string
+          price?: number
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number
+          unit?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
