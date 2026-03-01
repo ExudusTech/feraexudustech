@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateEkkoaLead, useUpdateEkkoaLead, type EkkoaLead } from "@/hooks/use-ekkoa-leads";
+import { useConvertEkkoaLeadToClient } from "@/hooks/use-lead-conversion";
+import { UserPlus } from "lucide-react";
 
 interface Props { open: boolean; onOpenChange: (open: boolean) => void; lead?: EkkoaLead | null; }
 
@@ -15,7 +17,9 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
   const [form, setForm] = useState(empty);
   const create = useCreateEkkoaLead();
   const update = useUpdateEkkoaLead();
+  const convert = useConvertEkkoaLeadToClient();
   const isEdit = !!lead;
+  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
 
   useEffect(() => {
     if (lead) {
@@ -44,7 +48,13 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
     onOpenChange(false);
   };
 
-  const isPending = create.isPending || update.isPending;
+  const isPending = create.isPending || update.isPending || convert.isPending;
+
+  const handleConvert = async () => {
+    if (!lead) return;
+    await convert.mutateAsync(lead);
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,9 +86,16 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
             <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
             <div className="col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
+          <div className="flex justify-between gap-2">
+            {canConvert ? (
+              <Button type="button" variant="secondary" onClick={handleConvert} disabled={isPending}>
+                <UserPlus className="h-4 w-4 mr-2" />Converter em Cliente
+              </Button>
+            ) : <div />}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
+            </div>
           </div>
         </form>
       </DialogContent>

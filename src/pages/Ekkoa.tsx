@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle, Users, Target, Cpu, Zap, FileText, DollarSign, Flower2, MapPin, ClipboardCheck } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle, Users, Target, Cpu, Zap, FileText, DollarSign, Flower2, MapPin, ClipboardCheck, LayoutGrid, List } from "lucide-react";
 
 import { useOperations, useDeleteOperation, STATUS_CONFIG, type Operation } from "@/hooks/use-operations";
 import { useSchedules, useDeleteSchedule, type Schedule } from "@/hooks/use-schedules";
@@ -35,6 +35,7 @@ import EkkoaFragranceLineFormDialog from "@/components/ekkoa/EkkoaFragranceLineF
 import EkkoaCoverageAreaFormDialog from "@/components/ekkoa/EkkoaCoverageAreaFormDialog";
 import EkkoaTechnicalVisitFormDialog from "@/components/ekkoa/EkkoaTechnicalVisitFormDialog";
 
+import OperationsKanban from "@/components/ekkoa/OperationsKanban";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 type TabKey = "clientes" | "leads" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "areas" | "visitas_tecnicas";
@@ -60,6 +61,7 @@ export default function Ekkoa() {
   const [tab, setTab] = useState<TabKey>("clientes");
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
+  const [opsView, setOpsView] = useState<"list" | "kanban">("list");
 
   const { data: operations = [], isLoading: opsLoading } = useOperations();
   const deleteOp = useDeleteOperation();
@@ -340,27 +342,39 @@ export default function Ekkoa() {
 
         {/* Operações */}
         <TabsContent value="operacoes">
-          <DataTable loading={opsLoading} empty={operations.length === 0} filtered={operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).length === 0 && operations.length > 0} icon={<Wrench className="h-12 w-12" />} search={search} onAdd={handleNew}>
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Título</TableHead><TableHead>Status</TableHead><TableHead>Prioridade</TableHead><TableHead>Local</TableHead><TableHead>Início</TableHead><TableHead className="w-10" />
-              </TableRow></TableHeader>
-              <TableBody>
-                {operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).map((o) => (
-                  <TableRow key={o.id} className="cursor-pointer" onClick={() => { setSelectedOp(o); setOpDialog(true); }}>
-                    <TableCell className="font-medium">{o.title}</TableCell>
-                    <TableCell><div className="flex items-center gap-2"><div className={`h-2 w-2 rounded-full ${STATUS_CONFIG[o.status].color}`} />{STATUS_CONFIG[o.status].label}</div></TableCell>
-                    <TableCell><Badge variant={o.priority === "alta" || o.priority === "urgente" ? "destructive" : o.priority === "media" ? "default" : "secondary"}>{o.priority.charAt(0).toUpperCase() + o.priority.slice(1)}</Badge></TableCell>
-                    <TableCell>{o.location || "—"}</TableCell>
-                    <TableCell>{o.start_date ? new Date(o.start_date).toLocaleDateString("pt-BR") : "—"}</TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <ActionMenu onEdit={() => { setSelectedOp(o); setOpDialog(true); }} onDelete={() => setDeleteId({ type: "operacoes", id: o.id })} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </DataTable>
+          <div className="flex items-center gap-2 mb-4">
+            <Button variant={opsView === "list" ? "default" : "outline"} size="sm" onClick={() => setOpsView("list")}>
+              <List className="h-4 w-4 mr-1" />Lista
+            </Button>
+            <Button variant={opsView === "kanban" ? "default" : "outline"} size="sm" onClick={() => setOpsView("kanban")}>
+              <LayoutGrid className="h-4 w-4 mr-1" />Kanban
+            </Button>
+          </div>
+          {opsView === "kanban" ? (
+            <OperationsKanban onEdit={(op) => { setSelectedOp(op); setOpDialog(true); }} />
+          ) : (
+            <DataTable loading={opsLoading} empty={operations.length === 0} filtered={operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).length === 0 && operations.length > 0} icon={<Wrench className="h-12 w-12" />} search={search} onAdd={handleNew}>
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Título</TableHead><TableHead>Status</TableHead><TableHead>Prioridade</TableHead><TableHead>Local</TableHead><TableHead>Início</TableHead><TableHead className="w-10" />
+                </TableRow></TableHeader>
+                <TableBody>
+                  {operations.filter((o) => [o.title, o.location].some((f) => f?.toLowerCase().includes(s))).map((o) => (
+                    <TableRow key={o.id} className="cursor-pointer" onClick={() => { setSelectedOp(o); setOpDialog(true); }}>
+                      <TableCell className="font-medium">{o.title}</TableCell>
+                      <TableCell><div className="flex items-center gap-2"><div className={`h-2 w-2 rounded-full ${STATUS_CONFIG[o.status].color}`} />{STATUS_CONFIG[o.status].label}</div></TableCell>
+                      <TableCell><Badge variant={o.priority === "alta" || o.priority === "urgente" ? "destructive" : o.priority === "media" ? "default" : "secondary"}>{o.priority.charAt(0).toUpperCase() + o.priority.slice(1)}</Badge></TableCell>
+                      <TableCell>{o.location || "—"}</TableCell>
+                      <TableCell>{o.start_date ? new Date(o.start_date).toLocaleDateString("pt-BR") : "—"}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <ActionMenu onEdit={() => { setSelectedOp(o); setOpDialog(true); }} onDelete={() => setDeleteId({ type: "operacoes", id: o.id })} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </DataTable>
+          )}
         </TabsContent>
 
         {/* Agendamentos */}
