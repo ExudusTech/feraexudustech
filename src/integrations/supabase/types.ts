@@ -767,6 +767,108 @@ export type Database = {
           },
         ]
       }
+      financial_transactions: {
+        Row: {
+          amount: number
+          category: string | null
+          client_id: string | null
+          contract_id: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          due_date: string | null
+          id: string
+          notes: string | null
+          order_id: string | null
+          organization_id: string
+          payment_date: string | null
+          payment_method_id: string | null
+          reference_number: string | null
+          status: string
+          title: string
+          transaction_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          amount?: number
+          category?: string | null
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string | null
+          organization_id: string
+          payment_date?: string | null
+          payment_method_id?: string | null
+          reference_number?: string | null
+          status?: string
+          title: string
+          transaction_type?: string
+          updated_at?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string | null
+          client_id?: string | null
+          contract_id?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string | null
+          organization_id?: string
+          payment_date?: string | null
+          payment_method_id?: string | null
+          reference_number?: string | null
+          status?: string
+          title?: string
+          transaction_type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_transactions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_transactions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_transactions_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            isOneToOne: false
+            referencedRelation: "payment_methods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_messages: {
         Row: {
           body: string
@@ -958,6 +1060,97 @@ export type Database = {
           },
         ]
       }
+      maintenance_schedule: {
+        Row: {
+          actual_cost: number | null
+          assigned_to: string | null
+          client_id: string | null
+          completed_date: string | null
+          created_at: string
+          created_by: string
+          description: string | null
+          end_time: string | null
+          estimated_cost: number | null
+          id: string
+          installation_id: string | null
+          maintenance_type: string
+          notes: string | null
+          organization_id: string
+          recurrence: string | null
+          scheduled_date: string
+          start_time: string | null
+          status: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          actual_cost?: number | null
+          assigned_to?: string | null
+          client_id?: string | null
+          completed_date?: string | null
+          created_at?: string
+          created_by: string
+          description?: string | null
+          end_time?: string | null
+          estimated_cost?: number | null
+          id?: string
+          installation_id?: string | null
+          maintenance_type?: string
+          notes?: string | null
+          organization_id: string
+          recurrence?: string | null
+          scheduled_date: string
+          start_time?: string | null
+          status?: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          actual_cost?: number | null
+          assigned_to?: string | null
+          client_id?: string | null
+          completed_date?: string | null
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          end_time?: string | null
+          estimated_cost?: number | null
+          id?: string
+          installation_id?: string | null
+          maintenance_type?: string
+          notes?: string | null
+          organization_id?: string
+          recurrence?: string | null
+          scheduled_date?: string
+          start_time?: string | null
+          status?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_schedule_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_installation_id_fkey"
+            columns: ["installation_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_participants: {
         Row: {
           created_at: string
@@ -996,6 +1189,94 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operational_expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          created_by: string
+          department_id: string | null
+          description: string | null
+          due_date: string | null
+          expense_date: string
+          id: string
+          invoice_number: string | null
+          notes: string | null
+          organization_id: string
+          payment_date: string | null
+          payment_method_id: string | null
+          recurrence: string | null
+          status: string
+          title: string
+          updated_at: string | null
+          vendor: string | null
+        }
+        Insert: {
+          amount?: number
+          category?: string
+          created_at?: string
+          created_by: string
+          department_id?: string | null
+          description?: string | null
+          due_date?: string | null
+          expense_date?: string
+          id?: string
+          invoice_number?: string | null
+          notes?: string | null
+          organization_id: string
+          payment_date?: string | null
+          payment_method_id?: string | null
+          recurrence?: string | null
+          status?: string
+          title: string
+          updated_at?: string | null
+          vendor?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          created_by?: string
+          department_id?: string | null
+          description?: string | null
+          due_date?: string | null
+          expense_date?: string
+          id?: string
+          invoice_number?: string | null
+          notes?: string | null
+          organization_id?: string
+          payment_date?: string | null
+          payment_method_id?: string | null
+          recurrence?: string | null
+          status?: string
+          title?: string
+          updated_at?: string | null
+          vendor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operational_expenses_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_expenses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_expenses_payment_method_id_fkey"
+            columns: ["payment_method_id"]
+            isOneToOne: false
+            referencedRelation: "payment_methods"
             referencedColumns: ["id"]
           },
         ]
@@ -1254,6 +1535,53 @@ export type Database = {
           zip_code?: string | null
         }
         Relationships: []
+      }
+      payment_methods: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_active: boolean
+          method_type: string
+          name: string
+          organization_id: string
+          sort_order: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          method_type?: string
+          name: string
+          organization_id: string
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          method_type?: string
+          name?: string
+          organization_id?: string
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       products: {
         Row: {
