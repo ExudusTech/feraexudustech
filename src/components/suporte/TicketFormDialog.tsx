@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateSupportTicket, useUpdateSupportTicket, type SupportTicket } from "@/hooks/use-support";
+import { validateTicketTitle, validateTicketDescription } from "@/lib/validations";
 
 interface Props { open: boolean; onOpenChange: (open: boolean) => void; ticket?: SupportTicket | null; }
 
@@ -13,6 +14,7 @@ const empty = { title: "", description: "", category: "geral", priority: "media"
 
 export default function TicketFormDialog({ open, onOpenChange, ticket }: Props) {
   const [form, setForm] = useState(empty);
+  const [errors, setErrors] = useState<{ title?: string; description?: string }>({});
   const create = useCreateSupportTicket();
   const update = useUpdateSupportTicket();
   const isEdit = !!ticket;
@@ -21,13 +23,28 @@ export default function TicketFormDialog({ open, onOpenChange, ticket }: Props) 
     if (ticket) {
       setForm({ title: ticket.title, description: ticket.description || "", category: ticket.category, priority: ticket.priority, status: ticket.status });
     } else setForm(empty);
+    setErrors({});
   }, [ticket, open]);
 
-  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const set = (k: string, v: string) => {
+    setForm((p) => ({ ...p, [k]: v }));
+    // Clear error on change
+    if (k === "title" || k === "description") {
+      setErrors((prev) => ({ ...prev, [k]: undefined }));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) return;
+
+    // Validate
+    const titleErr = validateTicketTitle(form.title);
+    const descErr = !isEdit ? validateTicketDescription(form.description) : null;
+    if (titleErr || descErr) {
+      setErrors({ title: titleErr || undefined, description: descErr || undefined });
+      return;
+    }
+
     const payload = { title: form.title, description: form.description || null, category: form.category, priority: form.priority, status: form.status };
     if (isEdit) await update.mutateAsync({ id: ticket!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -42,7 +59,11 @@ export default function TicketFormDialog({ open, onOpenChange, ticket }: Props) 
         <DialogHeader><DialogTitle>{isEdit ? "Editar Ticket" : "Novo Ticket"}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>
+            <div className="col-span-2">
+              <Label>Título * <span className="text-xs text-muted-foreground">(mínimo 5 caracteres)</span></Label>
+              <Input value={form.title} onChange={(e) => set("title", e.target.value)} required />
+              {errors.title && <p className="text-xs text-destructive mt-1">{errors.title}</p>}
+            </div>
             <div>
               <Label>Categoria</Label>
               <Select value={form.category} onValueChange={(v) => set("category", v)}>
@@ -82,7 +103,11 @@ export default function TicketFormDialog({ open, onOpenChange, ticket }: Props) 
                 </Select>
               </div>
             )}
-            <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={4} /></div>
+            <div className="col-span-2">
+              <Label>Descrição {!isEdit && <span className="text-xs text-muted-foreground">(mínimo 20 caracteres)</span>}</Label>
+              <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={4} />
+              {errors.description && <p className="text-xs text-destructive mt-1">{errors.description}</p>}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
