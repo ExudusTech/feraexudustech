@@ -5,8 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { useClients } from "@/hooks/use-clients";
 import { useCreateProposal, useUpdateProposal, type Proposal } from "@/hooks/use-proposals";
+import { useAcceptProposalAndCreateOrder, useRejectProposal } from "@/hooks/use-proposal-automation";
+import { CheckCircle, XCircle, ShoppingCart } from "lucide-react";
 
 interface Props {
   open: boolean;
@@ -26,6 +29,8 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
   const { data: clients = [] } = useClients();
   const createProposal = useCreateProposal();
   const updateProposal = useUpdateProposal();
+  const acceptAndCreateOrder = useAcceptProposalAndCreateOrder();
+  const rejectProposal = useRejectProposal();
 
   const [form, setForm] = useState({
     title: "", description: "", client_id: "", status: "rascunho",
@@ -62,7 +67,24 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
     }
   };
 
+  const handleAccept = async () => {
+    if (!proposal) return;
+    await acceptAndCreateOrder.mutateAsync(proposal);
+    onOpenChange(false);
+  };
+
+  const handleReject = async () => {
+    if (!proposal) return;
+    await rejectProposal.mutateAsync(proposal.id);
+    onOpenChange(false);
+  };
+
   const fmt = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+  const isEdit = !!proposal;
+  const canAccept = isEdit && proposal.status === "enviada";
+  const canReject = isEdit && (proposal.status === "enviada" || proposal.status === "rascunho");
+  const isPending = createProposal.isPending || updateProposal.isPending || acceptAndCreateOrder.isPending || rejectProposal.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,6 +92,34 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
         <DialogHeader>
           <DialogTitle>{proposal ? "Editar Proposta" : "Nova Proposta"}</DialogTitle>
         </DialogHeader>
+
+        {/* Workflow Actions */}
+        {isEdit && (canAccept || canReject) && (
+          <>
+          <div className="flex flex-wrap gap-2">
+              {canAccept && (
+                <Button type="button" size="sm" onClick={handleAccept} disabled={isPending}>
+                  <CheckCircle className="h-4 w-4 mr-1" />Aceitar & Gerar Pedido
+                </Button>
+              )}
+              {canReject && (
+                <Button type="button" size="sm" variant="destructive" onClick={handleReject} disabled={isPending}>
+                  <XCircle className="h-4 w-4 mr-1" />Rejeitar
+                </Button>
+              )}
+            </div>
+            <Separator />
+          </>
+        )}
+
+        {/* Show linked order info */}
+        {isEdit && proposal.status === "aceita" && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-muted text-muted-foreground text-sm">
+            <ShoppingCart className="h-4 w-4" />
+            <span>Proposta aceita — pedido gerado automaticamente.</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label>Título *</Label>
@@ -125,7 +175,7 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={createProposal.isPending || updateProposal.isPending}>
+            <Button type="submit" disabled={isPending}>
               {proposal ? "Salvar" : "Criar"}
             </Button>
           </div>
