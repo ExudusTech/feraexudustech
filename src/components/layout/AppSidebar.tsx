@@ -1,21 +1,9 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Users,
-  Target,
-  FileText,
-  Package,
-  DollarSign,
-  BarChart3,
-  Settings,
-  LogOut,
-  Building2,
-  Leaf,
-  MapPin,
-  UserCog,
-  HelpCircle,
-  ChevronLeft,
+  LayoutDashboard, Users, Target, FileText, Package, DollarSign,
+  BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
+  ChevronLeft, Sun, Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,7 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import logoExudus from "@/assets/logo-exudus.jpeg";
 
 const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -48,6 +37,27 @@ export default function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== "undefined") {
+      return document.documentElement.classList.contains("dark");
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const stored = localStorage.getItem("theme");
+    if (stored === "dark") {
+      document.documentElement.classList.add("dark");
+      setIsDark(true);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  };
 
   const initials = user?.name
     ?.split(" ")
@@ -65,8 +75,8 @@ export default function AppSidebar() {
         className={cn(
           "flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-primary/25"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
         )}
       >
         <Icon className="h-5 w-5 shrink-0" />
@@ -89,25 +99,27 @@ export default function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300",
+        "flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300",
         collapsed ? "w-[68px]" : "w-64"
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5">
-        <div className="w-9 h-9 bg-sidebar-primary rounded-lg flex items-center justify-center shrink-0">
-          <Building2 className="w-5 h-5 text-sidebar-primary-foreground" />
-        </div>
+      <div className="flex items-center gap-3 px-4 py-4">
+        <img
+          src={logoExudus}
+          alt="ExudusTech"
+          className="w-9 h-9 rounded-lg object-cover shrink-0"
+        />
         {!collapsed && (
           <span className="text-lg font-bold text-sidebar-foreground tracking-tight">
-            ClienteManager
+            ExudusTech
           </span>
         )}
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            "ml-auto h-7 w-7 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+            "ml-auto h-7 w-7 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent",
             collapsed && "ml-0"
           )}
           onClick={() => setCollapsed(!collapsed)}
@@ -134,6 +146,19 @@ export default function AppSidebar() {
         {bottomNavItems.map((item) => (
           <NavItem key={item.path} {...item} />
         ))}
+        {/* Theme toggle */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={toggleTheme}
+              className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all duration-200"
+            >
+              {isDark ? <Sun className="h-5 w-5 shrink-0" /> : <Moon className="h-5 w-5 shrink-0" />}
+              {!collapsed && <span>{isDark ? "Tema Claro" : "Tema Escuro"}</span>}
+            </button>
+          </TooltipTrigger>
+          {collapsed && <TooltipContent side="right">{isDark ? "Tema Claro" : "Tema Escuro"}</TooltipContent>}
+        </Tooltip>
       </div>
 
       <Separator className="bg-sidebar-border" />
@@ -142,7 +167,7 @@ export default function AppSidebar() {
       <div className="p-3">
         <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
           <Avatar className="h-9 w-9 shrink-0">
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs font-semibold">
+            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -157,7 +182,7 @@ export default function AppSidebar() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 shrink-0"
+                className="h-8 w-8 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent shrink-0"
                 onClick={signOut}
               >
                 <LogOut className="h-4 w-4" />
