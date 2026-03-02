@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle, Users, Target, Cpu, Zap, FileText, DollarSign, Flower2, MapPin, ClipboardCheck, LayoutGrid, List } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Wrench, CalendarDays, Package, AlertTriangle, Users, Target, Cpu, Zap, FileText, DollarSign, Flower2, MapPin, ClipboardCheck, LayoutGrid, List, BarChart3 } from "lucide-react";
 
 import { useOperations, useDeleteOperation, STATUS_CONFIG, type Operation } from "@/hooks/use-operations";
 import { useSchedules, useDeleteSchedule, type Schedule } from "@/hooks/use-schedules";
@@ -37,11 +37,13 @@ import EkkoaTechnicalVisitFormDialog from "@/components/ekkoa/EkkoaTechnicalVisi
 
 import OperationsKanban from "@/components/ekkoa/OperationsKanban";
 import ExpiringTestsAlert from "@/components/ekkoa/ExpiringTestsAlert";
+import EkkoaDashboard from "@/components/ekkoa/EkkoaDashboard";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
-type TabKey = "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "visitas_tecnicas";
+type TabKey = "dashboard" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "visitas_tecnicas";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
+  dashboard: { label: "Dashboard", icon: BarChart3, newLabel: "" },
   equipamentos: { label: "Equipamentos", icon: Cpu, newLabel: "Novo Equipamento" },
   instalacoes: { label: "Instalações", icon: Zap, newLabel: "Nova Instalação" },
   contratos: { label: "Contratos", icon: FileText, newLabel: "Novo Contrato" },
@@ -56,7 +58,7 @@ const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLa
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
 export default function Ekkoa() {
-  const [tab, setTab] = useState<TabKey>("equipamentos");
+  const [tab, setTab] = useState<TabKey>("dashboard");
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
   const [opsView, setOpsView] = useState<"list" | "kanban">("list");
@@ -125,6 +127,7 @@ export default function Ekkoa() {
 
   const handleNew = () => {
     const actions: Record<TabKey, () => void> = {
+      dashboard: () => {},
       equipamentos: () => { setSelectedEkEquip(null); setEkEquipDialog(true); },
       instalacoes: () => { setSelectedEkInstall(null); setEkInstallDialog(true); },
       contratos: () => { setSelectedEkContract(null); setEkContractDialog(true); },
@@ -141,6 +144,7 @@ export default function Ekkoa() {
   const handleDelete = () => {
     if (!deleteId) return;
     const deleters: Record<TabKey, (id: string) => void> = {
+      dashboard: () => {},
       equipamentos: (id) => deleteEkEquip.mutate(id),
       instalacoes: (id) => deleteEkInstall.mutate(id),
       contratos: (id) => deleteEkContract.mutate(id),
@@ -159,7 +163,7 @@ export default function Ekkoa() {
     <AppLayout
       title="Ekkoa"
       subtitle="Gestão completa do módulo Ekkoa"
-      actions={<Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button>}
+      actions={tab !== "dashboard" ? <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button> : undefined}
     >
       {/* Expiring Test Alerts */}
       <ExpiringTestsAlert
@@ -178,12 +182,25 @@ export default function Ekkoa() {
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
+        {tab !== "dashboard" && (
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        )}
 
-
+        {/* Dashboard */}
+        <TabsContent value="dashboard">
+          <EkkoaDashboard
+            installations={ekInstall}
+            contracts={ekContracts}
+            billing={ekBilling}
+            technicalVisits={techVisits}
+            equipment={ekEquip}
+            coverageAreas={coverageAreas}
+            operations={operations}
+          />
+        </TabsContent>
 
         {/* Equipamentos */}
         <TabsContent value="equipamentos">
