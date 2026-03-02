@@ -4,6 +4,26 @@ import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 import type { EkkoaLead } from "@/hooks/use-ekkoa-leads";
 
+/** Generic lead shape for workflow (works with both leads and ekkoa_leads) */
+export interface WorkflowLead {
+  id: string;
+  organization_id: string;
+  client_id: string | null;
+  title: string;
+  contact_name: string | null;
+  contact_email?: string | null;
+  contact_phone: string | null;
+  source?: string | null;
+  stage?: string;
+  value?: number | null;
+  assigned_to: string | null;
+  expected_close_date?: string | null;
+  notes?: string | null;
+  created_by: string;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string | null;
+}
 /**
  * CEP validation helper (Brazilian ZIP code format)
  */
@@ -14,7 +34,7 @@ export function validateCEP(cep: string): boolean {
 /**
  * Validates required fields for Ekkoa lead before scheduling test
  */
-export function validateEkkoaLeadForTest(lead: Partial<EkkoaLead>): string | null {
+export function validateEkkoaLeadForTest(lead: Partial<WorkflowLead>): string | null {
   if (!lead.contact_name) return "Nome do contato é obrigatório";
   if (!lead.contact_phone) return "Telefone do contato é obrigatório";
   if (!lead.assigned_to) return "Vendedor responsável é obrigatório";
@@ -22,7 +42,7 @@ export function validateEkkoaLeadForTest(lead: Partial<EkkoaLead>): string | nul
 }
 
 interface ScheduleTestInput {
-  lead: EkkoaLead;
+  lead: WorkflowLead;
   installationTitle: string;
   address: string;
   city: string;
@@ -32,6 +52,8 @@ interface ScheduleTestInput {
   startTime?: string;
   assignedTo: string;
   notes?: string;
+  /** Which table to update: 'leads' (unified) or 'ekkoa_leads' (legacy) */
+  leadTable?: "leads" | "ekkoa_leads";
 }
 
 /**
@@ -113,15 +135,18 @@ export function useScheduleTestInstallation() {
       if (schedError) throw schedError;
 
       // 4. Update lead stage to em_teste
+      const table = input.leadTable || "ekkoa_leads";
       const { error: leadError } = await supabase
-        .from("ekkoa_leads")
-        .update({ stage: "em_teste" })
+        .from(table)
+        .update({ stage: "em_teste" } as any)
         .eq("id", input.lead.id);
+      if (leadError) throw leadError;
       if (leadError) throw leadError;
 
       return { installation, operation };
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_leads"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_installations"] });
       qc.invalidateQueries({ queryKey: ["operations"] });
