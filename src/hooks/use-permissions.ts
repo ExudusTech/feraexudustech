@@ -114,6 +114,7 @@ export function usePermissions() {
     getRoleLabel,
     isAdmin: role === "admin" || role === "super_admin",
     isSuperAdmin: role === "super_admin",
+    isFinanceiro: role === "financeiro",
     roleLabel: getRoleLabel(role),
   };
 }

@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useUnreadMessageCount } from "@/hooks/use-unread-messages";
+import { useOrgBranding } from "@/hooks/use-org-branding";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
@@ -39,6 +40,7 @@ export default function AppSidebar() {
   const { user, signOut } = useAuth();
   const { canAccessRoute, roleLabel, isSuperAdmin } = usePermissions();
   const { data: unreadCount = 0 } = useUnreadMessageCount();
+  const { logoUrl } = useOrgBranding();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -126,8 +128,8 @@ export default function AppSidebar() {
       {/* Logo */}
       <div className="flex items-center gap-2 px-3 py-3">
         <img
-          src={logoExudus}
-          alt="ExudusTech"
+          src={logoUrl || logoExudus}
+          alt="Logo"
           className={cn(
             "rounded-lg object-contain shrink-0 transition-all",
             collapsed ? "w-10 h-10" : "w-full max-h-14"
