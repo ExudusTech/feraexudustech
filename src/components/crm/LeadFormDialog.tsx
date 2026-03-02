@@ -197,7 +197,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Select value={form.stage} onValueChange={(v) => set("stage", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {PIPELINE_STAGES.map((s) => (
+              {PIPELINE_STAGES.filter((s) => s !== "negociacao").map((s) => (
                     <SelectItem key={s} value={s}>{STAGE_CONFIG[s].label}</SelectItem>
                   ))}
                 </SelectContent>

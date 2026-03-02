@@ -2523,6 +2523,9 @@ export type Database = {
         | "negociacao"
         | "fechado_ganho"
         | "fechado_perdido"
+        | "feedback"
+        | "instalacao_definitiva"
+        | "cadastramento"
       operation_status: "pendente" | "em_andamento" | "concluida" | "cancelada"
     }
     CompositeTypes: {
@@ -2670,6 +2673,9 @@ export const Constants = {
         "negociacao",
         "fechado_ganho",
         "fechado_perdido",
+        "feedback",
+        "instalacao_definitiva",
+        "cadastramento",
       ],
       operation_status: ["pendente", "em_andamento", "concluida", "cancelada"],
     },
