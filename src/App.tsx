@@ -22,6 +22,7 @@ import Suporte from "@/pages/Suporte";
 import NotFound from "@/pages/NotFound";
 import AdminOrganizacoes from "@/pages/AdminOrganizacoes";
 import ResetPassword from "@/pages/ResetPassword";
+import SuperAdminSelector from "@/pages/SuperAdminSelector";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ const App = () => (
             <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
             <Route path="/suporte" element={<ProtectedRoute><Suporte /></ProtectedRoute>} />
             <Route path="/admin/organizacoes" element={<ProtectedRoute><AdminOrganizacoes /></ProtectedRoute>} />
+            <Route path="/admin/selecionar-organizacao" element={<SuperAdminSelector />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

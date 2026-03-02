@@ -26,7 +26,7 @@ export default function Auth() {
   const [forgotLoading, setForgotLoading] = useState(false);
 
   if (session) {
-    navigate("/");
+    navigate("/dashboard");
     return null;
   }
 

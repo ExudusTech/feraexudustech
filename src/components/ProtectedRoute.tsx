@@ -7,8 +7,8 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { session, isLoading } = useAuth();
-  const { canAccessRoute } = usePermissions();
+  const { session, user, isLoading } = useAuth();
+  const { canAccessRoute, isSuperAdmin } = usePermissions();
   const location = useLocation();
 
   if (isLoading) {
@@ -24,6 +24,11 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (!session) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Super admin must select an org first (unless going to admin pages or selector)
+  if (isSuperAdmin && !user?.organization_id && location.pathname !== "/admin/organizacoes") {
+    return <Navigate to="/admin/selecionar-organizacao" replace />;
   }
 
   if (!canAccessRoute(location.pathname)) {
