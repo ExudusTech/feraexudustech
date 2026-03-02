@@ -2471,6 +2471,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_consultor_tecnico: { Args: { _user_id: string }; Returns: boolean }
+      is_financeiro: { Args: { _user_id: string }; Returns: boolean }
+      is_operacional: { Args: { _user_id: string }; Returns: boolean }
+      is_privileged_user: { Args: { _user_id: string }; Returns: boolean }
+      is_vendedor: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role:
