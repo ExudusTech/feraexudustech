@@ -96,19 +96,17 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   // ViaCEP auto-fill
   const viaCep = useViaCep(testForm.zipCode);
   useEffect(() => {
-    if (viaCep.data && matchedArea) {
+    if (viaCep.data) {
       setTestForm((prev) => ({
         ...prev,
-        address: prev.address || (viaCep.data!.logradouro ? `${viaCep.data!.logradouro}${viaCep.data!.bairro ? `, ${viaCep.data!.bairro}` : ""}` : ""),
-        city: prev.city || viaCep.data!.localidade || "",
-        state: prev.state || viaCep.data!.uf || "",
+        address: viaCep.data!.logradouro ? `${viaCep.data!.logradouro}${viaCep.data!.bairro ? `, ${viaCep.data!.bairro}` : ""}` : prev.address,
+        city: viaCep.data!.localidade || prev.city,
+        state: viaCep.data!.uf || prev.state,
+        scheduledDate: "",
+        startTime: "",
       }));
     }
-  }, [viaCep.data, matchedArea]);
-
-  useEffect(() => {
-    setTestForm((prev) => ({ ...prev, scheduledDate: "", startTime: "", address: "", city: "", state: "" }));
-  }, [testForm.zipCode]);
+  }, [viaCep.data]);
 
   useEffect(() => {
     if (timeWindow && testForm.scheduledDate && !testForm.startTime) {
