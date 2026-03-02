@@ -1784,6 +1784,7 @@ export type Database = {
           cnpj: string | null
           created_at: string
           email: string
+          has_ekkoa_access: boolean
           id: string
           is_active: boolean
           logo_url: string | null
@@ -1806,6 +1807,7 @@ export type Database = {
           cnpj?: string | null
           created_at?: string
           email: string
+          has_ekkoa_access?: boolean
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -1828,6 +1830,7 @@ export type Database = {
           cnpj?: string | null
           created_at?: string
           email?: string
+          has_ekkoa_access?: boolean
           id?: string
           is_active?: boolean
           logo_url?: string | null

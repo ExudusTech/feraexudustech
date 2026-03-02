@@ -29,6 +29,10 @@ export default function AdminOrganizacoes() {
     updateOrg.mutate({ id, is_active: !isActive });
   };
 
+  const handleToggleEkkoa = (id: string, hasAccess: boolean) => {
+    updateOrg.mutate({ id, has_ekkoa_access: !hasAccess });
+  };
+
   const handlePlanChange = (id: string, plan: string) => {
     updateOrg.mutate({ id, plan });
   };
@@ -104,21 +108,22 @@ export default function AdminOrganizacoes() {
                   <TableHead>E-mail</TableHead>
                   <TableHead>CNPJ</TableHead>
                   <TableHead>Plano</TableHead>
-                  <TableHead>Máx. Usuários</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Ativa</TableHead>
+                   <TableHead>Máx. Usuários</TableHead>
+                   <TableHead>Ekkoa</TableHead>
+                   <TableHead>Status</TableHead>
+                   <TableHead>Ativa</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                     <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       Carregando...
                     </TableCell>
                   </TableRow>
                 ) : orgs?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                       Nenhuma organização encontrada.
                     </TableCell>
                   </TableRow>
@@ -164,6 +169,12 @@ export default function AdminOrganizacoes() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={org.has_ekkoa_access}
+                          onCheckedChange={() => handleToggleEkkoa(org.id, org.has_ekkoa_access)}
+                        />
                       </TableCell>
                       <TableCell>
                         <Badge variant={org.is_active ? "default" : "destructive"}>
