@@ -18,13 +18,21 @@ export default function ResetPassword() {
   const [isRecovery, setIsRecovery] = useState(false);
 
   useEffect(() => {
+    // Check hash for recovery type
     const hash = window.location.hash;
     if (hash.includes("type=recovery")) {
       setIsRecovery(true);
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
+    // Check if there's already an active session (token already processed)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setIsRecovery(true);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
         setIsRecovery(true);
       }
     });
