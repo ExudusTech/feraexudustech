@@ -1321,6 +1321,7 @@ export type Database = {
       leads: {
         Row: {
           assigned_to: string | null
+          category: string | null
           client_id: string | null
           contact_email: string | null
           contact_name: string | null
@@ -1340,6 +1341,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          category?: string | null
           client_id?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -1359,6 +1361,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          category?: string | null
           client_id?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -2515,6 +2518,7 @@ export type Database = {
       lead_stage:
         | "novo"
         | "qualificacao"
+        | "em_teste"
         | "proposta"
         | "negociacao"
         | "fechado_ganho"
@@ -2661,6 +2665,7 @@ export const Constants = {
       lead_stage: [
         "novo",
         "qualificacao",
+        "em_teste",
         "proposta",
         "negociacao",
         "fechado_ganho",

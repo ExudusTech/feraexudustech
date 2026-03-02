@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 
-export type LeadStage = "novo" | "qualificacao" | "proposta" | "negociacao" | "fechado_ganho" | "fechado_perdido";
+export type LeadStage = "novo" | "qualificacao" | "em_teste" | "proposta" | "negociacao" | "fechado_ganho" | "fechado_perdido";
 
 export interface Lead {
   id: string;
@@ -21,6 +21,7 @@ export interface Lead {
   assigned_to: string | null;
   created_by: string;
   position: number;
+  category: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -28,13 +29,14 @@ export interface Lead {
 export const STAGE_CONFIG: Record<LeadStage, { label: string; color: string }> = {
   novo: { label: "Novo", color: "bg-blue-500" },
   qualificacao: { label: "Qualificação", color: "bg-amber-500" },
+  em_teste: { label: "Em Teste", color: "bg-cyan-500" },
   proposta: { label: "Proposta", color: "bg-purple-500" },
   negociacao: { label: "Negociação", color: "bg-orange-500" },
   fechado_ganho: { label: "Fechado (Ganho)", color: "bg-emerald-500" },
   fechado_perdido: { label: "Fechado (Perdido)", color: "bg-red-500" },
 };
 
-export const PIPELINE_STAGES: LeadStage[] = ["novo", "qualificacao", "proposta", "negociacao", "fechado_ganho", "fechado_perdido"];
+export const PIPELINE_STAGES: LeadStage[] = ["novo", "qualificacao", "em_teste", "proposta", "negociacao", "fechado_ganho", "fechado_perdido"];
 
 export function useLeads() {
   const { user } = useAuth();
@@ -72,6 +74,7 @@ export function useCreateLead() {
           contact_email: input.contact_email,
           contact_phone: input.contact_phone,
           expected_close_date: input.expected_close_date,
+          category: input.category || null,
           organization_id: user.organization_id,
           created_by: user.id,
           position: input.position || 0,
