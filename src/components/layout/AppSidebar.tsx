@@ -132,7 +132,7 @@ export default function AppSidebar() {
           alt="Logo"
           className={cn(
             "shrink-0 transition-all object-cover",
-            collapsed ? "w-16 h-16" : "w-[90%] scale-150"
+            collapsed ? "w-16 h-16" : "w-[90%] scale-125"
           )}
         />
         <Button
