@@ -3,7 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 
-export type LeadStage = "novo" | "qualificacao" | "em_teste" | "proposta" | "negociacao" | "fechado_ganho" | "fechado_perdido";
+export type LeadStage =
+  | "novo"
+  | "qualificacao"
+  | "em_teste"
+  | "feedback"
+  | "proposta"
+  | "negociacao"
+  | "instalacao_definitiva"
+  | "cadastramento"
+  | "fechado_ganho"
+  | "fechado_perdido";
 
 export interface Lead {
   id: string;
@@ -26,17 +36,73 @@ export interface Lead {
   updated_at: string | null;
 }
 
+// Sub-stage config with labels and colors
 export const STAGE_CONFIG: Record<LeadStage, { label: string; color: string }> = {
   novo: { label: "Novo", color: "bg-blue-500" },
   qualificacao: { label: "Qualificação", color: "bg-amber-500" },
   em_teste: { label: "Em Teste", color: "bg-cyan-500" },
+  feedback: { label: "Feedback", color: "bg-violet-500" },
   proposta: { label: "Proposta", color: "bg-purple-500" },
   negociacao: { label: "Negociação", color: "bg-orange-500" },
+  instalacao_definitiva: { label: "Instalação Definitiva", color: "bg-teal-500" },
+  cadastramento: { label: "Cadastramento", color: "bg-indigo-500" },
   fechado_ganho: { label: "Fechado (Ganho)", color: "bg-emerald-500" },
   fechado_perdido: { label: "Fechado (Perdido)", color: "bg-red-500" },
 };
 
-export const PIPELINE_STAGES: LeadStage[] = ["novo", "qualificacao", "em_teste", "proposta", "negociacao", "fechado_ganho", "fechado_perdido"];
+// Macro pipeline columns
+export type MacroStage = "novo" | "qualificacao" | "ganho" | "perda";
+
+export interface MacroStageConfig {
+  label: string;
+  color: string;
+  stages: LeadStage[];
+}
+
+export const MACRO_PIPELINE: Record<MacroStage, MacroStageConfig> = {
+  novo: {
+    label: "Novo",
+    color: "bg-blue-500",
+    stages: ["novo"],
+  },
+  qualificacao: {
+    label: "Qualificação",
+    color: "bg-amber-500",
+    stages: ["qualificacao", "em_teste", "feedback"],
+  },
+  ganho: {
+    label: "Ganho",
+    color: "bg-emerald-500",
+    stages: ["proposta", "instalacao_definitiva", "cadastramento", "fechado_ganho"],
+  },
+  perda: {
+    label: "Perda",
+    color: "bg-red-500",
+    stages: ["fechado_perdido"],
+  },
+};
+
+export const MACRO_STAGES: MacroStage[] = ["novo", "qualificacao", "ganho", "perda"];
+
+// All stages in order (for form selectors etc)
+export const PIPELINE_STAGES: LeadStage[] = [
+  "novo", "qualificacao", "em_teste", "feedback",
+  "proposta", "instalacao_definitiva", "cadastramento",
+  "fechado_ganho", "fechado_perdido",
+];
+
+// Helper: get the macro stage for a given lead stage
+export function getMacroStage(stage: LeadStage): MacroStage {
+  for (const [macro, config] of Object.entries(MACRO_PIPELINE) as [MacroStage, MacroStageConfig][]) {
+    if (config.stages.includes(stage)) return macro;
+  }
+  return "novo";
+}
+
+// Helper: get default sub-stage when dropping into a macro column
+export function getDefaultStageForMacro(macro: MacroStage): LeadStage {
+  return MACRO_PIPELINE[macro].stages[0];
+}
 
 export function useLeads() {
   const { user } = useAuth();
