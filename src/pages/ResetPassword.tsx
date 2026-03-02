@@ -31,9 +31,11 @@ export default function ResetPassword() {
       const queryType = queryParams.get("type") as EmailOtpType | null;
 
       if (hashType === "recovery" && accessToken && refreshToken) {
-        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        setIsRecovery(true);
-        return;
+        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        if (!error) {
+          setIsRecovery(true);
+          return;
+        }
       }
 
       if (tokenHash && queryType === "recovery") {
@@ -45,7 +47,7 @@ export default function ResetPassword() {
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session && (hashType === "recovery" || queryType === "recovery")) {
         setIsRecovery(true);
       }
     };
