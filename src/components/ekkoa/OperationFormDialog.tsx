@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useCreateOperation, useUpdateOperation, type Operation, type OperationStatus } from "@/hooks/use-operations";
 import { Play, Clock, MessageSquare, CheckCircle, XCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import TestFeedbackDialog from "./TestFeedbackDialog";
 
 interface Props {
   open: boolean;
@@ -19,6 +20,7 @@ const empty = { title: "", description: "", status: "pendente" as OperationStatu
 
 export default function OperationFormDialog({ open, onOpenChange, operation }: Props) {
   const [form, setForm] = useState(empty);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const create = useCreateOperation();
   const update = useUpdateOperation();
   const isEdit = !!operation;
@@ -105,6 +107,7 @@ export default function OperationFormDialog({ open, onOpenChange, operation }: P
   const canExtendTest = isEdit && operation?.status === "em_andamento";
   const canComplete = isEdit && (operation?.status === "em_andamento" || operation?.status === "pendente");
   const canCancel = isEdit && operation?.status !== "concluida" && operation?.status !== "cancelada";
+  const canFeedback = isEdit && operation?.status === "em_andamento";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,7 +115,7 @@ export default function OperationFormDialog({ open, onOpenChange, operation }: P
         <DialogHeader><DialogTitle>{isEdit ? "Editar Operação" : "Nova Operação"}</DialogTitle></DialogHeader>
 
         {/* Workflow Actions */}
-        {isEdit && (canStartTest || canExtendTest || canComplete || canCancel) && (
+        {isEdit && (canStartTest || canExtendTest || canComplete || canCancel || canFeedback) && (
           <>
             <div className="flex flex-wrap gap-2">
               {canStartTest && (
@@ -123,6 +126,11 @@ export default function OperationFormDialog({ open, onOpenChange, operation }: P
               {canExtendTest && (
                 <Button type="button" size="sm" variant="secondary" onClick={handleExtendTest} disabled={isPending}>
                   <Clock className="h-4 w-4 mr-1" />Estender Teste (+10d)
+                </Button>
+              )}
+              {canFeedback && (
+                <Button type="button" size="sm" variant="secondary" onClick={() => setFeedbackOpen(true)} disabled={isPending}>
+                  <MessageSquare className="h-4 w-4 mr-1" />Feedback do Teste
                 </Button>
               )}
               {canComplete && (
@@ -139,6 +147,12 @@ export default function OperationFormDialog({ open, onOpenChange, operation }: P
             <Separator />
           </>
         )}
+
+        <TestFeedbackDialog
+          open={feedbackOpen}
+          onOpenChange={setFeedbackOpen}
+          operation={operation || null}
+        />
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

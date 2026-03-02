@@ -36,6 +36,7 @@ import EkkoaCoverageAreaFormDialog from "@/components/ekkoa/EkkoaCoverageAreaFor
 import EkkoaTechnicalVisitFormDialog from "@/components/ekkoa/EkkoaTechnicalVisitFormDialog";
 
 import OperationsKanban from "@/components/ekkoa/OperationsKanban";
+import ExpiringTestsAlert from "@/components/ekkoa/ExpiringTestsAlert";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 type TabKey = "clientes" | "leads" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "areas" | "visitas_tecnicas";
@@ -169,6 +170,12 @@ export default function Ekkoa() {
       subtitle="Gestão completa do módulo Ekkoa"
       actions={<Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button>}
     >
+      {/* Expiring Test Alerts */}
+      <ExpiringTestsAlert
+        operations={operations}
+        onSelect={(op) => { setSelectedOp(op); setOpDialog(true); setTab("operacoes"); }}
+      />
+
       <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setSearch(""); }} className="space-y-4">
         <ScrollArea className="w-full">
           <TabsList className="inline-flex w-auto">

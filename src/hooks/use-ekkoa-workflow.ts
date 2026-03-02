@@ -161,6 +161,7 @@ export function useExtendTest() {
  */
 export function useSubmitTestFeedback() {
   const qc = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({
@@ -168,12 +169,22 @@ export function useSubmitTestFeedback() {
       leadId,
       approved,
       feedback,
+      contractData,
     }: {
       operationId: string;
       leadId?: string;
       approved: boolean;
       feedback: string;
+      contractData?: {
+        title: string;
+        contractType: string;
+        monthlyValue: number;
+        durationMonths: number;
+        clientId?: string;
+      };
     }) => {
+      if (!user?.organization_id) throw new Error("Sem organização");
+
       // Update operation status
       const { error: opError } = await supabase
         .from("operations")
@@ -192,11 +203,38 @@ export function useSubmitTestFeedback() {
           .eq("id", leadId);
         if (leadError) throw leadError;
       }
+
+      // Auto-create contract on approval
+      if (approved && contractData) {
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + contractData.durationMonths);
+
+        const { error: contractError } = await supabase
+          .from("ekkoa_contracts")
+          .insert({
+            title: contractData.title,
+            contract_type: contractData.contractType,
+            monthly_value: contractData.monthlyValue,
+            total_value: contractData.monthlyValue * contractData.durationMonths,
+            start_date: startDate.toISOString().split("T")[0],
+            end_date: endDate.toISOString().split("T")[0],
+            client_id: contractData.clientId || null,
+            status: "ativo",
+            organization_id: user.organization_id,
+            created_by: user.id,
+          });
+        if (contractError) throw contractError;
+      }
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["operations"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_leads"] });
-      toast({ title: vars.approved ? "Teste aprovado!" : "Teste não aprovado" });
+      qc.invalidateQueries({ queryKey: ["ekkoa_contracts"] });
+      toast({
+        title: vars.approved ? "Teste aprovado!" : "Teste não aprovado",
+        description: vars.approved && vars.contractData ? "Contrato criado automaticamente." : undefined,
+      });
     },
     onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
