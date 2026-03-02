@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { type EmailOtpType } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,18 +20,37 @@ export default function ResetPassword() {
   const [isRecovery, setIsRecovery] = useState(false);
 
   useEffect(() => {
-    // Check hash for recovery type
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setIsRecovery(true);
-    }
+    const initializeRecovery = async () => {
+      const hashParams = new URLSearchParams(window.location.hash.replace("#", ""));
+      const queryParams = new URLSearchParams(window.location.search);
 
-    // Check if there's already an active session (token already processed)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+      const hashType = hashParams.get("type");
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const tokenHash = queryParams.get("token_hash");
+      const queryType = queryParams.get("type") as EmailOtpType | null;
+
+      if (hashType === "recovery" && accessToken && refreshToken) {
+        await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+        setIsRecovery(true);
+        return;
+      }
+
+      if (tokenHash && queryType === "recovery") {
+        const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
+        if (!error) {
+          setIsRecovery(true);
+          return;
+        }
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setIsRecovery(true);
       }
-    });
+    };
+
+    initializeRecovery();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
@@ -53,6 +73,11 @@ export default function ResetPassword() {
     }
     setIsLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Link inválido ou expirado. Solicite uma nova recuperação de senha.");
+      }
+
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       toast({ title: "Senha atualizada!", description: "Sua senha foi redefinida com sucesso." });
