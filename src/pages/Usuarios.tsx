@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Shield, UserCheck, UserX } from "lucide-react";
+import { Users, Shield, UserCheck, UserX, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
+import UserFormDialog from "@/components/usuarios/UserFormDialog";
 
 const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "admin", label: "Administrador" },
@@ -30,6 +31,7 @@ export default function Usuarios() {
   const { data: users, isLoading } = useOrganizationUsers();
   const updateProfile = useUpdateUserProfile();
   const updateRole = useUpdateUserRole();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const handleToggleActive = (profileId: string, currentActive: boolean) => {
     updateProfile.mutate({ id: profileId, is_active: !currentActive });
@@ -55,6 +57,11 @@ export default function Usuarios() {
     <AppLayout
       title="Usuários"
       subtitle="Gestão de usuários da organização"
+      actions={isAdmin ? (
+        <Button onClick={() => setShowCreateDialog(true)}>
+          <Plus className="h-4 w-4 mr-1" /> Novo Usuário
+        </Button>
+      ) : undefined}
     >
       <div className="space-y-6">
         {/* Stats */}
@@ -194,6 +201,8 @@ export default function Usuarios() {
           </CardContent>
         </Card>
       </div>
+
+      <UserFormDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
     </AppLayout>
   );
 }
