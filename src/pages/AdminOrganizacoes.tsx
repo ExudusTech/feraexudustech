@@ -1,14 +1,16 @@
+import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { useAllOrganizations, useUpdateOrganization } from "@/hooks/use-organizations";
+import { useAllOrganizations, useUpdateOrganization, type Organization } from "@/hooks/use-organizations";
 import { usePermissions } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Crown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Building2, Crown, Pencil } from "lucide-react";
 import { Navigate } from "react-router-dom";
-
+import OrganizationEditDialog from "@/components/admin/OrganizationEditDialog";
 const PLAN_OPTIONS = [
   { value: "starter", label: "Starter" },
   { value: "professional", label: "Professional" },
@@ -20,6 +22,7 @@ export default function AdminOrganizacoes() {
   const { isSuperAdmin } = usePermissions();
   const { data: orgs, isLoading } = useAllOrganizations();
   const updateOrg = useUpdateOrganization();
+  const [editOrg, setEditOrg] = useState<Organization | null>(null);
 
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />;
@@ -112,6 +115,7 @@ export default function AdminOrganizacoes() {
                    <TableHead>Ekkoa</TableHead>
                    <TableHead>Status</TableHead>
                    <TableHead>Ativa</TableHead>
+                   <TableHead className="w-[60px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -187,6 +191,11 @@ export default function AdminOrganizacoes() {
                           onCheckedChange={() => handleToggleActive(org.id, org.is_active)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" onClick={() => setEditOrg(org)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -195,6 +204,12 @@ export default function AdminOrganizacoes() {
           </CardContent>
         </Card>
       </div>
+
+      <OrganizationEditDialog
+        org={editOrg}
+        open={!!editOrg}
+        onOpenChange={(open) => !open && setEditOrg(null)}
+      />
     </AppLayout>
   );
 }
