@@ -135,9 +135,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  const switchOrganization = (orgId: string) => {
+  const switchOrganization = async (orgId: string) => {
     if (!user || user.role !== "super_admin") return;
     sessionStorage.setItem("super_admin_org_id", orgId);
+    // Update profile in DB so RLS policies reflect the new org
+    await supabase
+      .from("profiles")
+      .update({ organization_id: orgId })
+      .eq("user_id", user.id);
     setUser(prev => prev ? { ...prev, organization_id: orgId } : null);
   };
 
