@@ -17,8 +17,8 @@ import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
 export default function Produtos() {
   const { data: products = [], isLoading } = useProducts();
   const deleteProduct = useDeleteProduct();
-  const { isAdmin, role } = usePermissions();
-  const canEditProducts = isAdmin || role === "gestor";
+  const { isAdmin, role, permissions } = usePermissions();
+  const canEditProducts = (isAdmin || role === "gestor") && permissions.canWrite;
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"table" | "grid">("table");
   const [dialogOpen, setDialogOpen] = useState(false);
