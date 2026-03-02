@@ -39,11 +39,9 @@ import OperationsKanban from "@/components/ekkoa/OperationsKanban";
 import ExpiringTestsAlert from "@/components/ekkoa/ExpiringTestsAlert";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
-type TabKey = "clientes" | "leads" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "areas" | "visitas_tecnicas";
+type TabKey = "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "visitas_tecnicas";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
-  clientes: { label: "Clientes", icon: Users, newLabel: "Novo Cliente" },
-  leads: { label: "Leads", icon: Target, newLabel: "Novo Lead" },
   equipamentos: { label: "Equipamentos", icon: Cpu, newLabel: "Novo Equipamento" },
   instalacoes: { label: "Instalações", icon: Zap, newLabel: "Nova Instalação" },
   contratos: { label: "Contratos", icon: FileText, newLabel: "Novo Contrato" },
@@ -52,14 +50,13 @@ const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLa
   agendamentos: { label: "Agendamentos", icon: CalendarDays, newLabel: "Novo Agendamento" },
   inventario: { label: "Inventário", icon: Package, newLabel: "Novo Item" },
   fragancias: { label: "Fragrâncias", icon: Flower2, newLabel: "Nova Fragrância" },
-  areas: { label: "Áreas", icon: MapPin, newLabel: "Nova Área" },
   visitas_tecnicas: { label: "Visitas Téc.", icon: ClipboardCheck, newLabel: "Nova Visita" },
 };
 
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 
 export default function Ekkoa() {
-  const [tab, setTab] = useState<TabKey>("clientes");
+  const [tab, setTab] = useState<TabKey>("equipamentos");
   const [search, setSearch] = useState("");
   const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
   const [opsView, setOpsView] = useState<"list" | "kanban">("list");
@@ -128,8 +125,6 @@ export default function Ekkoa() {
 
   const handleNew = () => {
     const actions: Record<TabKey, () => void> = {
-      clientes: () => { setSelectedEkCli(null); setEkCliDialog(true); },
-      leads: () => { setSelectedEkLead(null); setEkLeadDialog(true); },
       equipamentos: () => { setSelectedEkEquip(null); setEkEquipDialog(true); },
       instalacoes: () => { setSelectedEkInstall(null); setEkInstallDialog(true); },
       contratos: () => { setSelectedEkContract(null); setEkContractDialog(true); },
@@ -138,7 +133,6 @@ export default function Ekkoa() {
       agendamentos: () => { setSelectedSch(null); setSchDialog(true); },
       inventario: () => { setSelectedInv(null); setInvDialog(true); },
       fragancias: () => { setSelectedFrag(null); setFragDialog(true); },
-      areas: () => { setSelectedArea(null); setAreaDialog(true); },
       visitas_tecnicas: () => { setSelectedTv(null); setTvDialog(true); },
     };
     actions[tab]();
@@ -147,8 +141,6 @@ export default function Ekkoa() {
   const handleDelete = () => {
     if (!deleteId) return;
     const deleters: Record<TabKey, (id: string) => void> = {
-      clientes: (id) => deleteEkCli.mutate(id),
-      leads: (id) => deleteEkLead.mutate(id),
       equipamentos: (id) => deleteEkEquip.mutate(id),
       instalacoes: (id) => deleteEkInstall.mutate(id),
       contratos: (id) => deleteEkContract.mutate(id),
@@ -157,7 +149,6 @@ export default function Ekkoa() {
       agendamentos: (id) => deleteSch.mutate(id),
       inventario: (id) => deleteInv.mutate(id),
       fragancias: (id) => deleteFrag.mutate(id),
-      areas: (id) => deleteArea.mutate(id),
       visitas_tecnicas: (id) => deleteTv.mutate(id),
     };
     deleters[deleteId.type](deleteId.id);
@@ -192,55 +183,7 @@ export default function Ekkoa() {
           <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
 
-        {/* Clientes */}
-        <TabsContent value="clientes">
-          <DataTable loading={ekCliLoading} empty={ekClients.length === 0} filtered={ekClients.filter((c) => [c.name, c.email, c.company].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekClients.length > 0} icon={<Users className="h-12 w-12" />} search={search} onAdd={handleNew}>
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Nome</TableHead><TableHead>Tipo</TableHead><TableHead>Email</TableHead><TableHead>Telefone</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
-              </TableRow></TableHeader>
-              <TableBody>
-                {ekClients.filter((c) => [c.name, c.email, c.company].some((f) => f?.toLowerCase().includes(s))).map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer" onClick={() => { setSelectedEkCli(c); setEkCliDialog(true); }}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell><Badge variant="secondary">{c.client_type}</Badge></TableCell>
-                    <TableCell>{c.email || "—"}</TableCell>
-                    <TableCell>{c.phone || "—"}</TableCell>
-                    <TableCell><Badge variant={c.status === "active" ? "default" : "secondary"}>{c.status === "active" ? "Ativo" : "Inativo"}</Badge></TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <ActionMenu onEdit={() => { setSelectedEkCli(c); setEkCliDialog(true); }} onDelete={() => setDeleteId({ type: "clientes", id: c.id })} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </DataTable>
-        </TabsContent>
 
-        {/* Leads */}
-        <TabsContent value="leads">
-          <DataTable loading={ekLeadLoading} empty={ekLeads.length === 0} filtered={ekLeads.filter((l) => [l.title, l.contact_name].some((f) => f?.toLowerCase().includes(s))).length === 0 && ekLeads.length > 0} icon={<Target className="h-12 w-12" />} search={search} onAdd={handleNew}>
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Título</TableHead><TableHead>Contato</TableHead><TableHead>Estágio</TableHead><TableHead>Valor</TableHead><TableHead>Origem</TableHead><TableHead className="w-10" />
-              </TableRow></TableHeader>
-              <TableBody>
-                {ekLeads.filter((l) => [l.title, l.contact_name].some((f) => f?.toLowerCase().includes(s))).map((l) => (
-                  <TableRow key={l.id} className="cursor-pointer" onClick={() => { setSelectedEkLead(l); setEkLeadDialog(true); }}>
-                    <TableCell className="font-medium">{l.title}</TableCell>
-                    <TableCell>{l.contact_name || "—"}</TableCell>
-                    <TableCell><Badge variant={l.stage === "fechado_ganho" ? "default" : l.stage === "fechado_perdido" ? "destructive" : "secondary"}>{l.stage}</Badge></TableCell>
-                    <TableCell>{BRL(l.value || 0)}</TableCell>
-                    <TableCell>{l.source || "—"}</TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <ActionMenu onEdit={() => { setSelectedEkLead(l); setEkLeadDialog(true); }} onDelete={() => setDeleteId({ type: "leads", id: l.id })} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </DataTable>
-        </TabsContent>
 
         {/* Equipamentos */}
         <TabsContent value="equipamentos">
@@ -455,31 +398,6 @@ export default function Ekkoa() {
                     <TableCell><Badge variant={f.is_active ? "default" : "secondary"}>{f.is_active ? "Ativo" : "Inativo"}</Badge></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <ActionMenu onEdit={() => { setSelectedFrag(f); setFragDialog(true); }} onDelete={() => setDeleteId({ type: "fragancias", id: f.id })} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </DataTable>
-        </TabsContent>
-
-        {/* Áreas de Cobertura */}
-        <TabsContent value="areas">
-          <DataTable loading={areasLoading} empty={coverageAreas.length === 0} filtered={coverageAreas.filter((a) => [a.name, a.city, a.state].some((x) => x?.toLowerCase().includes(s))).length === 0 && coverageAreas.length > 0} icon={<MapPin className="h-12 w-12" />} search={search} onAdd={handleNew}>
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Nome</TableHead><TableHead>Cidade</TableHead><TableHead>Estado</TableHead><TableHead>Raio</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
-              </TableRow></TableHeader>
-              <TableBody>
-                {coverageAreas.filter((a) => [a.name, a.city, a.state].some((x) => x?.toLowerCase().includes(s))).map((a) => (
-                  <TableRow key={a.id} className="cursor-pointer" onClick={() => { setSelectedArea(a); setAreaDialog(true); }}>
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell>{a.city || "—"}</TableCell>
-                    <TableCell>{a.state || "—"}</TableCell>
-                    <TableCell>{a.radius_km ? `${a.radius_km} km` : "—"}</TableCell>
-                    <TableCell><Badge variant={a.is_active ? "default" : "secondary"}>{a.is_active ? "Ativo" : "Inativo"}</Badge></TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <ActionMenu onEdit={() => { setSelectedArea(a); setAreaDialog(true); }} onDelete={() => setDeleteId({ type: "areas", id: a.id })} />
                     </TableCell>
                   </TableRow>
                 ))}

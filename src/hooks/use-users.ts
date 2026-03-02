@@ -26,10 +26,16 @@ export function useOrganizationUsers() {
   return useQuery({
     queryKey: ["org_users", user?.organization_id],
     queryFn: async () => {
-      const { data: profiles, error } = await supabase
+      let query = supabase
         .from("profiles")
         .select("*")
         .order("created_at", { ascending: false });
+
+      if (user?.organization_id) {
+        query = query.eq("organization_id", user.organization_id);
+      }
+
+      const { data: profiles, error } = await query;
       if (error) throw error;
 
       // Fetch roles for each user
