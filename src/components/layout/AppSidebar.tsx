@@ -126,13 +126,13 @@ export default function AppSidebar() {
       )}
     >
       {/* Logo */}
-      <div className="relative flex items-center justify-center overflow-hidden px-1 py-3" style={{ height: collapsed ? '68px' : '80px' }}>
+      <div className="relative flex items-center justify-center overflow-hidden px-1 py-4" style={{ height: collapsed ? '68px' : '96px' }}>
         <img
           src={logoUrl || logoExudus}
           alt="Logo"
           className={cn(
-            "shrink-0 transition-all object-cover",
-            collapsed ? "w-16 h-16" : "w-[90%] scale-100"
+            "shrink-0 transition-all object-contain",
+            collapsed ? "w-16 h-16" : "w-[92%]"
           )}
         />
         <Button
