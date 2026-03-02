@@ -4,10 +4,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Lock, Mail, User } from "lucide-react";
+import { Lock, Mail, User, ArrowRight } from "lucide-react";
 import logoExudus from "@/assets/logo-exudus.jpeg";
 
 export default function Auth() {
@@ -67,103 +66,214 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-secondary">
       {/* Left panel - branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-secondary items-center justify-center p-12 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-secondary via-secondary/95 to-primary/30" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-72 h-72 bg-primary/15 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl" />
-        <div className="relative z-10 text-center space-y-6 max-w-md">
-          <div className="flex flex-col items-center gap-4 mb-8">
-            <img src={logoExudus} alt="ExudusTech" className="w-32 h-32 rounded-2xl object-contain shadow-2xl shadow-primary/20" />
-            <h1 className="text-4xl font-bold text-secondary-foreground tracking-tight">
-              ExudusTech
-            </h1>
+      <div className="hidden lg:flex lg:w-[55%] relative items-end justify-start p-16 overflow-hidden">
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: `linear-gradient(hsl(var(--primary)/0.5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)/0.5) 1px, transparent 1px)`,
+          backgroundSize: '60px 60px'
+        }} />
+        {/* Gradient orbs */}
+        <div className="absolute top-[-20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-primary/8 blur-[120px]" />
+        <div className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] rounded-full bg-primary/5 blur-[100px]" />
+        
+        <div className="relative z-10 max-w-lg space-y-8">
+          <div className="flex items-center gap-4">
+            <img 
+              src={logoExudus} 
+              alt="ExudusTech" 
+              className="w-14 h-14 rounded-xl object-contain ring-1 ring-secondary-foreground/10" 
+            />
+            <div className="h-8 w-px bg-secondary-foreground/15" />
+            <span className="text-sm font-medium tracking-widest uppercase text-secondary-foreground/50">
+              Plataforma CRM
+            </span>
           </div>
-          <p className="text-lg text-secondary-foreground/80 leading-relaxed">
-            CRM completo para distribuidoras. Gerencie clientes, leads, propostas, operações e muito mais em uma única plataforma.
+          
+          <h1 className="text-5xl font-bold text-secondary-foreground leading-[1.1] tracking-tight">
+            Gerencie seu
+            <br />
+            negócio com
+            <br />
+            <span className="text-primary">inteligência.</span>
+          </h1>
+          
+          <p className="text-secondary-foreground/50 text-lg leading-relaxed max-w-md">
+            Clientes, leads, propostas e operações em uma plataforma unificada para distribuidoras.
           </p>
-          <div className="grid grid-cols-2 gap-4 mt-8">
-            {["Clientes & Leads", "Propostas", "Operações", "Relatórios"].map((item) => (
-              <div key={item} className="bg-primary/20 backdrop-blur-sm rounded-lg p-3 text-secondary-foreground/90 text-sm font-medium border border-primary/20">
+
+          <div className="flex gap-3 pt-4">
+            {["CRM", "Financeiro", "Operações", "Suporte"].map((item) => (
+              <span 
+                key={item} 
+                className="text-xs font-medium tracking-wider uppercase px-3 py-1.5 rounded-full border border-secondary-foreground/10 text-secondary-foreground/40"
+              >
                 {item}
-              </div>
+              </span>
             ))}
           </div>
         </div>
       </div>
 
       {/* Right panel - auth forms */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-background">
-        <Card className="w-full max-w-md border-0 shadow-xl">
-          <CardHeader className="text-center pb-2">
-            <div className="flex items-center justify-center gap-2 mb-2 lg:hidden">
-              <img src={logoExudus} alt="ExudusTech" className="w-10 h-10 rounded-lg object-cover" />
-              <span className="text-xl font-bold">ExudusTech</span>
-            </div>
-            <CardTitle className="text-2xl">Bem-vindo</CardTitle>
-            <CardDescription>Entre na sua conta ou crie uma nova</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="login">Entrar</TabsTrigger>
-                <TabsTrigger value="signup">Criar Conta</TabsTrigger>
-              </TabsList>
+      <div className="flex-1 flex items-center justify-center p-8 lg:p-16">
+        <div className="w-full max-w-sm">
+          {/* Mobile logo */}
+          <div className="flex items-center gap-3 mb-10 lg:hidden">
+            <img src={logoExudus} alt="ExudusTech" className="w-10 h-10 rounded-lg object-contain" />
+            <span className="text-lg font-semibold text-secondary-foreground">ExudusTech</span>
+          </div>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">E-mail</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input id="login-email" type="email" placeholder="seu@email.com" className="pl-10" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Senha</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input id="login-password" type="password" placeholder="••••••••" className="pl-10" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Entrando..." : "Entrar"}
-                  </Button>
-                </form>
-              </TabsContent>
+          <div className="space-y-2 mb-8">
+            <h2 className="text-2xl font-bold text-secondary-foreground tracking-tight">
+              Bem-vindo de volta
+            </h2>
+            <p className="text-secondary-foreground/40 text-sm">
+              Acesse sua conta para continuar
+            </p>
+          </div>
 
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">Nome completo</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input id="signup-name" placeholder="Seu nome" className="pl-10" value={signupName} onChange={(e) => setSignupName(e.target.value)} required />
-                    </div>
+          <Tabs defaultValue="login" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-8 bg-secondary-foreground/5 border border-secondary-foreground/10 p-1 rounded-xl h-11">
+              <TabsTrigger 
+                value="login" 
+                className="rounded-lg text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/25 text-secondary-foreground/50 transition-all duration-200"
+              >
+                Entrar
+              </TabsTrigger>
+              <TabsTrigger 
+                value="signup" 
+                className="rounded-lg text-sm font-medium data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-lg data-[state=active]:shadow-primary/25 text-secondary-foreground/50 transition-all duration-200"
+              >
+                Criar Conta
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="login">
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="login-email" className="text-xs font-medium uppercase tracking-wider text-secondary-foreground/40">
+                    E-mail
+                  </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-foreground/25" />
+                    <Input 
+                      id="login-email" 
+                      type="email" 
+                      placeholder="seu@email.com" 
+                      className="pl-11 h-12 bg-secondary-foreground/5 border-secondary-foreground/10 text-secondary-foreground placeholder:text-secondary-foreground/20 rounded-xl focus:border-primary/50 focus:ring-primary/20 transition-colors" 
+                      value={loginEmail} 
+                      onChange={(e) => setLoginEmail(e.target.value)} 
+                      required 
+                    />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">E-mail</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input id="signup-email" type="email" placeholder="seu@email.com" className="pl-10" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} required />
-                    </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="login-password" className="text-xs font-medium uppercase tracking-wider text-secondary-foreground/40">
+                    Senha
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-foreground/25" />
+                    <Input 
+                      id="login-password" 
+                      type="password" 
+                      placeholder="••••••••" 
+                      className="pl-11 h-12 bg-secondary-foreground/5 border-secondary-foreground/10 text-secondary-foreground placeholder:text-secondary-foreground/20 rounded-xl focus:border-primary/50 focus:ring-primary/20 transition-colors" 
+                      value={loginPassword} 
+                      onChange={(e) => setLoginPassword(e.target.value)} 
+                      required 
+                    />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Senha</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input id="signup-password" type="password" placeholder="Mínimo 6 caracteres" className="pl-10" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={6} />
-                    </div>
+                </div>
+                <Button 
+                  type="submit" 
+                  className="w-full h-12 rounded-xl text-sm font-semibold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200 group" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Entrando..." : (
+                    <>
+                      Entrar
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="signup">
+              <form onSubmit={handleSignup} className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-name" className="text-xs font-medium uppercase tracking-wider text-secondary-foreground/40">
+                    Nome completo
+                  </Label>
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-foreground/25" />
+                    <Input 
+                      id="signup-name" 
+                      placeholder="Seu nome" 
+                      className="pl-11 h-12 bg-secondary-foreground/5 border-secondary-foreground/10 text-secondary-foreground placeholder:text-secondary-foreground/20 rounded-xl focus:border-primary/50 focus:ring-primary/20 transition-colors" 
+                      value={signupName} 
+                      onChange={(e) => setSignupName(e.target.value)} 
+                      required 
+                    />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Criando conta..." : "Criar Conta"}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-email" className="text-xs font-medium uppercase tracking-wider text-secondary-foreground/40">
+                    E-mail
+                  </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-foreground/25" />
+                    <Input 
+                      id="signup-email" 
+                      type="email" 
+                      placeholder="seu@email.com" 
+                      className="pl-11 h-12 bg-secondary-foreground/5 border-secondary-foreground/10 text-secondary-foreground placeholder:text-secondary-foreground/20 rounded-xl focus:border-primary/50 focus:ring-primary/20 transition-colors" 
+                      value={signupEmail} 
+                      onChange={(e) => setSignupEmail(e.target.value)} 
+                      required 
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signup-password" className="text-xs font-medium uppercase tracking-wider text-secondary-foreground/40">
+                    Senha
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-secondary-foreground/25" />
+                    <Input 
+                      id="signup-password" 
+                      type="password" 
+                      placeholder="Mínimo 6 caracteres" 
+                      className="pl-11 h-12 bg-secondary-foreground/5 border-secondary-foreground/10 text-secondary-foreground placeholder:text-secondary-foreground/20 rounded-xl focus:border-primary/50 focus:ring-primary/20 transition-colors" 
+                      value={signupPassword} 
+                      onChange={(e) => setSignupPassword(e.target.value)} 
+                      required 
+                      minLength={6} 
+                    />
+                  </div>
+                </div>
+                <Button 
+                  type="submit" 
+                  className="w-full h-12 rounded-xl text-sm font-semibold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200 group" 
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Criando conta..." : (
+                    <>
+                      Criar Conta
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+
+          <p className="text-center text-xs text-secondary-foreground/20 mt-10">
+            © {new Date().getFullYear()} ExudusTech. Todos os direitos reservados.
+          </p>
+        </div>
       </div>
     </div>
   );
