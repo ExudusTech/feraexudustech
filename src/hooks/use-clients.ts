@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 
 export interface Client {
@@ -18,22 +19,31 @@ export interface Client {
   notes: string | null;
   status: string;
   created_by: string;
+  assigned_user_id: string | null;
   created_at: string;
   updated_at: string | null;
 }
 
-export type ClientInsert = Omit<Client, "id" | "created_at" | "updated_at">;
+export type ClientInsert = Omit<Client, "id" | "created_at" | "updated_at" | "assigned_user_id"> & { assigned_user_id?: string | null };
 
 export function useClients() {
   const { user } = useAuth();
+  const { isAdmin, role } = usePermissions();
 
   return useQuery({
-    queryKey: ["clients", user?.organization_id],
+    queryKey: ["clients", user?.organization_id, role],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("clients")
         .select("*")
         .order("created_at", { ascending: false });
+
+      // User role: only see clients assigned to them
+      if (!isAdmin && role !== "gestor") {
+        query = query.eq("assigned_user_id", user!.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data as Client[];
     },

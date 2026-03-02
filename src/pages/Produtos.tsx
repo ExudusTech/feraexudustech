@@ -10,12 +10,15 @@ import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Package, Upload,
 import { Card } from "@/components/ui/card";
 
 import { useProducts, useDeleteProduct, type Product } from "@/hooks/use-products";
+import { usePermissions } from "@/hooks/use-permissions";
 import ProductFormDialog from "@/components/produtos/ProductFormDialog";
 import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
 
 export default function Produtos() {
   const { data: products = [], isLoading } = useProducts();
   const deleteProduct = useDeleteProduct();
+  const { isAdmin, role } = usePermissions();
+  const canEditProducts = isAdmin || role === "gestor";
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"table" | "grid">("table");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -35,12 +38,12 @@ export default function Produtos() {
     <AppLayout
       title="Produtos"
       subtitle="Catálogo de produtos"
-      actions={
+      actions={canEditProducts ? (
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar</Button>
           <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Novo Produto</Button>
         </div>
-      }
+      ) : undefined}
     >
       <div className="space-y-4">
         <div className="flex items-center gap-3">
@@ -98,13 +101,15 @@ export default function Produtos() {
                     </TableCell>
                     <TableCell><Badge variant={p.is_active ? "default" : "secondary"}>{p.is_active ? "Ativo" : "Inativo"}</Badge></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(p)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {canEditProducts && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEdit(p)}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(p.id)}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
