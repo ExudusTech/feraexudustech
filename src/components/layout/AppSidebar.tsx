@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
   BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon,
+  ChevronLeft, Sun, Moon, Crown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ const mainNavItems = [
 ];
 
 const bottomNavItems = [
+  { icon: Crown, label: "Organizações", path: "/admin/organizacoes", superAdminOnly: true },
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
   { icon: HelpCircle, label: "Suporte", path: "/suporte", showBadge: true },
@@ -36,7 +37,7 @@ const bottomNavItems = [
 
 export default function AppSidebar() {
   const { user, signOut } = useAuth();
-  const { canAccessRoute, roleLabel } = usePermissions();
+  const { canAccessRoute, roleLabel, isSuperAdmin } = usePermissions();
   const { data: unreadCount = 0 } = useUnreadMessageCount();
   const location = useLocation();
   const navigate = useNavigate();
@@ -70,7 +71,7 @@ export default function AppSidebar() {
     .toUpperCase()
     .slice(0, 2) || "U";
 
-  const NavItem = ({ icon: Icon, label, path, showBadge }: { icon: any; label: string; path: string; showBadge?: boolean }) => {
+  const NavItem = ({ icon: Icon, label, path, showBadge, superAdminOnly }: { icon: any; label: string; path: string; showBadge?: boolean; superAdminOnly?: boolean }) => {
     const isActive = location.pathname === path;
     const badgeCount = showBadge ? unreadCount : 0;
 
@@ -160,7 +161,10 @@ export default function AppSidebar() {
 
       {/* Bottom nav */}
       <div className="px-3 py-2 space-y-1">
-        {bottomNavItems.filter((item) => canAccessRoute(item.path)).map((item) => (
+        {bottomNavItems
+          .filter((item) => canAccessRoute(item.path))
+          .filter((item) => !item.superAdminOnly || isSuperAdmin)
+          .map((item) => (
           <NavItem key={item.path} {...item} />
         ))}
         {/* Theme toggle */}
