@@ -9,6 +9,8 @@ interface AuthUser {
   role: string;
   organization_id: string | null;
   avatar_url: string | null;
+  /** Original org from profile (for super admin to return) */
+  original_organization_id: string | null;
 }
 
 interface AuthContextType {
@@ -18,6 +20,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Super admin: switch to another organization */
+  switchOrganization: (orgId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setSession(null);
         setIsLoading(false);
-        // Store reason for Auth page to display
         sessionStorage.setItem("auth_block_reason", reason);
         return;
       }
@@ -56,13 +59,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq("user_id", authUser.id);
 
       const primaryRole = roles?.[0]?.role || "user";
+      const orgId = profile?.organization_id || null;
+
+      // Check if super admin has a stored org override
+      const storedOrgId = sessionStorage.getItem("super_admin_org_id");
+      const effectiveOrgId = primaryRole === "super_admin" && storedOrgId ? storedOrgId : orgId;
 
       setUser({
         id: authUser.id,
         email: authUser.email || "",
         name: profile?.name || authUser.email || "",
         role: primaryRole,
-        organization_id: profile?.organization_id || null,
+        organization_id: effectiveOrgId,
+        original_organization_id: orgId,
         avatar_url: profile?.avatar_url || null,
       });
     } catch {
@@ -72,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: authUser.email || "",
         role: "user",
         organization_id: null,
+        original_organization_id: null,
         avatar_url: null,
       });
     }
@@ -85,6 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTimeout(() => fetchUserProfile(session.user), 0);
         } else {
           setUser(null);
+          sessionStorage.removeItem("super_admin_org_id");
         }
         setIsLoading(false);
       }
@@ -119,12 +130,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    sessionStorage.removeItem("super_admin_org_id");
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };
 
+  const switchOrganization = (orgId: string) => {
+    if (!user || user.role !== "super_admin") return;
+    sessionStorage.setItem("super_admin_org_id", orgId);
+    setUser(prev => prev ? { ...prev, organization_id: orgId } : null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, isLoading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, isLoading, signIn, signUp, signOut, switchOrganization }}>
       {children}
     </AuthContext.Provider>
   );
