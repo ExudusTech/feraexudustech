@@ -126,21 +126,21 @@ export default function AppSidebar() {
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 px-3 py-3">
+      <div className="flex items-center px-2 py-2">
         <img
           src={logoUrl || logoExudus}
           alt="Logo"
           className={cn(
-            "rounded-lg object-contain shrink-0 transition-all",
-            collapsed ? "w-10 h-10" : "w-full max-h-14"
+            "rounded-lg object-cover shrink-0 transition-all",
+            collapsed ? "w-12 h-12" : "w-full h-16"
           )}
         />
         <Button
           variant="ghost"
           size="icon"
           className={cn(
-            "ml-auto h-7 w-7 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent",
-            collapsed && "ml-0"
+            "absolute right-1 top-2 h-7 w-7 text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent",
+            collapsed && "relative right-auto top-auto"
           )}
           onClick={() => setCollapsed(!collapsed)}
         >
