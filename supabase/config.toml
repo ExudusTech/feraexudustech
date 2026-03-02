@@ -1,1 +1,4 @@
 project_id = "jpgbydhdkgvgblhiuzcc"
+
+[functions.ekkoa-automations]
+verify_jwt = false
