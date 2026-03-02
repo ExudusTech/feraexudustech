@@ -31,6 +31,15 @@ export default function Auth() {
     setIsLoading(true);
     try {
       await signIn(loginEmail, loginPassword);
+      // Check if account was blocked by fetchUserProfile
+      await new Promise((r) => setTimeout(r, 500));
+      const blockReason = sessionStorage.getItem("auth_block_reason");
+      if (blockReason) {
+        sessionStorage.removeItem("auth_block_reason");
+        toast({ title: "Acesso negado", description: blockReason, variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
       navigate("/");
     } catch (error: any) {
       toast({

@@ -35,6 +35,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq("user_id", authUser.id)
         .single();
 
+      // Block inactive or unverified accounts
+      if (profile && (!profile.is_active || !profile.is_email_verified)) {
+        await supabase.auth.signOut();
+        const reason = !profile.is_active
+          ? "Sua conta está inativa. Entre em contato com o administrador."
+          : "Seu e-mail ainda não foi verificado. Verifique sua caixa de entrada.";
+        setUser(null);
+        setSession(null);
+        setIsLoading(false);
+        // Store reason for Auth page to display
+        sessionStorage.setItem("auth_block_reason", reason);
+        return;
+      }
+
       const { data: roles } = await supabase
         .from("user_roles")
         .select("role")
