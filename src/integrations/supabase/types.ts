@@ -1247,12 +1247,17 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          geolocation: string | null
           id: string
+          installation_date: string | null
+          last_maintenance_date: string | null
           location: string | null
           min_quantity: number
           name: string
           organization_id: string
+          photo_url: string | null
           quantity: number
+          serial_number: string | null
           sku: string | null
           status: string
           unit: string
@@ -1264,12 +1269,17 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          geolocation?: string | null
           id?: string
+          installation_date?: string | null
+          last_maintenance_date?: string | null
           location?: string | null
           min_quantity?: number
           name: string
           organization_id: string
+          photo_url?: string | null
           quantity?: number
+          serial_number?: string | null
           sku?: string | null
           status?: string
           unit?: string
@@ -1281,12 +1291,17 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          geolocation?: string | null
           id?: string
+          installation_date?: string | null
+          last_maintenance_date?: string | null
           location?: string | null
           min_quantity?: number
           name?: string
           organization_id?: string
+          photo_url?: string | null
           quantity?: number
+          serial_number?: string | null
           sku?: string | null
           status?: string
           unit?: string

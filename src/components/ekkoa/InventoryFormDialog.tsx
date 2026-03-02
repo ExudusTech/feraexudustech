@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateInventoryItem, useUpdateInventoryItem, type InventoryItem } from "@/hooks/use-inventory";
 
 interface Props {
@@ -12,7 +13,11 @@ interface Props {
   item?: InventoryItem | null;
 }
 
-const empty = { name: "", description: "", sku: "", category: "", quantity: "0", min_quantity: "0", unit: "un", unit_cost: "0", location: "" };
+const empty = {
+  name: "", serial_number: "", status: "active", location: "",
+  installation_date: "", last_maintenance_date: "",
+  geolocation: "", photo_url: "", description: "",
+};
 
 export default function InventoryFormDialog({ open, onOpenChange, item }: Props) {
   const [form, setForm] = useState(empty);
@@ -23,9 +28,13 @@ export default function InventoryFormDialog({ open, onOpenChange, item }: Props)
   useEffect(() => {
     if (item) {
       setForm({
-        name: item.name, description: item.description || "", sku: item.sku || "",
-        category: item.category || "", quantity: String(item.quantity), min_quantity: String(item.min_quantity),
-        unit: item.unit, unit_cost: String(item.unit_cost), location: item.location || "",
+        name: item.name, serial_number: item.serial_number || "",
+        status: item.status, location: item.location || "",
+        installation_date: item.installation_date || "",
+        last_maintenance_date: item.last_maintenance_date || "",
+        geolocation: item.geolocation || "",
+        photo_url: item.photo_url || "",
+        description: item.description || "",
       });
     } else setForm(empty);
   }, [item, open]);
@@ -35,11 +44,16 @@ export default function InventoryFormDialog({ open, onOpenChange, item }: Props)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    const payload = {
-      name: form.name, description: form.description || null, sku: form.sku || null,
-      category: form.category || null, quantity: parseInt(form.quantity) || 0,
-      min_quantity: parseInt(form.min_quantity) || 0, unit: form.unit || "un",
-      unit_cost: parseFloat(form.unit_cost) || 0, location: form.location || null,
+    const payload: any = {
+      name: form.name,
+      serial_number: form.serial_number || null,
+      status: form.status,
+      location: form.location || null,
+      installation_date: form.installation_date || null,
+      last_maintenance_date: form.last_maintenance_date || null,
+      geolocation: form.geolocation || null,
+      photo_url: form.photo_url || null,
+      description: form.description || null,
     };
     if (isEdit) await update.mutateAsync({ id: item!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -51,22 +65,63 @@ export default function InventoryFormDialog({ open, onOpenChange, item }: Props)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? "Editar Item" : "Novo Item"}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar Item do Inventário" : "Adicionar Item ao Inventário"}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? "Edite as informações do equipamento." : "Adicione um novo equipamento ao inventário do sistema Ekkoa."}
+          </DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2"><Label>Nome *</Label><Input value={form.name} onChange={(e) => set("name", e.target.value)} required /></div>
-            <div><Label>SKU</Label><Input value={form.sku} onChange={(e) => set("sku", e.target.value)} /></div>
-            <div><Label>Categoria</Label><Input value={form.category} onChange={(e) => set("category", e.target.value)} /></div>
-            <div><Label>Quantidade</Label><Input type="number" value={form.quantity} onChange={(e) => set("quantity", e.target.value)} /></div>
-            <div><Label>Qtd. Mínima</Label><Input type="number" value={form.min_quantity} onChange={(e) => set("min_quantity", e.target.value)} /></div>
-            <div><Label>Unidade</Label><Input value={form.unit} onChange={(e) => set("unit", e.target.value)} placeholder="un, kg, m..." /></div>
-            <div><Label>Custo Unit. (R$)</Label><Input type="number" step="0.01" value={form.unit_cost} onChange={(e) => set("unit_cost", e.target.value)} /></div>
-            <div className="col-span-2"><Label>Localização</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
-            <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
+            <div>
+              <Label>Tipo de Equipamento *</Label>
+              <Input value={form.name} onChange={(e) => set("name", e.target.value)} required placeholder="Ex: Ekkoa 500, Ekkoa Mini" />
+            </div>
+            <div>
+              <Label>Número Serial *</Label>
+              <Input value={form.serial_number} onChange={(e) => set("serial_number", e.target.value)} placeholder="Ex: EK500001" />
+            </div>
+            <div>
+              <Label>Status *</Label>
+              <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Disponível</SelectItem>
+                  <SelectItem value="em_teste">Em Teste</SelectItem>
+                  <SelectItem value="instalado">Instalado</SelectItem>
+                  <SelectItem value="manutencao">Em Manutenção</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Localização Atual</Label>
+              <Input value={form.location} onChange={(e) => set("location", e.target.value)} placeholder="Ex: Estoque, Cliente ABC" />
+            </div>
+            <div>
+              <Label>Data de Instalação</Label>
+              <Input type="date" value={form.installation_date} onChange={(e) => set("installation_date", e.target.value)} />
+            </div>
+            <div>
+              <Label>Última Manutenção</Label>
+              <Input type="date" value={form.last_maintenance_date} onChange={(e) => set("last_maintenance_date", e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <Label>Geolocalização</Label>
+              <Input value={form.geolocation} onChange={(e) => set("geolocation", e.target.value)} placeholder="Ex: -22.906847, -43.172896" />
+            </div>
+            <div className="col-span-2">
+              <Label>URL da Foto de Instalação</Label>
+              <Input value={form.photo_url} onChange={(e) => set("photo_url", e.target.value)} placeholder="https://..." />
+            </div>
+            <div className="col-span-2">
+              <Label>Observações</Label>
+              <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} placeholder="Observações sobre o equipamento..." />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-            <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
+            <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : isEdit ? "Salvar" : "Criar"}</Button>
           </div>
         </form>
       </DialogContent>

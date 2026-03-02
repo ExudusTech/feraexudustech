@@ -9,6 +9,7 @@ export interface InventoryItem {
   name: string;
   description: string | null;
   sku: string | null;
+  serial_number: string | null;
   category: string | null;
   quantity: number;
   min_quantity: number;
@@ -16,6 +17,10 @@ export interface InventoryItem {
   unit_cost: number;
   location: string | null;
   status: string;
+  installation_date: string | null;
+  last_maintenance_date: string | null;
+  geolocation: string | null;
+  photo_url: string | null;
   created_by: string;
   created_at: string;
   updated_at: string | null;
@@ -41,11 +46,14 @@ export function useCreateInventoryItem() {
     mutationFn: async (input: Partial<InventoryItem>) => {
       if (!user?.organization_id) throw new Error("Sem organização");
       const { data, error } = await supabase.from("inventory_items").insert({
-        name: input.name!, description: input.description, sku: input.sku, category: input.category,
+        name: input.name!, description: input.description, sku: input.sku,
+        serial_number: input.serial_number, category: input.category,
         quantity: input.quantity || 0, min_quantity: input.min_quantity || 0, unit: input.unit || "un",
         unit_cost: input.unit_cost || 0, location: input.location, status: input.status || "active",
+        installation_date: input.installation_date, last_maintenance_date: input.last_maintenance_date,
+        geolocation: input.geolocation, photo_url: input.photo_url,
         organization_id: user.organization_id, created_by: user.id,
-      }).select().single();
+      } as any).select().single();
       if (error) throw error;
       return data;
     },
@@ -58,7 +66,7 @@ export function useUpdateInventoryItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<InventoryItem> & { id: string }) => {
-      const { data, error } = await supabase.from("inventory_items").update(updates).eq("id", id).select().single();
+      const { data, error } = await supabase.from("inventory_items").update(updates as any).eq("id", id).select().single();
       if (error) throw error;
       return data;
     },
