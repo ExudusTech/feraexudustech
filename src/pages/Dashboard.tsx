@@ -12,6 +12,9 @@ import { useSupportTickets } from "@/hooks/use-support";
 import { useProducts } from "@/hooks/use-products";
 import { useOperations } from "@/hooks/use-operations";
 import { useMemo } from "react";
+import RevenueExpenseChart from "@/components/charts/RevenueExpenseChart";
+import ProfitEvolutionChart from "@/components/charts/ProfitEvolutionChart";
+import LeadsPipelineChart from "@/components/charts/LeadsPipelineChart";
 
 export default function Dashboard() {
   const { data: clients } = useClients();
@@ -83,29 +86,22 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                Atividades Recentes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
-                Nenhuma atividade registrada ainda.
-              </div>
-            </CardContent>
-          </Card>
+          <RevenueExpenseChart transactions={transactions} expenses={expenses} />
+          <ProfitEvolutionChart transactions={transactions} expenses={expenses} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <LeadsPipelineChart leads={leads} />
 
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Clock className="h-5 w-5 text-accent" />
+                <Clock className="h-5 w-5 text-primary" />
                 Tarefas Pendentes
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
+              <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
                 Nenhuma tarefa pendente.
               </div>
             </CardContent>
