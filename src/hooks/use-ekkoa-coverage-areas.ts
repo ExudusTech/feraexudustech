@@ -15,6 +15,9 @@ export interface EkkoaCoverageArea {
   radius_km: number | null;
   latitude: number | null;
   longitude: number | null;
+  dia_semana: string | null;
+  horario_inicio: string | null;
+  horario_fim: string | null;
   is_active: boolean;
   created_by: string;
   created_at: string;
