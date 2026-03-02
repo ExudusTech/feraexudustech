@@ -35,8 +35,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq("user_id", authUser.id)
         .single();
 
-      // Block inactive or unverified accounts
-      if (profile && (!profile.is_active || !profile.is_email_verified)) {
+      // Block inactive or unverified accounts (except during password recovery flow)
+      const isPasswordRecoveryRoute = typeof window !== "undefined" && window.location.pathname === "/reset-password";
+      if (profile && (!profile.is_active || !profile.is_email_verified) && !isPasswordRecoveryRoute) {
         await supabase.auth.signOut();
         const reason = !profile.is_active
           ? "Sua conta está inativa. Entre em contato com o administrador."
