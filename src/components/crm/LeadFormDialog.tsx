@@ -13,9 +13,10 @@ import { useProducts } from "@/hooks/use-products";
 import { useScheduleTestInstallation } from "@/hooks/use-ekkoa-workflow";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
 import { useSchedules } from "@/hooks/use-schedules";
+import { useViaCep } from "@/hooks/use-viacep";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
-import { validateCEP, formatCEP, formatPhone } from "@/lib/validations";
-import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
+import { formatCEP, formatPhone } from "@/lib/validations";
+import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
 
 interface Props {
   open: boolean;
@@ -84,6 +85,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const allowedDays = useMemo(() => getAllowedDays(matchedArea), [matchedArea]);
   const allowedDates = useMemo(() => getNextAllowedDates(allowedDays, 60), [allowedDays]);
   const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
+  const timeSlots = useMemo(() => timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : [], [timeWindow]);
 
   const assignedTo = lead?.assigned_to || lead?.created_by || "";
   const overlapDetected = useMemo(() => {
@@ -91,8 +93,21 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     return hasScheduleOverlap(schedules, assignedTo, testForm.scheduledDate, testForm.startTime, null);
   }, [schedules, assignedTo, testForm.scheduledDate, testForm.startTime]);
 
+  // ViaCEP auto-fill
+  const viaCep = useViaCep(testForm.zipCode);
   useEffect(() => {
-    setTestForm((prev) => ({ ...prev, scheduledDate: "", startTime: "" }));
+    if (viaCep.data && matchedArea) {
+      setTestForm((prev) => ({
+        ...prev,
+        address: prev.address || (viaCep.data!.logradouro ? `${viaCep.data!.logradouro}${viaCep.data!.bairro ? `, ${viaCep.data!.bairro}` : ""}` : ""),
+        city: prev.city || viaCep.data!.localidade || "",
+        state: prev.state || viaCep.data!.uf || "",
+      }));
+    }
+  }, [viaCep.data, matchedArea]);
+
+  useEffect(() => {
+    setTestForm((prev) => ({ ...prev, scheduledDate: "", startTime: "", address: "", city: "", state: "" }));
   }, [testForm.zipCode]);
 
   useEffect(() => {
@@ -136,7 +151,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   const handleScheduleTest = async () => {
     if (!lead) return;
-    if (testForm.zipCode && !validateCEP(testForm.zipCode)) return;
+    if (!cepValid || !matchedArea) return;
     if (!testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate) return;
 
     await scheduleTest.mutateAsync({
@@ -234,11 +249,11 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   </div>
                   <div>
                     <Label className="text-xs">Cidade *</Label>
-                    <Input value={testForm.city} onChange={(e) => setTestForm({ ...testForm, city: e.target.value })} defaultValue={matchedArea.city || matchedArea.name} />
+                    <Input value={testForm.city} onChange={(e) => setTestForm({ ...testForm, city: e.target.value })} />
                   </div>
                   <div>
                     <Label className="text-xs">Estado *</Label>
-                    <Input value={testForm.state} onChange={(e) => setTestForm({ ...testForm, state: e.target.value })} maxLength={2} defaultValue={matchedArea.state || ""} />
+                    <Input value={testForm.state} onChange={(e) => setTestForm({ ...testForm, state: e.target.value })} maxLength={2} />
                   </div>
                 </div>
 
@@ -272,18 +287,24 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   )}
                 </div>
 
-                {/* Step 4: Time */}
+                {/* Step 4: Time — restricted to allowed slots */}
                 {testForm.scheduledDate && (
                   <div>
                     <Label className="text-xs font-semibold">4. Horário</Label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="time"
+                      <Select
                         value={testForm.startTime}
-                        onChange={(e) => setTestForm({ ...testForm, startTime: e.target.value })}
-                        min={timeWindow?.start}
-                        max={timeWindow?.end}
-                      />
+                        onValueChange={(v) => setTestForm({ ...testForm, startTime: v })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {timeSlots.map((slot) => (
+                            <SelectItem key={slot} value={slot}>{slot}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       {timeWindow && (
                         <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
                           <Clock className="h-3 w-3" /> {timeWindow.start}–{timeWindow.end}
