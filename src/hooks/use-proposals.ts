@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 
 export interface Proposal {
@@ -8,6 +9,7 @@ export interface Proposal {
   organization_id: string;
   client_id: string | null;
   created_by: string;
+  assigned_to: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -38,13 +40,22 @@ export interface ProposalItem {
 
 export function useProposals() {
   const { user } = useAuth();
+  const { isAdmin, role } = usePermissions();
+
   return useQuery({
-    queryKey: ["proposals", user?.organization_id],
+    queryKey: ["proposals", user?.organization_id, role],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("proposals")
         .select("*, clients(name)")
         .order("created_at", { ascending: false });
+
+      // User role: only see own proposals
+      if (!isAdmin && role !== "gestor") {
+        query = query.eq("created_by", user!.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       return data as Proposal[];
     },

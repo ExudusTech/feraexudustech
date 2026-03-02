@@ -185,6 +185,7 @@ export type Database = {
       clients: {
         Row: {
           address: string | null
+          assigned_user_id: string | null
           city: string | null
           company: string | null
           created_at: string
@@ -203,6 +204,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          assigned_user_id?: string | null
           city?: string | null
           company?: string | null
           created_at?: string
@@ -221,6 +223,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          assigned_user_id?: string | null
           city?: string | null
           company?: string | null
           created_at?: string
@@ -2076,6 +2079,7 @@ export type Database = {
       }
       proposals: {
         Row: {
+          assigned_to: string | null
           client_id: string | null
           created_at: string
           created_by: string
@@ -2093,6 +2097,7 @@ export type Database = {
           valid_until: string | null
         }
         Insert: {
+          assigned_to?: string | null
           client_id?: string | null
           created_at?: string
           created_by: string
@@ -2110,6 +2115,7 @@ export type Database = {
           valid_until?: string | null
         }
         Update: {
+          assigned_to?: string | null
           client_id?: string | null
           created_at?: string
           created_by?: string
