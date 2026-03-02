@@ -137,11 +137,11 @@ export function usePermissions() {
   const isSuperAdmin = role === "super_admin";
 
   const canAccessRoute = (path: string): boolean => {
-    // Block Ekkoa routes if org doesn't have access (except super_admin)
-    if (path.startsWith("/ekkoa") && !orgHasEkkoaAccess && !isSuperAdmin) {
+    // Block Ekkoa routes if org doesn't have access
+    if (path.startsWith("/ekkoa") && !orgHasEkkoaAccess) {
       return false;
     }
-    if (path.startsWith("/areas-cobertura") && !orgHasEkkoaAccess && !isSuperAdmin) {
+    if (path.startsWith("/areas-cobertura") && !orgHasEkkoaAccess) {
       return false;
     }
     if (permissions.routes.includes("*")) return true;
