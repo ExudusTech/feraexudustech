@@ -21,6 +21,7 @@ import Configuracoes from "@/pages/Configuracoes";
 import Suporte from "@/pages/Suporte";
 import NotFound from "@/pages/NotFound";
 import AdminOrganizacoes from "@/pages/AdminOrganizacoes";
+import ResetPassword from "@/pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/ekkoa" element={<ProtectedRoute><Ekkoa /></ProtectedRoute>} />
