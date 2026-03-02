@@ -16,6 +16,9 @@ import { toast } from "@/hooks/use-toast";
 const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "admin", label: "Administrador" },
   { value: "gestor", label: "Gestor" },
+  { value: "vendedor", label: "Vendedor" },
+  { value: "consultor_tecnico", label: "Consultor Técnico" },
+  { value: "operacional", label: "Operacional" },
   { value: "user", label: "Usuário" },
   { value: "financeiro", label: "Financeiro" },
   { value: "visitante", label: "Visitante" },
