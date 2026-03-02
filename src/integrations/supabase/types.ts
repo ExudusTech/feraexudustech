@@ -551,6 +551,9 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          dia_semana: string | null
+          horario_fim: string | null
+          horario_inicio: string | null
           id: string
           is_active: boolean
           latitude: number | null
@@ -568,6 +571,9 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
           id?: string
           is_active?: boolean
           latitude?: number | null
@@ -585,6 +591,9 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
           id?: string
           is_active?: boolean
           latitude?: number | null

@@ -10,6 +10,11 @@ import EkkoaCoverageAreaFormDialog from "@/components/ekkoa/EkkoaCoverageAreaFor
 import { useEkkoaCoverageAreas, useDeleteEkkoaCoverageArea, type EkkoaCoverageArea } from "@/hooks/use-ekkoa-coverage-areas";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, MapPin } from "lucide-react";
 
+function formatTime(t: string | null) {
+  if (!t) return "";
+  return t.slice(0, 5).replace(":", "h");
+}
+
 export default function AreasCobertura() {
   const { data: areas = [], isLoading } = useEkkoaCoverageAreas();
   const deleteArea = useDeleteEkkoaCoverageArea();
@@ -19,7 +24,7 @@ export default function AreasCobertura() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const s = search.toLowerCase();
-  const filtered = areas.filter((a) => [a.name, a.city, a.state].some((f) => f?.toLowerCase().includes(s)));
+  const filtered = areas.filter((a) => [a.name, a.city, a.state, a.dia_semana].some((f) => f?.toLowerCase().includes(s)));
 
   return (
     <AppLayout
@@ -48,32 +53,42 @@ export default function AreasCobertura() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead><TableHead>Cidade</TableHead><TableHead>Estado</TableHead>
-                  <TableHead>Raio (km)</TableHead><TableHead>CEP</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
+                  <TableHead>Cidade</TableHead>
+                  <TableHead>Dia da Semana</TableHead>
+                  <TableHead>Horário</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>CEP</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((a) => (
-                  <TableRow key={a.id} className="cursor-pointer" onClick={() => { setSelected(a); setDialogOpen(true); }}>
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell>{a.city || "—"}</TableCell>
-                    <TableCell>{a.state || "—"}</TableCell>
-                    <TableCell>{a.radius_km ? `${a.radius_km} km` : "—"}</TableCell>
-                    <TableCell>{a.zip_code_start ? `${a.zip_code_start}${a.zip_code_end ? ` - ${a.zip_code_end}` : ""}` : "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={a.is_active ? "default" : "secondary"}>{a.is_active ? "Ativo" : "Inativo"}</Badge>
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(a.id)}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filtered.map((a) => {
+                  const horario = a.horario_inicio && a.horario_fim
+                    ? `entre ${formatTime(a.horario_inicio)} e ${formatTime(a.horario_fim)}`
+                    : "—";
+                  return (
+                    <TableRow key={a.id} className="cursor-pointer" onClick={() => { setSelected(a); setDialogOpen(true); }}>
+                      <TableCell className="font-medium">{a.name}</TableCell>
+                      <TableCell>{a.dia_semana || "—"}</TableCell>
+                      <TableCell>{horario}</TableCell>
+                      <TableCell>{a.state || "—"}</TableCell>
+                      <TableCell>{a.zip_code_start ? `${a.zip_code_start}${a.zip_code_end ? ` - ${a.zip_code_end}` : ""}` : "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={a.is_active ? "default" : "secondary"}>{a.is_active ? "Ativo" : "Inativo"}</Badge>
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => { setSelected(a); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(a.id)}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
