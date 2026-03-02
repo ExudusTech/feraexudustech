@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,12 +6,16 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCreateLead, useUpdateLead, STAGE_CONFIG, PIPELINE_STAGES, type Lead, type LeadStage } from "@/hooks/use-leads";
 import { useConvertLeadToClient } from "@/hooks/use-lead-conversion";
 import { useProducts } from "@/hooks/use-products";
 import { useScheduleTestInstallation } from "@/hooks/use-ekkoa-workflow";
-import { UserPlus, FlaskConical } from "lucide-react";
+import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
+import { useSchedules } from "@/hooks/use-schedules";
+import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { validateCEP, formatCEP, formatPhone } from "@/lib/validations";
+import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
 
 interface Props {
   open: boolean;
@@ -36,6 +40,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const convert = useConvertLeadToClient();
   const scheduleTest = useScheduleTestInstallation();
   const { data: products = [] } = useProducts();
+  const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
+  const { data: schedules = [] } = useSchedules();
   const isEdit = !!lead;
   const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
   const isEkkoa = form.category === "Neutralizadores";
@@ -66,6 +72,34 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   }, [lead, open, defaultStage]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  // Coverage area matching
+  const matchedArea = useMemo(() => {
+    if (!testForm.zipCode || testForm.zipCode.replace(/\D/g, "").length < 8) return null;
+    return findCoverageAreaByCep(testForm.zipCode, coverageAreas);
+  }, [testForm.zipCode, coverageAreas]);
+
+  const cepValid = testForm.zipCode.replace(/\D/g, "").length === 8;
+  const cepEntered = testForm.zipCode.replace(/\D/g, "").length > 0;
+  const allowedDays = useMemo(() => getAllowedDays(matchedArea), [matchedArea]);
+  const allowedDates = useMemo(() => getNextAllowedDates(allowedDays, 60), [allowedDays]);
+  const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
+
+  const assignedTo = lead?.assigned_to || lead?.created_by || "";
+  const overlapDetected = useMemo(() => {
+    if (!testForm.scheduledDate || !testForm.startTime || !assignedTo) return false;
+    return hasScheduleOverlap(schedules, assignedTo, testForm.scheduledDate, testForm.startTime, null);
+  }, [schedules, assignedTo, testForm.scheduledDate, testForm.startTime]);
+
+  useEffect(() => {
+    setTestForm((prev) => ({ ...prev, scheduledDate: "", startTime: "" }));
+  }, [testForm.zipCode]);
+
+  useEffect(() => {
+    if (timeWindow && testForm.scheduledDate && !testForm.startTime) {
+      setTestForm((prev) => ({ ...prev, startTime: timeWindow.start }));
+    }
+  }, [timeWindow, testForm.scheduledDate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,32 +180,134 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
           </>
         )}
 
-        {/* Schedule Test Form (Ekkoa workflow) */}
+        {/* Schedule Test Form — CEP First */}
         {showTestForm && (
           <div className="space-y-3 p-3 rounded-lg border border-dashed bg-muted/30">
             <p className="text-sm font-medium">Agendar Instalação de Teste (15 dias)</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label className="text-xs">Endereço *</Label><Input value={testForm.address} onChange={(e) => setTestForm({ ...testForm, address: e.target.value })} placeholder="Rua, nº" /></div>
-              <div><Label className="text-xs">Cidade *</Label><Input value={testForm.city} onChange={(e) => setTestForm({ ...testForm, city: e.target.value })} /></div>
-              <div><Label className="text-xs">Estado *</Label><Input value={testForm.state} onChange={(e) => setTestForm({ ...testForm, state: e.target.value })} maxLength={2} placeholder="SP" /></div>
-              <div>
-                <Label className="text-xs">CEP</Label>
-                <Input
-                  value={testForm.zipCode}
-                  onChange={(e) => setTestForm({ ...testForm, zipCode: formatCEP(e.target.value) })}
-                  placeholder="00000-000"
-                  maxLength={9}
-                />
-                {testForm.zipCode && !validateCEP(testForm.zipCode) && (
-                  <p className="text-xs text-destructive mt-1">CEP inválido</p>
-                )}
-              </div>
-              <div><Label className="text-xs">Data *</Label><Input type="date" value={testForm.scheduledDate} onChange={(e) => setTestForm({ ...testForm, scheduledDate: e.target.value })} /></div>
-              <div><Label className="text-xs">Horário</Label><Input type="time" value={testForm.startTime} onChange={(e) => setTestForm({ ...testForm, startTime: e.target.value })} /></div>
+
+            {/* Step 1: CEP */}
+            <div>
+              <Label className="text-xs font-semibold">1. CEP do local *</Label>
+              <Input
+                value={testForm.zipCode}
+                onChange={(e) => setTestForm({ ...testForm, zipCode: formatCEP(e.target.value) })}
+                placeholder="00000-000"
+                maxLength={9}
+                autoFocus
+              />
+              {cepEntered && !cepValid && testForm.zipCode.replace(/\D/g, "").length >= 5 && (
+                <p className="text-xs text-destructive mt-1">CEP incompleto</p>
+              )}
             </div>
-            <Button type="button" size="sm" onClick={handleScheduleTest} disabled={isPending || !testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate}>
-              {scheduleTest.isPending ? "Agendando..." : "Confirmar Agendamento"}
-            </Button>
+
+            {/* Coverage feedback */}
+            {cepValid && (
+              <Alert variant={matchedArea ? "default" : "destructive"} className="py-2">
+                <div className="flex items-center gap-2">
+                  {matchedArea ? (
+                    <CheckCircle className="h-4 w-4 text-primary shrink-0" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                  )}
+                  <AlertDescription className="text-sm">
+                    {matchedArea ? (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> Área: <strong>{matchedArea.name}</strong>
+                        {matchedArea.dia_semana && ` — ${matchedArea.dia_semana}`}
+                        {timeWindow && ` (${timeWindow.start}–${timeWindow.end})`}
+                      </span>
+                    ) : (
+                      "CEP fora da área de cobertura cadastrada."
+                    )}
+                  </AlertDescription>
+                </div>
+              </Alert>
+            )}
+
+            {/* Step 2+: Only show if area matched */}
+            {matchedArea && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <Label className="text-xs">2. Endereço *</Label>
+                    <Input value={testForm.address} onChange={(e) => setTestForm({ ...testForm, address: e.target.value })} placeholder="Rua, nº" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Cidade *</Label>
+                    <Input value={testForm.city} onChange={(e) => setTestForm({ ...testForm, city: e.target.value })} defaultValue={matchedArea.city || matchedArea.name} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Estado *</Label>
+                    <Input value={testForm.state} onChange={(e) => setTestForm({ ...testForm, state: e.target.value })} maxLength={2} defaultValue={matchedArea.state || ""} />
+                  </div>
+                </div>
+
+                {/* Step 3: Date */}
+                <div>
+                  <Label className="text-xs font-semibold">3. Data do agendamento *</Label>
+                  {allowedDates.length > 0 ? (
+                    <Select
+                      value={testForm.scheduledDate}
+                      onValueChange={(v) => setTestForm({ ...testForm, scheduledDate: v, startTime: timeWindow?.start || "" })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma data disponível..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allowedDates.map((d) => {
+                          const dateObj = new Date(d + "T12:00:00");
+                          const dayName = dateObj.toLocaleDateString("pt-BR", { weekday: "long" });
+                          const formatted = dateObj.toLocaleDateString("pt-BR");
+                          const hasOverlap = assignedTo && hasScheduleOverlap(schedules, assignedTo, d, timeWindow?.start || "09:00", timeWindow?.end || "10:00");
+                          return (
+                            <SelectItem key={d} value={d} disabled={!!hasOverlap}>
+                              {formatted} ({dayName}){hasOverlap ? " — Ocupado" : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">Nenhum dia configurado para esta área.</p>
+                  )}
+                </div>
+
+                {/* Step 4: Time */}
+                {testForm.scheduledDate && (
+                  <div>
+                    <Label className="text-xs font-semibold">4. Horário</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="time"
+                        value={testForm.startTime}
+                        onChange={(e) => setTestForm({ ...testForm, startTime: e.target.value })}
+                        min={timeWindow?.start}
+                        max={timeWindow?.end}
+                      />
+                      {timeWindow && (
+                        <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+                          <Clock className="h-3 w-3" /> {timeWindow.start}–{timeWindow.end}
+                        </span>
+                      )}
+                    </div>
+                    {overlapDetected && (
+                      <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" /> Já existe agendamento nesse horário para o consultor.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleScheduleTest}
+                  disabled={isPending || !testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate || overlapDetected}
+                >
+                  {scheduleTest.isPending ? "Agendando..." : "Confirmar Agendamento"}
+                </Button>
+              </>
+            )}
           </div>
         )}
 
