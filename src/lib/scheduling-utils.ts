@@ -114,6 +114,26 @@ function timeToMinutes(time: string): number {
 }
 
 /**
+ * Generate allowed time slots (every 30 min) within a time window
+ */
+export function generateTimeSlots(
+  startTime: string,
+  endTime: string,
+  intervalMinutes: number = 30
+): string[] {
+  const slots: string[] = [];
+  let current = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  while (current <= end) {
+    const h = Math.floor(current / 60).toString().padStart(2, "0");
+    const m = (current % 60).toString().padStart(2, "0");
+    slots.push(`${h}:${m}`);
+    current += intervalMinutes;
+  }
+  return slots;
+}
+
+/**
  * Find the coverage area that matches a CEP
  */
 export function findCoverageAreaByCep(
@@ -130,4 +150,29 @@ export function findCoverageAreaByCep(
     const end = a.zip_code_end ? a.zip_code_end.replace(/\D/g, "") : start;
     return normalized >= start && normalized <= end;
   }) || null;
+}
+
+/**
+ * Fetch address info from ViaCEP API
+ */
+export interface ViaCepResult {
+  logradouro: string;
+  bairro: string;
+  localidade: string;
+  uf: string;
+  erro?: boolean;
+}
+
+export async function fetchViaCep(cep: string): Promise<ViaCepResult | null> {
+  const normalized = cep.replace(/\D/g, "");
+  if (normalized.length !== 8) return null;
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${normalized}/json/`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.erro) return null;
+    return data as ViaCepResult;
+  } catch {
+    return null;
+  }
 }
