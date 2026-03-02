@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 
-export type AppRole = "super_admin" | "admin" | "gestor" | "user" | "visitante" | "financeiro";
+export type AppRole = "super_admin" | "admin" | "gestor" | "vendedor" | "consultor_tecnico" | "operacional" | "user" | "visitante" | "financeiro";
 
 interface PermissionConfig {
   /** Routes the role can access */
@@ -52,6 +52,36 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessRelatorios: true,
     canAccessConfiguracoes: false,
   },
+  vendedor: {
+    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/suporte"],
+    canWrite: true,
+    canDelete: false,
+    canManageUsers: false,
+    canAccessFinanceiro: false,
+    canAccessEkkoa: true,
+    canAccessRelatorios: false,
+    canAccessConfiguracoes: false,
+  },
+  consultor_tecnico: {
+    routes: ["/dashboard", "/ekkoa", "/suporte"],
+    canWrite: true,
+    canDelete: false,
+    canManageUsers: false,
+    canAccessFinanceiro: false,
+    canAccessEkkoa: true,
+    canAccessRelatorios: false,
+    canAccessConfiguracoes: false,
+  },
+  operacional: {
+    routes: ["/dashboard", "/ekkoa", "/suporte"],
+    canWrite: true,
+    canDelete: false,
+    canManageUsers: false,
+    canAccessFinanceiro: false,
+    canAccessEkkoa: true,
+    canAccessRelatorios: false,
+    canAccessConfiguracoes: false,
+  },
   user: {
     routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/suporte"],
     canWrite: true,
@@ -88,6 +118,9 @@ const ROLE_LABELS: Record<AppRole, string> = {
   super_admin: "Super Admin",
   admin: "Administrador",
   gestor: "Gestor",
+  vendedor: "Vendedor",
+  consultor_tecnico: "Consultor Técnico",
+  operacional: "Operacional",
   user: "Usuário",
   financeiro: "Financeiro",
   visitante: "Visitante",

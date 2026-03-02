@@ -2477,6 +2477,9 @@ export type Database = {
         | "user"
         | "visitante"
         | "financeiro"
+        | "vendedor"
+        | "consultor_tecnico"
+        | "operacional"
       lead_stage:
         | "novo"
         | "qualificacao"
@@ -2619,6 +2622,9 @@ export const Constants = {
         "user",
         "visitante",
         "financeiro",
+        "vendedor",
+        "consultor_tecnico",
+        "operacional",
       ],
       lead_stage: [
         "novo",
