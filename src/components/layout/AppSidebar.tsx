@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect } from "react";
-import logoExudus from "@/assets/logo-exudus.jpeg";
+import logoExudus from "@/assets/logo-exudus-nova.png";
 
 const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
