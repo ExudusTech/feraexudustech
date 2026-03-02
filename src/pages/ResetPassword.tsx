@@ -18,45 +18,66 @@ export default function ResetPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRecovery, setIsRecovery] = useState(false);
+  const [isValidatingLink, setIsValidatingLink] = useState(true);
 
   useEffect(() => {
     const initializeRecovery = async () => {
-      const hashParams = new URLSearchParams(window.location.hash.replace("#", ""));
-      const queryParams = new URLSearchParams(window.location.search);
+      try {
+        const hashParams = new URLSearchParams(window.location.hash.replace("#", ""));
+        const queryParams = new URLSearchParams(window.location.search);
 
-      const hashType = hashParams.get("type");
-      const accessToken = hashParams.get("access_token");
-      const refreshToken = hashParams.get("refresh_token");
-      const tokenHash = queryParams.get("token_hash");
-      const queryType = queryParams.get("type") as EmailOtpType | null;
-      const flow = queryParams.get("flow");
+        const hashType = hashParams.get("type");
+        const hashAccessToken = hashParams.get("access_token");
+        const hashRefreshToken = hashParams.get("refresh_token");
 
-      if (hashType === "recovery" && accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-        if (!error) {
-          setIsRecovery(true);
-          return;
+        const queryAccessToken = queryParams.get("access_token");
+        const queryRefreshToken = queryParams.get("refresh_token");
+        const tokenHash = queryParams.get("token_hash");
+        const queryType = queryParams.get("type") as EmailOtpType | null;
+        const flow = queryParams.get("flow");
+        const code = queryParams.get("code");
+
+        const accessToken = hashAccessToken || queryAccessToken;
+        const refreshToken = hashRefreshToken || queryRefreshToken;
+        const hasRecoveryHint = hashType === "recovery" || queryType === "recovery" || flow === "recovery";
+
+        if (hasRecoveryHint && accessToken && refreshToken) {
+          const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          if (!error) {
+            setIsRecovery(true);
+            return;
+          }
         }
-      }
 
-      if (tokenHash && queryType === "recovery") {
-        const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
-        if (!error) {
-          setIsRecovery(true);
-          return;
+        if (tokenHash && queryType === "recovery") {
+          const { error } = await supabase.auth.verifyOtp({ type: "recovery", token_hash: tokenHash });
+          if (!error) {
+            setIsRecovery(true);
+            return;
+          }
         }
-      }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && (hashType === "recovery" || queryType === "recovery" || flow === "recovery")) {
-        setIsRecovery(true);
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error) {
+            setIsRecovery(true);
+            return;
+          }
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && hasRecoveryHint) {
+          setIsRecovery(true);
+        }
+      } finally {
+        setIsValidatingLink(false);
       }
     };
 
     initializeRecovery();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
+      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && window.location.pathname === "/reset-password")) {
         setIsRecovery(true);
       }
     });
@@ -91,6 +112,14 @@ export default function ResetPassword() {
       setIsLoading(false);
     }
   };
+
+  if (isValidatingLink) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-black px-6">
+        <p className="text-white/50 text-sm">Validando link de recuperação...</p>
+      </div>
+    );
+  }
 
   if (!isRecovery) {
     return (
