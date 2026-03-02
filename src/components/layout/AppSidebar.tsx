@@ -126,7 +126,7 @@ export default function AppSidebar() {
       )}
     >
       {/* Logo */}
-      <div className="relative flex items-center justify-center overflow-hidden px-1 py-4" style={{ height: collapsed ? '68px' : '106px' }}>
+      <div className="relative flex items-center justify-center overflow-hidden px-1 pt-5 pb-3" style={{ height: collapsed ? '68px' : '106px' }}>
         <img
           src={logoUrl || logoExudus}
           alt="Logo"
