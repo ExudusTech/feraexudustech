@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Lock, Mail, User, ArrowRight } from "lucide-react";
-import logoExudus from "@/assets/logo-exudus-nova.png";
+import { Lock, Mail, User, ArrowRight, ChevronRight } from "lucide-react";
+import logoExudus from "@/assets/logo-exudus-new.jpeg";
 
 export default function Auth() {
   const { signIn, signUp, session } = useAuth();
@@ -31,7 +31,6 @@ export default function Auth() {
     setIsLoading(true);
     try {
       await signIn(loginEmail, loginPassword);
-      // Check if account was blocked by fetchUserProfile
       await new Promise((r) => setTimeout(r, 500));
       const blockReason = sessionStorage.getItem("auth_block_reason");
       if (blockReason) {
@@ -74,192 +73,160 @@ export default function Auth() {
     }
   };
 
+  const inputClasses = "pl-11 h-12 bg-black/40 border-white/10 text-white placeholder:text-white/25 rounded-xl focus:border-red-500/50 focus:ring-red-500/20 transition-colors backdrop-blur-sm";
+  const labelClasses = "text-[11px] font-semibold uppercase tracking-[0.15em] text-white/40";
+
   return (
-    <div className="flex min-h-screen bg-[hsl(215,30%,6%)]">
-      {/* Left panel - branding */}
-      <div className="hidden lg:flex lg:w-[55%] relative items-center justify-center overflow-hidden">
-        {/* Deep dark-blue radial glow matching the logo sun */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[hsl(15,80%,12%)] via-[hsl(215,30%,6%)] to-[hsl(215,30%,6%)]" />
-        <div className="absolute top-[10%] left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-[hsl(15,90%,45%)]/15 blur-[150px]" />
-        
-        <div className="relative z-10 flex flex-col items-center text-center space-y-8 px-16">
+    <div className="relative flex min-h-screen bg-black overflow-hidden">
+      {/* Background effects */}
+      <div className="absolute inset-0">
+        {/* Top-center red glow from logo */}
+        <div className="absolute top-[15%] left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-red-600/12 blur-[120px]" />
+        {/* Subtle bottom gradient */}
+        <div className="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-red-950/8 to-transparent" />
+        {/* Grid pattern */}
+        <div 
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+            backgroundSize: '60px 60px',
+          }}
+        />
+      </div>
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center justify-center w-full px-6 py-12">
+        {/* Logo */}
+        <div className="mb-10">
           <img 
             src={logoExudus} 
             alt="Exudus" 
-            className="w-72 h-auto drop-shadow-2xl" 
+            className="w-64 md:w-80 h-auto rounded-2xl shadow-2xl shadow-red-900/20" 
           />
-          
-          <p className="text-[hsl(30,60%,75%)]/60 text-lg leading-relaxed max-w-md">
-            Clientes, leads, propostas e operações em uma plataforma unificada para distribuidoras.
-          </p>
+        </div>
 
-          <div className="flex gap-3 pt-2">
-            {["Gestão", "Financeiro", "Operações", "Suporte"].map((item) => (
+        {/* Tagline */}
+        <p className="text-white/30 text-sm md:text-base tracking-wide mb-10 text-center max-w-md">
+          Sistema de gestão integrado para distribuidoras
+        </p>
+
+        {/* Auth card */}
+        <div className="w-full max-w-sm">
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-xl p-6 md:p-8 shadow-2xl">
+            <Tabs defaultValue="login" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-7 bg-white/[0.04] border border-white/[0.06] p-1 rounded-xl h-11">
+                <TabsTrigger 
+                  value="login" 
+                  className="rounded-lg text-sm font-semibold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-600/30 text-white/35 transition-all duration-200"
+                >
+                  Entrar
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="signup" 
+                  className="rounded-lg text-sm font-semibold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-600/30 text-white/35 transition-all duration-200"
+                >
+                  Criar Conta
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="login">
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="login-email" className={labelClasses}>E-mail</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
+                      <Input 
+                        id="login-email" type="email" placeholder="seu@email.com" 
+                        className={inputClasses}
+                        value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="login-password" className={labelClasses}>Senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
+                      <Input 
+                        id="login-password" type="password" placeholder="••••••••" 
+                        className={inputClasses}
+                        value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required 
+                      />
+                    </div>
+                  </div>
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-500/40 transition-all duration-300 group mt-2" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Entrando..." : (
+                      <>Entrar <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></>
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="signup">
+                <form onSubmit={handleSignup} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="signup-name" className={labelClasses}>Nome completo</Label>
+                    <div className="relative">
+                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
+                      <Input 
+                        id="signup-name" placeholder="Seu nome" 
+                        className={inputClasses}
+                        value={signupName} onChange={(e) => setSignupName(e.target.value)} required 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="signup-email" className={labelClasses}>E-mail</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
+                      <Input 
+                        id="signup-email" type="email" placeholder="seu@email.com" 
+                        className={inputClasses}
+                        value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} required 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="signup-password" className={labelClasses}>Senha</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
+                      <Input 
+                        id="signup-password" type="password" placeholder="Mínimo 6 caracteres" 
+                        className={inputClasses}
+                        value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={6} 
+                      />
+                    </div>
+                  </div>
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-500/40 transition-all duration-300 group mt-2" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? "Criando conta..." : (
+                      <>Criar Conta <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></>
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* Footer pills */}
+          <div className="flex justify-center gap-2 mt-8 flex-wrap">
+            {["Gestão", "Financeiro", "Operações", "CRM"].map((item) => (
               <span 
                 key={item} 
-                className="text-xs font-medium tracking-wider uppercase px-3 py-1.5 rounded-full border border-[hsl(15,70%,50%)]/20 text-[hsl(30,60%,75%)]/40"
+                className="text-[10px] font-medium tracking-wider uppercase px-3 py-1 rounded-full border border-white/[0.06] text-white/15"
               >
                 {item}
               </span>
             ))}
           </div>
-        </div>
-      </div>
 
-      {/* Right panel - auth forms */}
-      <div className="flex-1 flex items-center justify-center p-8 lg:p-16 bg-[hsl(215,25%,5%)]">
-        <div className="w-full max-w-sm">
-          {/* Mobile logo */}
-          <div className="flex justify-center mb-10 lg:hidden">
-            <img src={logoExudus} alt="Exudus" className="w-48 h-auto" />
-          </div>
-
-          <div className="space-y-2 mb-8">
-            <h2 className="text-2xl font-bold text-[hsl(30,50%,90%)] tracking-tight">
-              Bem-vindo de volta
-            </h2>
-            <p className="text-[hsl(215,15%,50%)] text-sm">
-              Acesse sua conta para continuar
-            </p>
-          </div>
-
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8 bg-[hsl(215,20%,12%)] border border-[hsl(215,20%,18%)] p-1 rounded-xl h-11">
-              <TabsTrigger 
-                value="login" 
-                className="rounded-lg text-sm font-medium data-[state=active]:bg-[hsl(15,80%,50%)] data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-[hsl(15,80%,50%)]/25 text-[hsl(215,15%,45%)] transition-all duration-200"
-              >
-                Entrar
-              </TabsTrigger>
-              <TabsTrigger 
-                value="signup" 
-                className="rounded-lg text-sm font-medium data-[state=active]:bg-[hsl(15,80%,50%)] data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-[hsl(15,80%,50%)]/25 text-[hsl(215,15%,45%)] transition-all duration-200"
-              >
-                Criar Conta
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div className="space-y-1.5">
-                  <Label htmlFor="login-email" className="text-xs font-medium uppercase tracking-wider text-[hsl(215,15%,45%)]">
-                    E-mail
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(215,15%,30%)]" />
-                    <Input 
-                      id="login-email" 
-                      type="email" 
-                      placeholder="seu@email.com" 
-                      className="pl-11 h-12 bg-[hsl(215,20%,10%)] border-[hsl(215,20%,18%)] text-[hsl(30,50%,90%)] placeholder:text-[hsl(215,15%,30%)] rounded-xl focus:border-[hsl(15,80%,50%)]/50 focus:ring-[hsl(15,80%,50%)]/20 transition-colors" 
-                      value={loginEmail} 
-                      onChange={(e) => setLoginEmail(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="login-password" className="text-xs font-medium uppercase tracking-wider text-[hsl(215,15%,45%)]">
-                    Senha
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(215,15%,30%)]" />
-                    <Input 
-                      id="login-password" 
-                      type="password" 
-                      placeholder="••••••••" 
-                      className="pl-11 h-12 bg-[hsl(215,20%,10%)] border-[hsl(215,20%,18%)] text-[hsl(30,50%,90%)] placeholder:text-[hsl(215,15%,30%)] rounded-xl focus:border-[hsl(15,80%,50%)]/50 focus:ring-[hsl(15,80%,50%)]/20 transition-colors" 
-                      value={loginPassword} 
-                      onChange={(e) => setLoginPassword(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-                <Button 
-                  type="submit" 
-                  className="w-full h-12 rounded-xl text-sm font-semibold bg-[hsl(15,80%,50%)] hover:bg-[hsl(15,80%,45%)] text-white shadow-lg shadow-[hsl(15,80%,50%)]/25 hover:shadow-xl hover:shadow-[hsl(15,80%,50%)]/30 transition-all duration-200 group" 
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Entrando..." : (
-                    <>
-                      Entrar
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-5">
-                <div className="space-y-1.5">
-                  <Label htmlFor="signup-name" className="text-xs font-medium uppercase tracking-wider text-[hsl(215,15%,45%)]">
-                    Nome completo
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(215,15%,30%)]" />
-                    <Input 
-                      id="signup-name" 
-                      placeholder="Seu nome" 
-                      className="pl-11 h-12 bg-[hsl(215,20%,10%)] border-[hsl(215,20%,18%)] text-[hsl(30,50%,90%)] placeholder:text-[hsl(215,15%,30%)] rounded-xl focus:border-[hsl(15,80%,50%)]/50 focus:ring-[hsl(15,80%,50%)]/20 transition-colors" 
-                      value={signupName} 
-                      onChange={(e) => setSignupName(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="signup-email" className="text-xs font-medium uppercase tracking-wider text-[hsl(215,15%,45%)]">
-                    E-mail
-                  </Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(215,15%,30%)]" />
-                    <Input 
-                      id="signup-email" 
-                      type="email" 
-                      placeholder="seu@email.com" 
-                      className="pl-11 h-12 bg-[hsl(215,20%,10%)] border-[hsl(215,20%,18%)] text-[hsl(30,50%,90%)] placeholder:text-[hsl(215,15%,30%)] rounded-xl focus:border-[hsl(15,80%,50%)]/50 focus:ring-[hsl(15,80%,50%)]/20 transition-colors" 
-                      value={signupEmail} 
-                      onChange={(e) => setSignupEmail(e.target.value)} 
-                      required 
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="signup-password" className="text-xs font-medium uppercase tracking-wider text-[hsl(215,15%,45%)]">
-                    Senha
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[hsl(215,15%,30%)]" />
-                    <Input 
-                      id="signup-password" 
-                      type="password" 
-                      placeholder="Mínimo 6 caracteres" 
-                      className="pl-11 h-12 bg-[hsl(215,20%,10%)] border-[hsl(215,20%,18%)] text-[hsl(30,50%,90%)] placeholder:text-[hsl(215,15%,30%)] rounded-xl focus:border-[hsl(15,80%,50%)]/50 focus:ring-[hsl(15,80%,50%)]/20 transition-colors" 
-                      value={signupPassword} 
-                      onChange={(e) => setSignupPassword(e.target.value)} 
-                      required 
-                      minLength={6} 
-                    />
-                  </div>
-                </div>
-                <Button 
-                  type="submit" 
-                  className="w-full h-12 rounded-xl text-sm font-semibold bg-[hsl(15,80%,50%)] hover:bg-[hsl(15,80%,45%)] text-white shadow-lg shadow-[hsl(15,80%,50%)]/25 hover:shadow-xl hover:shadow-[hsl(15,80%,50%)]/30 transition-all duration-200 group" 
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Criando conta..." : (
-                    <>
-                      Criar Conta
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-
-          <p className="text-center text-xs text-[hsl(215,15%,25%)] mt-10">
+          <p className="text-center text-[11px] text-white/10 mt-8">
             © {new Date().getFullYear()} Exudus. Todos os direitos reservados.
           </p>
         </div>
