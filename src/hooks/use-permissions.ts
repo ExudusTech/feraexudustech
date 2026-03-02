@@ -1,4 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
+import { useOrganization } from "@/hooks/use-organizations";
 
 export type AppRole = "super_admin" | "admin" | "gestor" | "vendedor" | "consultor_tecnico" | "operacional" | "user" | "visitante" | "financeiro";
 
@@ -128,10 +129,21 @@ const ROLE_LABELS: Record<AppRole, string> = {
 
 export function usePermissions() {
   const { user } = useAuth();
+  const { data: organization } = useOrganization();
   const role = (user?.role as AppRole) || "visitante";
   const permissions = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.visitante;
 
+  const orgHasEkkoaAccess = organization?.has_ekkoa_access === true;
+  const isSuperAdmin = role === "super_admin";
+
   const canAccessRoute = (path: string): boolean => {
+    // Block Ekkoa routes if org doesn't have access (except super_admin)
+    if (path.startsWith("/ekkoa") && !orgHasEkkoaAccess && !isSuperAdmin) {
+      return false;
+    }
+    if (path.startsWith("/areas-cobertura") && !orgHasEkkoaAccess && !isSuperAdmin) {
+      return false;
+    }
     if (permissions.routes.includes("*")) return true;
     return permissions.routes.some((r) => path.startsWith(r));
   };
@@ -146,8 +158,9 @@ export function usePermissions() {
     canAccessRoute,
     getRoleLabel,
     isAdmin: role === "admin" || role === "super_admin",
-    isSuperAdmin: role === "super_admin",
+    isSuperAdmin,
     isFinanceiro: role === "financeiro",
+    orgHasEkkoaAccess: orgHasEkkoaAccess || isSuperAdmin,
     roleLabel: getRoleLabel(role),
   };
 }

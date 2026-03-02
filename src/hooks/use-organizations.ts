@@ -22,6 +22,7 @@ export interface Organization {
   accent_color: string | null;
   plan: string;
   max_users: number;
+  has_ekkoa_access: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string | null;
