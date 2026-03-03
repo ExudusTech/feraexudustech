@@ -15,6 +15,7 @@ import Propostas from "@/pages/Propostas";
 import Produtos from "@/pages/Produtos";
 import Financeiro from "@/pages/Financeiro";
 import Relatorios from "@/pages/Relatorios";
+import Agenda from "@/pages/Agenda";
 import AreasCobertura from "@/pages/AreasCobertura";
 import Usuarios from "@/pages/Usuarios";
 import MeuPerfil from "@/pages/MeuPerfil";
