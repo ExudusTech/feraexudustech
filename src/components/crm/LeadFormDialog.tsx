@@ -274,7 +274,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     if (!lead) return;
     if (!cepValid || !matchedArea || overlapDetected || !isTestFormValid) return;
 
-    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()} - ${testForm.complement.trim()}`;
+    const complementPart = testForm.complement.trim() ? ` - ${testForm.complement.trim()}` : "";
+    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()}${complementPart}`;
 
     if (existingConsultantSchedule && existingInstallation) {
       await updateInstallation.mutateAsync({
