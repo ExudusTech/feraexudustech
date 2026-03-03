@@ -182,7 +182,7 @@ export default function Agenda() {
                 </div>
                 <div className="p-1 space-y-1">
                   {daySchedules.map((s) => (
-                    <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5">
+                    <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "—"}</div>
