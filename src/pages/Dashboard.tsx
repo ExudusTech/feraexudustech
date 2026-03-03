@@ -1,7 +1,8 @@
+import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import StatsCard from "@/components/cards/StatsCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Target, FileText, DollarSign, TrendingUp, Package, CheckCircle, Clock, Wrench, HeadphonesIcon, Zap } from "lucide-react";
+import { Users, Target, FileText, DollarSign, TrendingUp, Package, CheckCircle, Clock, HeadphonesIcon, Zap } from "lucide-react";
 import { useClients } from "@/hooks/use-clients";
 import { useLeads } from "@/hooks/use-leads";
 import { useProposals } from "@/hooks/use-proposals";
@@ -15,8 +16,36 @@ import { useMemo } from "react";
 import RevenueExpenseChart from "@/components/charts/RevenueExpenseChart";
 import ProfitEvolutionChart from "@/components/charts/ProfitEvolutionChart";
 import LeadsPipelineChart from "@/components/charts/LeadsPipelineChart";
+import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
+import ConsultantDashboard from "@/components/dashboard/ConsultantDashboard";
+import StartVisitDialog from "@/components/ekkoa/StartVisitDialog";
+import type { Schedule } from "@/hooks/use-schedules";
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const { role } = usePermissions();
+  const [visitSchedule, setVisitSchedule] = useState<Schedule | null>(null);
+
+  // Role-specific dashboards
+  if (role === "consultor_tecnico") {
+    return (
+      <AppLayout title="Dashboard" subtitle="Sua agenda e compromissos">
+        <ConsultantDashboard onStartVisit={(s) => setVisitSchedule(s)} />
+        <StartVisitDialog
+          open={!!visitSchedule}
+          onOpenChange={(open) => !open && setVisitSchedule(null)}
+          schedule={visitSchedule}
+        />
+      </AppLayout>
+    );
+  }
+
+  // Default dashboard for admin/gestor/vendedor etc.
+  return <AdminDashboard />;
+}
+
+function AdminDashboard() {
   const { data: clients } = useClients();
   const { data: leads } = useLeads();
   const { data: proposals } = useProposals();
