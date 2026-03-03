@@ -353,6 +353,23 @@ export function useCompleteVisit() {
           .eq("serial_number", reservePrefix);
         if (invError) throw invError;
       }
+
+      // Move lead to "em_teste" only when consultant completes the visit
+      if (leadId) {
+        const { data: crmLead } = await supabase
+          .from("leads")
+          .update({ stage: "em_teste" })
+          .eq("id", leadId)
+          .select("id")
+          .maybeSingle();
+
+        if (!crmLead) {
+          await supabase
+            .from("ekkoa_leads")
+            .update({ stage: "em_teste" })
+            .eq("id", leadId);
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
