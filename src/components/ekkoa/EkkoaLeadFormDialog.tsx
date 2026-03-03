@@ -126,8 +126,15 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
     if (!testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate) return;
     if (overlapDetected) return;
 
+    const leadAsInput = {
+      ...lead,
+      stage: lead.stage as any,
+      value: lead.value ?? 0,
+      position: 0,
+      category: null,
+    };
     await scheduleTest.mutateAsync({
-      lead,
+      lead: leadAsInput,
       installationTitle: `Teste - ${lead.title}`,
       address: testForm.address,
       city: testForm.city,
