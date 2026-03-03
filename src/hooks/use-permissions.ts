@@ -74,7 +74,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   operacional: {
-    routes: ["/dashboard", "/ekkoa", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
