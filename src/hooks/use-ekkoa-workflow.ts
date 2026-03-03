@@ -150,21 +150,8 @@ export function useScheduleTestInstallation() {
         });
       if (invError) throw new Error(`Erro ao reservar equipamento: ${invError.message}`);
 
-      // Try updating CRM leads table first, then ekkoa_leads as fallback
-      const { data: crmLead } = await supabase
-        .from("leads")
-        .update({ stage: "em_teste" })
-        .eq("id", input.lead.id)
-        .select("id")
-        .maybeSingle();
-
-      if (!crmLead) {
-        // Lead might be from ekkoa_leads table
-        await supabase
-          .from("ekkoa_leads")
-          .update({ stage: "em_teste" })
-          .eq("id", input.lead.id);
-      }
+      // Lead stays in "novo" stage until consultant completes the visit
+      // Stage will be updated to "em_teste" in useCompleteVisit
 
       return { installation, operation, reserveSerial };
     },
@@ -307,6 +294,7 @@ export function useCompleteVisit() {
       longitude,
       photoUrl,
       notes,
+      leadId,
     }: {
       scheduleId: string;
       operationId?: string | null;
@@ -319,6 +307,7 @@ export function useCompleteVisit() {
       longitude?: number;
       photoUrl?: string;
       notes?: string;
+      leadId?: string;
     }) => {
       const { error: schedError } = await supabase
         .from("schedules")
@@ -364,12 +353,30 @@ export function useCompleteVisit() {
           .eq("serial_number", reservePrefix);
         if (invError) throw invError;
       }
+
+      // Move lead to "em_teste" only when consultant completes the visit
+      if (leadId) {
+        const { data: crmLead } = await supabase
+          .from("leads")
+          .update({ stage: "em_teste" })
+          .eq("id", leadId)
+          .select("id")
+          .maybeSingle();
+
+        if (!crmLead) {
+          await supabase
+            .from("ekkoa_leads")
+            .update({ stage: "em_teste" })
+            .eq("id", leadId);
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["schedules"] });
       qc.invalidateQueries({ queryKey: ["operations"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_installations"] });
       qc.invalidateQueries({ queryKey: ["inventory"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
       toast({ title: "Visita concluída!", description: "Todos os registros atualizados." });
     },
     onError: (e: Error) => toast({ title: "Erro ao concluir visita", description: e.message, variant: "destructive" }),
