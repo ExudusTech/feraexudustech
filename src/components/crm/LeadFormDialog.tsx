@@ -12,7 +12,8 @@ import { useConvertLeadToClient } from "@/hooks/use-lead-conversion";
 import { useProducts } from "@/hooks/use-products";
 import { useScheduleTestInstallation } from "@/hooks/use-ekkoa-workflow";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
-import { useSchedules } from "@/hooks/use-schedules";
+import { useEkkoaInstallations, useUpdateEkkoaInstallation } from "@/hooks/use-ekkoa-installations";
+import { useSchedules, useUpdateSchedule } from "@/hooks/use-schedules";
 import { useViaCep } from "@/hooks/use-viacep";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP, formatPhone } from "@/lib/validations";
@@ -31,24 +32,107 @@ const empty = {
   category: "",
 };
 
+const emptyTestForm = {
+  street: "",
+  number: "",
+  complement: "",
+  city: "",
+  state: "",
+  zipCode: "",
+  scheduledDate: "",
+  startTime: "",
+};
+
+function parseAddressParts(value: string | null) {
+  if (!value) return { street: "", number: "", complement: "" };
+  const [streetPart, rest = ""] = value.split(",");
+  const restTrimmed = rest.trim();
+  if (!restTrimmed) return { street: streetPart.trim(), number: "", complement: "" };
+
+  const numberMatch = restTrimmed.match(/^([\dA-Za-z-]+)/);
+  const number = numberMatch?.[1] ?? "";
+  const complement = restTrimmed.replace(/^([\dA-Za-z-]+)/, "").replace(/^\s*[-–—]?\s*/, "").trim();
+
+  return {
+    street: streetPart.trim(),
+    number,
+    complement,
+  };
+}
+
+function addDays(dateStr: string, days: number): string {
+  const date = new Date(dateStr);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split("T")[0];
+}
+
 export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage }: Props) {
   const [form, setForm] = useState(empty);
   const [showTestForm, setShowTestForm] = useState(false);
-  const [testForm, setTestForm] = useState({ address: "", city: "", state: "", zipCode: "", scheduledDate: "", startTime: "" });
+  const [testForm, setTestForm] = useState(emptyTestForm);
 
   const create = useCreateLead();
   const update = useUpdateLead();
   const convert = useConvertLeadToClient();
   const scheduleTest = useScheduleTestInstallation();
+  const updateSchedule = useUpdateSchedule();
+  const updateInstallation = useUpdateEkkoaInstallation();
   const { data: products = [] } = useProducts();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: schedules = [] } = useSchedules();
+  const { data: installations = [] } = useEkkoaInstallations();
+
   const isEdit = !!lead;
   const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
   const isEkkoa = form.category === "Neutralizadores";
-  const canScheduleTest = isEdit && lead && isEkkoa && (lead.stage === "novo" || lead.stage === "qualificacao");
 
-  // Get unique categories from products
+  const leadSearchToken = (lead?.contact_name || lead?.title || "").toLowerCase();
+  const existingConsultantSchedule = useMemo(() => {
+    if (!leadSearchToken) return null;
+    return (
+      schedules
+        .filter(
+          (s) =>
+            s.schedule_type === "instalacao_teste" &&
+            s.title.toLowerCase().includes(leadSearchToken) &&
+            s.status !== "cancelado"
+        )
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null
+    );
+  }, [schedules, leadSearchToken]);
+
+  const existingD1Schedule = useMemo(() => {
+    if (!existingConsultantSchedule?.operation_id) return null;
+    return (
+      schedules.find(
+        (s) =>
+          s.operation_id === existingConsultantSchedule.operation_id &&
+          s.schedule_type === "pre_emissao_nf" &&
+          s.status !== "cancelado"
+      ) || null
+    );
+  }, [schedules, existingConsultantSchedule]);
+
+  const existingInstallation = useMemo(() => {
+    if (!lead?.title) return null;
+    const leadTitle = lead.title.toLowerCase();
+    return (
+      installations
+        .filter((inst) => inst.title.toLowerCase().includes(leadTitle))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null
+    );
+  }, [installations, lead?.title]);
+
+  const canManageTest = isEdit && !!lead && isEkkoa && (
+    lead.stage === "novo" ||
+    lead.stage === "qualificacao" ||
+    lead.stage === "em_teste" ||
+    lead.stage === "feedback" ||
+    !!existingConsultantSchedule
+  );
+
+  const testActionLabel = existingConsultantSchedule ? "Visualizar / Editar Agendamento" : "Agendar Teste";
+
   const categories = [...new Set(products.map((p) => p.category).filter(Boolean))] as string[];
 
   useEffect(() => {
@@ -69,12 +153,30 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       setForm({ ...empty, stage: defaultStage || "novo" });
     }
     setShowTestForm(false);
-    setTestForm({ address: "", city: "", state: "", zipCode: "", scheduledDate: "", startTime: "" });
+    setTestForm(emptyTestForm);
   }, [lead, open, defaultStage]);
+
+  useEffect(() => {
+    if (!showTestForm || !existingInstallation) return;
+
+    const parsed = parseAddressParts(existingInstallation.address);
+    const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
+
+    setTestForm((prev) => ({
+      ...prev,
+      street: prev.street || parsed.street,
+      number: prev.number || parsed.number,
+      complement: prev.complement || parsed.complement,
+      city: prev.city || existingInstallation.city || "",
+      state: prev.state || existingInstallation.state || "",
+      zipCode: prev.zipCode || existingInstallation.zip_code || "",
+      scheduledDate: prev.scheduledDate || consultantDate,
+      startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
+    }));
+  }, [showTestForm, existingInstallation, existingConsultantSchedule]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Coverage area matching
   const matchedArea = useMemo(() => {
     if (!testForm.zipCode || testForm.zipCode.replace(/\D/g, "").length < 8) return null;
     return findCoverageAreaByCep(testForm.zipCode, coverageAreas);
@@ -85,21 +187,27 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const allowedDays = useMemo(() => getAllowedDays(matchedArea), [matchedArea]);
   const allowedDates = useMemo(() => getNextAllowedDates(allowedDays, 60), [allowedDays]);
   const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
-  const timeSlots = useMemo(() => timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : [], [timeWindow]);
+  const timeSlots = useMemo(() => (timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : []), [timeWindow]);
 
   const assignedTo = lead?.assigned_to || lead?.created_by || "";
   const overlapDetected = useMemo(() => {
     if (!testForm.scheduledDate || !testForm.startTime || !assignedTo) return false;
-    return hasScheduleOverlap(schedules, assignedTo, testForm.scheduledDate, testForm.startTime, null);
-  }, [schedules, assignedTo, testForm.scheduledDate, testForm.startTime]);
+    return hasScheduleOverlap(
+      schedules,
+      assignedTo,
+      testForm.scheduledDate,
+      testForm.startTime,
+      null,
+      existingConsultantSchedule?.id
+    );
+  }, [schedules, assignedTo, testForm.scheduledDate, testForm.startTime, existingConsultantSchedule?.id]);
 
-  // ViaCEP auto-fill
   const viaCep = useViaCep(testForm.zipCode);
   useEffect(() => {
     if (viaCep.data) {
       setTestForm((prev) => ({
         ...prev,
-        address: viaCep.data!.logradouro ? `${viaCep.data!.logradouro}${viaCep.data!.bairro ? `, ${viaCep.data!.bairro}` : ""}` : prev.address,
+        street: viaCep.data!.logradouro || prev.street,
         city: viaCep.data!.localidade || prev.city,
         state: viaCep.data!.uf || prev.state,
         scheduledDate: "",
@@ -139,32 +247,78 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     onOpenChange(false);
   };
 
-  const isPending = create.isPending || update.isPending || convert.isPending || scheduleTest.isPending;
-
   const handleConvert = async () => {
     if (!lead) return;
     await convert.mutateAsync(lead);
     onOpenChange(false);
   };
 
+  const isTestFormValid =
+    !!testForm.street.trim() &&
+    !!testForm.number.trim() &&
+    !!testForm.complement.trim() &&
+    !!testForm.city.trim() &&
+    !!testForm.state.trim() &&
+    !!testForm.scheduledDate;
+
   const handleScheduleTest = async () => {
     if (!lead) return;
-    if (!cepValid || !matchedArea) return;
-    if (!testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate) return;
+    if (!cepValid || !matchedArea || overlapDetected || !isTestFormValid) return;
+
+    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()} - ${testForm.complement.trim()}`;
+
+    if (existingConsultantSchedule && existingInstallation) {
+      await updateInstallation.mutateAsync({
+        id: existingInstallation.id,
+        address: fullAddress,
+        city: testForm.city.trim(),
+        state: testForm.state.trim().toUpperCase(),
+        zip_code: testForm.zipCode,
+        start_date: testForm.scheduledDate,
+        end_date: addDays(testForm.scheduledDate, 15),
+      });
+
+      await updateSchedule.mutateAsync({
+        id: existingConsultantSchedule.id,
+        scheduled_date: testForm.scheduledDate,
+        start_time: testForm.startTime || null,
+        location: `${fullAddress}, ${testForm.city.trim()} - ${testForm.state.trim().toUpperCase()}`,
+      });
+
+      if (existingD1Schedule) {
+        await updateSchedule.mutateAsync({
+          id: existingD1Schedule.id,
+          scheduled_date: addDays(testForm.scheduledDate, -1),
+          description: `Emitir Nota Fiscal de Remessa para instalação agendada em ${testForm.scheduledDate}`,
+        });
+      }
+
+      onOpenChange(false);
+      return;
+    }
 
     await scheduleTest.mutateAsync({
       lead,
       installationTitle: `Teste - ${lead.title}`,
-      address: testForm.address,
-      city: testForm.city,
-      state: testForm.state,
+      address: fullAddress,
+      city: testForm.city.trim(),
+      state: testForm.state.trim().toUpperCase(),
       zipCode: testForm.zipCode,
       scheduledDate: testForm.scheduledDate,
       startTime: testForm.startTime || undefined,
       assignedTo: lead.assigned_to || lead.created_by,
     });
+
     onOpenChange(false);
   };
+
+  const isPending =
+    create.isPending ||
+    update.isPending ||
+    convert.isPending ||
+    scheduleTest.isPending ||
+    updateSchedule.isPending ||
+    updateInstallation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,13 +327,12 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
           <DialogTitle>{isEdit ? "Editar Lead" : "Novo Lead"}</DialogTitle>
         </DialogHeader>
 
-        {/* Workflow Actions for Ekkoa leads */}
-        {isEdit && (canConvert || canScheduleTest) && (
+        {isEdit && (canConvert || canManageTest) && (
           <>
             <div className="flex flex-wrap gap-2">
-              {canScheduleTest && (
+              {canManageTest && (
                 <Button type="button" size="sm" variant="secondary" onClick={() => setShowTestForm(!showTestForm)} disabled={isPending}>
-                  <FlaskConical className="h-4 w-4 mr-1" />Agendar Teste
+                  <FlaskConical className="h-4 w-4 mr-1" />{testActionLabel}
                 </Button>
               )}
               {canConvert && (
@@ -192,12 +345,12 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
           </>
         )}
 
-        {/* Schedule Test Form — CEP First */}
         {showTestForm && (
           <div className="space-y-3 p-3 rounded-lg border border-dashed bg-muted/30">
-            <p className="text-sm font-medium">Agendar Instalação de Teste (15 dias)</p>
+            <p className="text-sm font-medium">
+              {existingConsultantSchedule ? "Visualizar / Editar Agendamento de Teste" : "Agendar Instalação de Teste (15 dias)"}
+            </p>
 
-            {/* Step 1: CEP */}
             <div>
               <Label className="text-xs font-semibold">1. CEP do local *</Label>
               <Input
@@ -212,7 +365,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               )}
             </div>
 
-            {/* Coverage feedback */}
             {cepValid && (
               <Alert variant={matchedArea ? "default" : "destructive"} className="py-2">
                 <div className="flex items-center gap-2">
@@ -236,13 +388,38 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               </Alert>
             )}
 
-            {/* Step 2+: Only show if area matched */}
             {matchedArea && (
               <>
+                {cepValid && !viaCep.loading && !viaCep.data && (
+                  <p className="text-xs text-muted-foreground">
+                    Não foi possível autopreencher o endereço por CEP. Preencha rua, número, complemento, cidade e estado manualmente.
+                  </p>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
-                    <Label className="text-xs">2. Endereço *</Label>
-                    <Input value={testForm.address} onChange={(e) => setTestForm({ ...testForm, address: e.target.value })} placeholder="Rua, nº" />
+                    <Label className="text-xs">2. Endereço (rua/avenida) *</Label>
+                    <Input
+                      value={testForm.street}
+                      onChange={(e) => setTestForm({ ...testForm, street: e.target.value })}
+                      placeholder="Rua John Kennedy"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Número *</Label>
+                    <Input
+                      value={testForm.number}
+                      onChange={(e) => setTestForm({ ...testForm, number: e.target.value })}
+                      placeholder="120"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Complemento *</Label>
+                    <Input
+                      value={testForm.complement}
+                      onChange={(e) => setTestForm({ ...testForm, complement: e.target.value })}
+                      placeholder="Centro, Loja 2, Sala 3..."
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Cidade *</Label>
@@ -254,7 +431,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   </div>
                 </div>
 
-                {/* Step 3: Date */}
                 <div>
                   <Label className="text-xs font-semibold">3. Data do agendamento *</Label>
                   {allowedDates.length > 0 ? (
@@ -270,7 +446,14 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                           const dateObj = new Date(d + "T12:00:00");
                           const dayName = dateObj.toLocaleDateString("pt-BR", { weekday: "long" });
                           const formatted = dateObj.toLocaleDateString("pt-BR");
-                          const hasOverlap = assignedTo && hasScheduleOverlap(schedules, assignedTo, d, timeWindow?.start || "09:00", timeWindow?.end || "10:00");
+                          const hasOverlap = assignedTo && hasScheduleOverlap(
+                            schedules,
+                            assignedTo,
+                            d,
+                            timeWindow?.start || "09:00",
+                            timeWindow?.end || "10:00",
+                            existingConsultantSchedule?.id
+                          );
                           return (
                             <SelectItem key={d} value={d} disabled={!!hasOverlap}>
                               {formatted} ({dayName}){hasOverlap ? " — Ocupado" : ""}
@@ -284,7 +467,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   )}
                 </div>
 
-                {/* Step 4: Time — restricted to allowed slots */}
                 {testForm.scheduledDate && (
                   <div>
                     <Label className="text-xs font-semibold">4. Horário</Label>
@@ -320,9 +502,13 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   type="button"
                   size="sm"
                   onClick={handleScheduleTest}
-                  disabled={isPending || !testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate || overlapDetected}
+                  disabled={isPending || !isTestFormValid || overlapDetected}
                 >
-                  {scheduleTest.isPending ? "Agendando..." : "Confirmar Agendamento"}
+                  {scheduleTest.isPending || updateSchedule.isPending || updateInstallation.isPending
+                    ? "Salvando agendamento..."
+                    : existingConsultantSchedule
+                      ? "Salvar Alterações do Agendamento"
+                      : "Confirmar Agendamento"}
                 </Button>
               </>
             )}
@@ -351,7 +537,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Select value={form.stage} onValueChange={(v) => set("stage", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-              {PIPELINE_STAGES.filter((s) => s !== "negociacao").map((s) => (
+                  {PIPELINE_STAGES.filter((s) => s !== "negociacao").map((s) => (
                     <SelectItem key={s} value={s}>{STAGE_CONFIG[s].label}</SelectItem>
                   ))}
                 </SelectContent>
