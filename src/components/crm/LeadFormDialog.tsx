@@ -706,6 +706,15 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               </div>
             </div>
             <div>
+              <Label>CEP do local</Label>
+              <Input
+                value={form.zip_code}
+                onChange={(e) => set("zip_code", formatCEP(e.target.value))}
+                placeholder="00000-000"
+                maxLength={9}
+              />
+            </div>
+            <div>
               <Label>Estágio</Label>
               <Select value={form.stage} onValueChange={(v) => set("stage", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
