@@ -180,6 +180,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     setTestForm(emptyTestForm);
     setShowSchedulePrompt(false);
     setSavedLead(null);
+    setFormErrors({});
   }, [lead, open, defaultStage]);
 
   useEffect(() => {
