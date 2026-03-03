@@ -376,6 +376,7 @@ export function useCompleteVisit() {
       qc.invalidateQueries({ queryKey: ["operations"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_installations"] });
       qc.invalidateQueries({ queryKey: ["inventory"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
       toast({ title: "Visita concluída!", description: "Todos os registros atualizados." });
     },
     onError: (e: Error) => toast({ title: "Erro ao concluir visita", description: e.message, variant: "destructive" }),
