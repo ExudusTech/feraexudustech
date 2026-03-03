@@ -424,7 +424,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Complemento *</Label>
+                    <Label className="text-xs">Complemento</Label>
                     <Input
                       value={testForm.complement}
                       onChange={(e) => setTestForm({ ...testForm, complement: e.target.value })}
