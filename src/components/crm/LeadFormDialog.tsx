@@ -92,11 +92,16 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   // Coverage validation for lead CEP
   const { validate: validateCoverage, hasAreas: hasCoverageAreas } = useCoverageValidation();
+  const leadViaCep = useViaCep(form.zip_code);
   const leadCepNormalized = form.zip_code.replace(/\D/g, "");
   const leadCoverageResult = useMemo(() => {
     if (leadCepNormalized.length !== 8) return null;
-    return validateCoverage(form.zip_code, null, null);
-  }, [leadCepNormalized, validateCoverage, form.zip_code]);
+    return validateCoverage(
+      form.zip_code,
+      leadViaCep.data?.localidade ?? null,
+      leadViaCep.data?.uf ?? null
+    );
+  }, [leadCepNormalized, validateCoverage, form.zip_code, leadViaCep.data?.localidade, leadViaCep.data?.uf]);
 
   const leadCepOutOfCoverage = hasCoverageAreas && leadCoverageResult && !leadCoverageResult.isValid && leadCepNormalized.length === 8;
 
