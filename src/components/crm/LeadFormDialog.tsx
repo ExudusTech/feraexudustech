@@ -150,7 +150,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (lead) {
-      const leadZip = (lead as any).zip_code || "";
       setForm({
         title: lead.title,
         description: lead.description || "",
@@ -160,7 +159,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         contact_email: lead.contact_email || "",
         contact_phone: lead.contact_phone || "",
         categories: parseCategories(lead.category),
-        zip_code: leadZip,
+        zip_code: lead.zip_code || "",
       });
     } else {
       setForm({ ...empty, stage: defaultStage || "novo" });
@@ -173,7 +172,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (!showTestForm) return;
-    const leadZip = form.zip_code || (lead as any)?.zip_code || (savedLead as any)?.zip_code || "";
+    const leadZip = form.zip_code || lead?.zip_code || savedLead?.zip_code || "";
     if (existingInstallation) {
       const parsed = parseAddressParts(existingInstallation.address);
       const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
@@ -677,7 +676,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <Label>Título *</Label>
+              <Label>Nome do Cliente/Empresa *</Label>
               <Input value={form.title} onChange={(e) => set("title", e.target.value)} required />
             </div>
             <div className="col-span-2">
@@ -730,7 +729,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Input value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="Site, indicação..." />
             </div>
             <div>
-              <Label>Contato</Label>
+              <Label>Nome do contato</Label>
               <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
             </div>
             <div>
