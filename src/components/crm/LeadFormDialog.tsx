@@ -15,6 +15,7 @@ import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
 import { useEkkoaInstallations, useUpdateEkkoaInstallation } from "@/hooks/use-ekkoa-installations";
 import { useSchedules, useUpdateSchedule } from "@/hooks/use-schedules";
 import { useViaCep } from "@/hooks/use-viacep";
+import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP, formatPhone } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
