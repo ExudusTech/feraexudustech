@@ -150,11 +150,21 @@ export function useScheduleTestInstallation() {
         });
       if (invError) throw new Error(`Erro ao reservar equipamento: ${invError.message}`);
 
-      const { error: leadError } = await supabase
+      // Try updating CRM leads table first, then ekkoa_leads as fallback
+      const { data: crmLead } = await supabase
         .from("leads")
         .update({ stage: "em_teste" })
-        .eq("id", input.lead.id);
-      if (leadError) throw new Error(`Erro ao atualizar lead: ${leadError.message}`);
+        .eq("id", input.lead.id)
+        .select("id")
+        .maybeSingle();
+
+      if (!crmLead) {
+        // Lead might be from ekkoa_leads table
+        await supabase
+          .from("ekkoa_leads")
+          .update({ stage: "em_teste" })
+          .eq("id", input.lead.id);
+      }
 
       return { installation, operation, reserveSerial };
     },

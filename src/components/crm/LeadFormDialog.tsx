@@ -15,6 +15,7 @@ import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
 import { useEkkoaInstallations, useUpdateEkkoaInstallation } from "@/hooks/use-ekkoa-installations";
 import { useSchedules, useUpdateSchedule } from "@/hooks/use-schedules";
 import { useViaCep } from "@/hooks/use-viacep";
+import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP, formatPhone } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
@@ -41,6 +42,7 @@ const emptyTestForm = {
   zipCode: "",
   scheduledDate: "",
   startTime: "",
+  assignedConsultant: "",
 };
 
 function parseAddressParts(value: string | null) {
@@ -81,10 +83,17 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: schedules = [] } = useSchedules();
   const { data: installations = [] } = useEkkoaInstallations();
+  const { data: orgUsers = [] } = useOrganizationUsers();
+
+  const consultants = useMemo(() =>
+    orgUsers.filter(u => u.role === "consultor_tecnico" && u.is_active),
+    [orgUsers]
+  );
 
   const isEdit = !!lead;
   const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
-  const isEkkoa = form.category === "Neutralizadores";
+  // Allow test scheduling for any category (Ekkoa products: Neutralizadores, Odorizadores, etc.)
+  const isEkkoa = !!form.category;
 
   const leadSearchToken = (lead?.contact_name || lead?.title || "").toLowerCase();
   const existingConsultantSchedule = useMemo(() => {
@@ -189,7 +198,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
   const timeSlots = useMemo(() => (timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : []), [timeWindow]);
 
-  const assignedTo = lead?.assigned_to || lead?.created_by || "";
+  const assignedTo = testForm.assignedConsultant || lead?.assigned_to || lead?.created_by || "";
   const overlapDetected = useMemo(() => {
     if (!testForm.scheduledDate || !testForm.startTime || !assignedTo) return false;
     return hasScheduleOverlap(
@@ -256,16 +265,17 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const isTestFormValid =
     !!testForm.street.trim() &&
     !!testForm.number.trim() &&
-    !!testForm.complement.trim() &&
     !!testForm.city.trim() &&
     !!testForm.state.trim() &&
-    !!testForm.scheduledDate;
+    !!testForm.scheduledDate &&
+    !!assignedTo;
 
   const handleScheduleTest = async () => {
     if (!lead) return;
     if (!cepValid || !matchedArea || overlapDetected || !isTestFormValid) return;
 
-    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()} - ${testForm.complement.trim()}`;
+    const complementPart = testForm.complement.trim() ? ` - ${testForm.complement.trim()}` : "";
+    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()}${complementPart}`;
 
     if (existingConsultantSchedule && existingInstallation) {
       await updateInstallation.mutateAsync({
@@ -306,7 +316,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       zipCode: testForm.zipCode,
       scheduledDate: testForm.scheduledDate,
       startTime: testForm.startTime || undefined,
-      assignedTo: lead.assigned_to || lead.created_by,
+      assignedTo: assignedTo,
     });
 
     onOpenChange(false);
@@ -414,7 +424,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">Complemento *</Label>
+                    <Label className="text-xs">Complemento</Label>
                     <Input
                       value={testForm.complement}
                       onChange={(e) => setTestForm({ ...testForm, complement: e.target.value })}
@@ -497,6 +507,26 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                     )}
                   </div>
                 )}
+                {/* Consultant selector */}
+                <div>
+                  <Label className="text-xs font-semibold">5. Consultor responsável *</Label>
+                  <Select
+                    value={testForm.assignedConsultant}
+                    onValueChange={(v) => setTestForm({ ...testForm, assignedConsultant: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o consultor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {consultants.map((u) => (
+                        <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>
+                      ))}
+                      {consultants.length === 0 && (
+                        <SelectItem value="_none" disabled>Nenhum consultor técnico cadastrado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <Button
                   type="button"
