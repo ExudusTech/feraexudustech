@@ -207,7 +207,7 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {daySchedules.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg">
+              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
                   <div className="font-medium">{s.title}</div>
