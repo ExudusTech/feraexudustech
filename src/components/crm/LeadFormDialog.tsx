@@ -120,14 +120,15 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   }, [schedules, existingConsultantSchedule]);
 
   const existingInstallation = useMemo(() => {
-    if (!lead?.title) return null;
-    const leadTitle = lead.title.toLowerCase();
+    const targetLead = lead || savedLead;
+    if (!targetLead?.title) return null;
+    const leadTitle = targetLead.title.toLowerCase();
     return (
       installations
         .filter((inst) => inst.title.toLowerCase().includes(leadTitle))
         .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null
     );
-  }, [installations, lead?.title]);
+  }, [installations, lead?.title, savedLead?.title]);
 
   const canManageTest = isEdit && !!lead && hasCategories && (
     lead.stage === "novo" ||
