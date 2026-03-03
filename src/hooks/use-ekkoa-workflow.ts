@@ -294,6 +294,7 @@ export function useCompleteVisit() {
       longitude,
       photoUrl,
       notes,
+      leadId,
     }: {
       scheduleId: string;
       operationId?: string | null;
@@ -306,6 +307,7 @@ export function useCompleteVisit() {
       longitude?: number;
       photoUrl?: string;
       notes?: string;
+      leadId?: string;
     }) => {
       const { error: schedError } = await supabase
         .from("schedules")
