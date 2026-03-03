@@ -142,10 +142,11 @@ export function useCreateLead() {
           contact_phone: input.contact_phone,
           expected_close_date: input.expected_close_date,
           category: input.category || null,
+          zip_code: (input as any).zip_code || null,
           organization_id: user.organization_id,
           created_by: user.id,
           position: input.position || 0,
-        })
+        } as any)
         .select()
         .single();
       if (error) throw error;
