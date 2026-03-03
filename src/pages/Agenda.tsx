@@ -401,7 +401,7 @@ export default function Agenda() {
         )}
       </div>
 
-      <ScheduleFormDialog open={dialogOpen} onOpenChange={setDialogOpen} editItem={editItem} />
+      <ScheduleFormDialog open={dialogOpen} onOpenChange={setDialogOpen} schedule={editItem} />
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
