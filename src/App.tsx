@@ -17,6 +17,7 @@ import Financeiro from "@/pages/Financeiro";
 import Relatorios from "@/pages/Relatorios";
 import AreasCobertura from "@/pages/AreasCobertura";
 import Usuarios from "@/pages/Usuarios";
+import MeuPerfil from "@/pages/MeuPerfil";
 import Configuracoes from "@/pages/Configuracoes";
 import Suporte from "@/pages/Suporte";
 import NotFound from "@/pages/NotFound";
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
             <Route path="/areas-cobertura" element={<ProtectedRoute><AreasCobertura /></ProtectedRoute>} />
             <Route path="/usuarios" element={<ProtectedRoute><Usuarios /></ProtectedRoute>} />
+            <Route path="/meu-perfil" element={<ProtectedRoute><MeuPerfil /></ProtectedRoute>} />
             <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
             <Route path="/suporte" element={<ProtectedRoute><Suporte /></ProtectedRoute>} />
             <Route path="/admin/organizacoes" element={<ProtectedRoute><AdminOrganizacoes /></ProtectedRoute>} />

@@ -9,10 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Users, Shield, UserCheck, UserX, Plus } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Users, Shield, UserCheck, UserX, Plus, KeyRound, Ban, Unlock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import UserFormDialog from "@/components/usuarios/UserFormDialog";
+import { useQueryClient } from "@tanstack/react-query";
 
 const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "admin", label: "Administrador" },
@@ -31,7 +36,11 @@ export default function Usuarios() {
   const { data: users, isLoading } = useOrganizationUsers();
   const updateProfile = useUpdateUserProfile();
   const updateRole = useUpdateUserRole();
+  const qc = useQueryClient();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [resetPasswordDialog, setResetPasswordDialog] = useState<{ userId: string; name: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   const handleToggleActive = (profileId: string, currentActive: boolean) => {
     updateProfile.mutate({ id: profileId, is_active: !currentActive });
@@ -39,6 +48,43 @@ export default function Usuarios() {
 
   const handleRoleChange = (userId: string, role: string) => {
     updateRole.mutate({ userId, role });
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPasswordDialog || newPassword.length < 6) {
+      toast({ title: "Senha deve ter pelo menos 6 caracteres", variant: "destructive" });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await supabase.functions.invoke("manage-user", {
+        body: { action: "reset_password", target_user_id: resetPasswordDialog.userId, new_password: newPassword },
+      });
+      if (res.error || res.data?.error) throw new Error(res.data?.error || res.error?.message);
+      toast({ title: "Senha redefinida com sucesso" });
+      setResetPasswordDialog(null);
+      setNewPassword("");
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBlockUser = async (userId: string, block: boolean) => {
+    setActionLoading(true);
+    try {
+      const res = await supabase.functions.invoke("manage-user", {
+        body: { action: block ? "block_user" : "unblock_user", target_user_id: userId },
+      });
+      if (res.error || res.data?.error) throw new Error(res.data?.error || res.error?.message);
+      toast({ title: block ? "Usuário bloqueado" : "Usuário desbloqueado" });
+      qc.invalidateQueries({ queryKey: ["org_users"] });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const getInitials = (name: string) =>
@@ -119,18 +165,19 @@ export default function Usuarios() {
                   <TableHead>Status</TableHead>
                   <TableHead>E-mail Verificado</TableHead>
                   {isAdmin && <TableHead>Ativo</TableHead>}
+                  {isSuperAdmin && <TableHead>Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       Carregando...
                     </TableCell>
                   </TableRow>
                 ) : users?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       Nenhum usuário encontrado.
                     </TableCell>
                   </TableRow>
@@ -192,6 +239,46 @@ export default function Usuarios() {
                             />
                           </TableCell>
                         )}
+                        {isSuperAdmin && (
+                          <TableCell>
+                            {!isCurrentUser && (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Resetar Senha"
+                                  onClick={() => setResetPasswordDialog({ userId: u.user_id, name: u.name })}
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                                {u.is_active ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive hover:text-destructive"
+                                    title="Bloquear Acesso"
+                                    onClick={() => handleBlockUser(u.user_id, true)}
+                                    disabled={actionLoading}
+                                  >
+                                    <Ban className="h-4 w-4" />
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-[hsl(var(--success))] hover:text-[hsl(var(--success))]"
+                                    title="Desbloquear Acesso"
+                                    onClick={() => handleBlockUser(u.user_id, false)}
+                                    disabled={actionLoading}
+                                  >
+                                    <Unlock className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })
@@ -203,6 +290,34 @@ export default function Usuarios() {
       </div>
 
       <UserFormDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+
+      {/* Reset Password Dialog */}
+      <Dialog open={!!resetPasswordDialog} onOpenChange={(open) => { if (!open) { setResetPasswordDialog(null); setNewPassword(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Resetar Senha - {resetPasswordDialog?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nova Senha</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setResetPasswordDialog(null); setNewPassword(""); }}>
+                Cancelar
+              </Button>
+              <Button onClick={handleResetPassword} disabled={actionLoading}>
+                {actionLoading ? "Salvando..." : "Redefinir Senha"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
