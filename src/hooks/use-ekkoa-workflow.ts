@@ -2,28 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
-import type { EkkoaLead } from "@/hooks/use-ekkoa-leads";
+import type { Lead } from "@/hooks/use-leads";
 
-/** Generic lead shape for workflow (works with both leads and ekkoa_leads) */
-export interface WorkflowLead {
-  id: string;
-  organization_id: string;
-  client_id: string | null;
-  title: string;
-  contact_name: string | null;
-  contact_email?: string | null;
-  contact_phone: string | null;
-  source?: string | null;
-  stage?: string;
-  value?: number | null;
-  assigned_to: string | null;
-  expected_close_date?: string | null;
-  notes?: string | null;
-  created_by: string;
-  description?: string | null;
-  created_at?: string;
-  updated_at?: string | null;
-}
 /**
  * CEP validation helper (Brazilian ZIP code format)
  */
@@ -31,18 +11,8 @@ export function validateCEP(cep: string): boolean {
   return /^\d{5}-?\d{3}$/.test(cep);
 }
 
-/**
- * Validates required fields for Ekkoa lead before scheduling test
- */
-export function validateEkkoaLeadForTest(lead: Partial<WorkflowLead>): string | null {
-  if (!lead.contact_name) return "Nome do contato é obrigatório";
-  if (!lead.contact_phone) return "Telefone do contato é obrigatório";
-  if (!lead.assigned_to) return "Vendedor responsável é obrigatório";
-  return null;
-}
-
 interface ScheduleTestInput {
-  lead: WorkflowLead;
+  lead: Lead;
   installationTitle: string;
   address: string;
   city: string;
@@ -52,13 +22,12 @@ interface ScheduleTestInput {
   startTime?: string;
   assignedTo: string;
   notes?: string;
-  /** Which table to update: 'leads' (unified) or 'ekkoa_leads' (legacy) */
-  leadTable?: "leads" | "ekkoa_leads";
 }
 
 /**
- * Atomic workflow: Schedule test installation from Ekkoa Lead.
- * Creates: installation + schedule + updates lead stage + creates operation
+ * Atomic workflow: Schedule test installation from Lead.
+ * Creates: installation + operation + consultant schedule + D-1 operational schedule + equipment reservation
+ * Updates: lead stage to em_teste
  */
 export function useScheduleTestInstallation() {
   const qc = useQueryClient();
@@ -73,6 +42,11 @@ export function useScheduleTestInstallation() {
         throw new Error("CEP inválido. Use o formato 00000-000");
       }
 
+      const orgId = user.organization_id;
+      const userId = user.id;
+      const endDateStr = addDays(input.scheduledDate, 15);
+      const location = `${input.address}, ${input.city} - ${input.state}`;
+
       // 1. Create Ekkoa installation (test type)
       const { data: installation, error: instError } = await supabase
         .from("ekkoa_installations")
@@ -86,72 +60,110 @@ export function useScheduleTestInstallation() {
           zip_code: input.zipCode,
           status: "em_teste",
           start_date: input.scheduledDate,
-          end_date: addDays(input.scheduledDate, 15), // 15 day test period
+          end_date: endDateStr,
           assigned_to: input.assignedTo,
           notes: input.notes,
-          organization_id: user.organization_id,
-          created_by: user.id,
+          organization_id: orgId,
+          created_by: userId,
         })
         .select()
         .single();
-      if (instError) throw instError;
+      if (instError) throw new Error(`Erro ao criar instalação: ${instError.message}`);
 
-      // 2. Create operation linked to the test
+      // 2. Create operation with status instalacao_agendada
       const { data: operation, error: opError } = await supabase
         .from("operations")
         .insert({
           title: `Teste - ${input.lead.title}`,
-          description: `Instalação de teste para lead: ${input.lead.contact_name}`,
-          status: "em_andamento" as const,
+          description: `Instalação de teste para lead: ${input.lead.contact_name || input.lead.title}`,
+          status: "instalacao_agendada",
           priority: "alta",
           client_id: input.lead.client_id,
           assigned_to: input.assignedTo,
           start_date: new Date(input.scheduledDate).toISOString(),
-          end_date: new Date(addDays(input.scheduledDate, 15)).toISOString(),
-          location: `${input.address}, ${input.city} - ${input.state}`,
-          organization_id: user.organization_id,
-          created_by: user.id,
+          end_date: new Date(endDateStr).toISOString(),
+          location,
+          organization_id: orgId,
+          created_by: userId,
         })
         .select()
         .single();
-      if (opError) throw opError;
+      if (opError) throw new Error(`Erro ao criar operação: ${opError.message}`);
 
-      // 3. Create schedule entry for the consultant
+      // 3. Create schedule for the consultant (instalacao_teste)
       const { error: schedError } = await supabase
         .from("schedules")
         .insert({
-          title: `Instalação Teste - ${input.lead.contact_name}`,
+          title: `Instalação de Teste - ${input.lead.contact_name || input.lead.title}`,
           description: `Agendamento de instalação de teste para ${input.lead.title}`,
           scheduled_date: input.scheduledDate,
           start_time: input.startTime || null,
           status: "agendado",
+          schedule_type: "instalacao_teste",
           client_id: input.lead.client_id,
           assigned_to: input.assignedTo,
-          location: `${input.address}, ${input.city} - ${input.state}`,
+          location,
           operation_id: operation.id,
-          organization_id: user.organization_id,
-          created_by: user.id,
+          organization_id: orgId,
+          created_by: userId,
         });
-      if (schedError) throw schedError;
+      if (schedError) throw new Error(`Erro ao criar agendamento do consultor: ${schedError.message}`);
 
-      // 4. Update lead stage to em_teste
-      const table = input.leadTable || "ekkoa_leads";
+      // 4. Create D-1 schedule for operational (pre_emissao_nf)
+      const dMinus1Date = addDays(input.scheduledDate, -1);
+      const { error: d1Error } = await supabase
+        .from("schedules")
+        .insert({
+          title: `[D-1] NF Remessa - ${input.lead.contact_name || input.lead.title}`,
+          description: `Emitir Nota Fiscal de Remessa para instalação agendada em ${input.scheduledDate}`,
+          scheduled_date: dMinus1Date,
+          status: "agendado",
+          schedule_type: "pre_emissao_nf",
+          client_id: input.lead.client_id,
+          location,
+          operation_id: operation.id,
+          organization_id: orgId,
+          created_by: userId,
+        });
+      if (d1Error) throw new Error(`Erro ao criar agendamento D-1: ${d1Error.message}`);
+
+      // 5. Reserve equipment in inventory (serial: RES-XXXXXXXX)
+      const reserveSerial = `RES-${operation.id.substring(0, 8).toUpperCase()}`;
+      const { error: invError } = await supabase
+        .from("inventory_items")
+        .insert({
+          name: `Equipamento reservado - ${input.lead.title}`,
+          description: `Reserva automática para teste. Lead: ${input.lead.title}`,
+          serial_number: reserveSerial,
+          category: "reserva_teste",
+          status: "reservado",
+          quantity: 1,
+          unit: "un",
+          location,
+          organization_id: orgId,
+          created_by: userId,
+        });
+      if (invError) throw new Error(`Erro ao reservar equipamento: ${invError.message}`);
+
+      // 6. Update lead stage to em_teste
       const { error: leadError } = await supabase
-        .from(table)
-        .update({ stage: "em_teste" } as any)
+        .from("leads")
+        .update({ stage: "em_teste" })
         .eq("id", input.lead.id);
-      if (leadError) throw leadError;
-      if (leadError) throw leadError;
+      if (leadError) throw new Error(`Erro ao atualizar lead: ${leadError.message}`);
 
-      return { installation, operation };
+      return { installation, operation, reserveSerial };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["leads"] });
-      qc.invalidateQueries({ queryKey: ["ekkoa_leads"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_installations"] });
       qc.invalidateQueries({ queryKey: ["operations"] });
       qc.invalidateQueries({ queryKey: ["schedules"] });
-      toast({ title: "Teste agendado com sucesso!", description: "Instalação, operação e agenda criados." });
+      qc.invalidateQueries({ queryKey: ["inventory"] });
+      toast({
+        title: "Teste agendado com sucesso!",
+        description: `Instalação, operação, agenda (consultor + D-1) e reserva de equipamento (${data.reserveSerial}) criados.`,
+      });
     },
     onError: (e: Error) => toast({ title: "Erro ao agendar teste", description: e.message, variant: "destructive" }),
   });
@@ -210,7 +222,6 @@ export function useSubmitTestFeedback() {
     }) => {
       if (!user?.organization_id) throw new Error("Sem organização");
 
-      // Update operation status
       const { error: opError } = await supabase
         .from("operations")
         .update({
@@ -220,16 +231,14 @@ export function useSubmitTestFeedback() {
         .eq("id", operationId);
       if (opError) throw opError;
 
-      // Update lead stage if linked
       if (leadId) {
         const { error: leadError } = await supabase
-          .from("ekkoa_leads")
+          .from("leads")
           .update({ stage: approved ? "fechado_ganho" : "fechado_perdido" })
           .eq("id", leadId);
         if (leadError) throw leadError;
       }
 
-      // Auto-create contract on approval
       if (approved && contractData) {
         const startDate = new Date();
         const endDate = new Date();
@@ -254,7 +263,7 @@ export function useSubmitTestFeedback() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["operations"] });
-      qc.invalidateQueries({ queryKey: ["ekkoa_leads"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["ekkoa_contracts"] });
       toast({
         title: vars.approved ? "Teste aprovado!" : "Teste não aprovado",
@@ -262,6 +271,99 @@ export function useSubmitTestFeedback() {
       });
     },
     onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+}
+
+/**
+ * Complete a visit: update equipment serial, GPS, photo, and mark schedule as done
+ */
+export function useCompleteVisit() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      scheduleId,
+      operationId,
+      installationId,
+      equipmentId,
+      fragranceLineId,
+      realSerialNumber,
+      installLocation,
+      latitude,
+      longitude,
+      photoUrl,
+      notes,
+    }: {
+      scheduleId: string;
+      operationId?: string | null;
+      installationId?: string;
+      equipmentId?: string;
+      fragranceLineId?: string;
+      realSerialNumber?: string;
+      installLocation?: string;
+      latitude?: number;
+      longitude?: number;
+      photoUrl?: string;
+      notes?: string;
+    }) => {
+      // 1. Update schedule to concluido
+      const { error: schedError } = await supabase
+        .from("schedules")
+        .update({ status: "concluido", notes })
+        .eq("id", scheduleId);
+      if (schedError) throw schedError;
+
+      // 2. Update operation to em_teste
+      if (operationId) {
+        const { error: opError } = await supabase
+          .from("operations")
+          .update({ status: "em_andamento", notes })
+          .eq("id", operationId);
+        if (opError) throw opError;
+      }
+
+      // 3. Update installation with GPS and notes
+      if (installationId) {
+        const updatePayload: Record<string, unknown> = {};
+        if (latitude !== undefined) updatePayload.latitude = latitude;
+        if (longitude !== undefined) updatePayload.longitude = longitude;
+        if (notes) updatePayload.notes = notes;
+        if (installLocation) updatePayload.description = `Local: ${installLocation}`;
+
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from("ekkoa_installations")
+            .update(updatePayload)
+            .eq("id", installationId);
+          if (error) throw error;
+        }
+      }
+
+      // 4. Update inventory item with real serial number
+      if (realSerialNumber && operationId) {
+        // Find the reserved item by RES- prefix
+        const reservePrefix = `RES-${operationId.substring(0, 8).toUpperCase()}`;
+        const { error: invError } = await supabase
+          .from("inventory_items")
+          .update({
+            serial_number: realSerialNumber,
+            status: "em_uso",
+            installation_date: new Date().toISOString().split("T")[0],
+            geolocation: latitude && longitude ? `${latitude},${longitude}` : null,
+            photo_url: photoUrl || null,
+          })
+          .eq("serial_number", reservePrefix);
+        if (invError) throw invError;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["schedules"] });
+      qc.invalidateQueries({ queryKey: ["operations"] });
+      qc.invalidateQueries({ queryKey: ["ekkoa_installations"] });
+      qc.invalidateQueries({ queryKey: ["inventory"] });
+      toast({ title: "Visita concluída!", description: "Todos os registros atualizados." });
+    },
+    onError: (e: Error) => toast({ title: "Erro ao concluir visita", description: e.message, variant: "destructive" }),
   });
 }
 
