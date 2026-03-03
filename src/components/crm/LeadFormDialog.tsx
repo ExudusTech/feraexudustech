@@ -752,9 +752,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                 maxLength={9}
               />
               {formErrors.zip_code && <p className="text-xs text-destructive mt-1">{formErrors.zip_code}</p>}
-              {hasCoverageAreas && leadCepNormalized.length === 8 && leadCoverageResult && (
-                <div className={`flex items-center gap-1 mt-1 text-xs ${leadCoverageResult.isValid ? "text-primary" : "text-destructive"}`}>
-                  {leadCoverageResult.isValid ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+              {hasCoverageAreas && leadCepNormalized.length === 8 && leadCoverageResult && !leadCoverageResult.isValid && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-destructive">
+                  <AlertTriangle className="h-3 w-3" />
                   {leadCoverageResult.message}
                 </div>
               )}
