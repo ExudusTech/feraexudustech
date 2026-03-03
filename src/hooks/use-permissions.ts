@@ -94,7 +94,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   financeiro: {
-    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/suporte"],
+    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
