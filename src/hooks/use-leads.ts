@@ -32,6 +32,7 @@ export interface Lead {
   created_by: string;
   position: number;
   category: string | null;
+  zip_code: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -141,10 +142,11 @@ export function useCreateLead() {
           contact_phone: input.contact_phone,
           expected_close_date: input.expected_close_date,
           category: input.category || null,
+          zip_code: (input as any).zip_code || null,
           organization_id: user.organization_id,
           created_by: user.id,
           position: input.position || 0,
-        })
+        } as any)
         .select()
         .single();
       if (error) throw error;

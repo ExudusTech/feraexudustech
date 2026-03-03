@@ -32,7 +32,7 @@ interface Props {
 const empty = {
   title: "", description: "", stage: "novo" as LeadStage,
   source: "", contact_name: "", contact_email: "", contact_phone: "",
-  categories: [] as string[],
+  categories: [] as string[], zip_code: "",
 };
 
 const emptyTestForm = {
@@ -120,14 +120,15 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   }, [schedules, existingConsultantSchedule]);
 
   const existingInstallation = useMemo(() => {
-    if (!lead?.title) return null;
-    const leadTitle = lead.title.toLowerCase();
+    const targetLead = lead || savedLead;
+    if (!targetLead?.title) return null;
+    const leadTitle = targetLead.title.toLowerCase();
     return (
       installations
         .filter((inst) => inst.title.toLowerCase().includes(leadTitle))
         .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] || null
     );
-  }, [installations, lead?.title]);
+  }, [installations, lead?.title, savedLead?.title]);
 
   const canManageTest = isEdit && !!lead && hasCategories && (
     lead.stage === "novo" ||
@@ -149,6 +150,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (lead) {
+      const leadZip = (lead as any).zip_code || "";
       setForm({
         title: lead.title,
         description: lead.description || "",
@@ -158,6 +160,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         contact_email: lead.contact_email || "",
         contact_phone: lead.contact_phone || "",
         categories: parseCategories(lead.category),
+        zip_code: leadZip,
       });
     } else {
       setForm({ ...empty, stage: defaultStage || "novo" });
@@ -169,21 +172,29 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   }, [lead, open, defaultStage]);
 
   useEffect(() => {
-    if (!showTestForm || !existingInstallation) return;
-    const parsed = parseAddressParts(existingInstallation.address);
-    const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
-    setTestForm((prev) => ({
-      ...prev,
-      street: prev.street || parsed.street,
-      number: prev.number || parsed.number,
-      complement: prev.complement || parsed.complement,
-      city: prev.city || existingInstallation.city || "",
-      state: prev.state || existingInstallation.state || "",
-      zipCode: prev.zipCode || existingInstallation.zip_code || "",
-      scheduledDate: prev.scheduledDate || consultantDate,
-      startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
-    }));
-  }, [showTestForm, existingInstallation, existingConsultantSchedule]);
+    if (!showTestForm) return;
+    const leadZip = form.zip_code || (lead as any)?.zip_code || (savedLead as any)?.zip_code || "";
+    if (existingInstallation) {
+      const parsed = parseAddressParts(existingInstallation.address);
+      const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
+      setTestForm((prev) => ({
+        ...prev,
+        street: prev.street || parsed.street,
+        number: prev.number || parsed.number,
+        complement: prev.complement || parsed.complement,
+        city: prev.city || existingInstallation.city || "",
+        state: prev.state || existingInstallation.state || "",
+        zipCode: prev.zipCode || existingInstallation.zip_code || leadZip,
+        scheduledDate: prev.scheduledDate || consultantDate,
+        startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
+      }));
+    } else if (leadZip) {
+      setTestForm((prev) => ({
+        ...prev,
+        zipCode: prev.zipCode || leadZip,
+      }));
+    }
+  }, [showTestForm, existingInstallation, existingConsultantSchedule, form.zip_code, lead, savedLead]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -247,7 +258,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
     const categoryStr = form.categories.length > 0 ? form.categories.join(", ") : null;
 
-    const payload = {
+    const payload: any = {
       title: form.title,
       description: form.description || null,
       stage: form.stage,
@@ -258,6 +269,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       contact_phone: form.contact_phone || null,
       expected_close_date: null,
       category: categoryStr,
+      zip_code: form.zip_code || null,
     };
 
     if (isEdit) {
@@ -692,6 +704,15 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                   </label>
                 ))}
               </div>
+            </div>
+            <div>
+              <Label>CEP do local</Label>
+              <Input
+                value={form.zip_code}
+                onChange={(e) => set("zip_code", formatCEP(e.target.value))}
+                placeholder="00000-000"
+                maxLength={9}
+              />
             </div>
             <div>
               <Label>Estágio</Label>
