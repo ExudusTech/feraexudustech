@@ -67,6 +67,7 @@ function addDays(dateStr: string, days: number): string {
 
 export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage }: Props) {
   const [form, setForm] = useState(empty);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [showTestForm, setShowTestForm] = useState(false);
   const [testForm, setTestForm] = useState(emptyTestForm);
   const [showSchedulePrompt, setShowSchedulePrompt] = useState(false);
