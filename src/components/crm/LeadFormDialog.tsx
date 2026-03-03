@@ -92,11 +92,16 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   // Coverage validation for lead CEP
   const { validate: validateCoverage, hasAreas: hasCoverageAreas } = useCoverageValidation();
+  const leadViaCep = useViaCep(form.zip_code);
   const leadCepNormalized = form.zip_code.replace(/\D/g, "");
   const leadCoverageResult = useMemo(() => {
     if (leadCepNormalized.length !== 8) return null;
-    return validateCoverage(form.zip_code, null, null);
-  }, [leadCepNormalized, validateCoverage, form.zip_code]);
+    return validateCoverage(
+      form.zip_code,
+      leadViaCep.data?.localidade ?? null,
+      leadViaCep.data?.uf ?? null
+    );
+  }, [leadCepNormalized, validateCoverage, form.zip_code, leadViaCep.data?.localidade, leadViaCep.data?.uf]);
 
   const leadCepOutOfCoverage = hasCoverageAreas && leadCoverageResult && !leadCoverageResult.isValid && leadCepNormalized.length === 8;
 
@@ -279,7 +284,11 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     if (!form.contact_email.trim()) errors.contact_email = "E-mail é obrigatório";
     else if (!validateEmail(form.contact_email)) errors.contact_email = "E-mail inválido";
     
-    if (leadCepOutOfCoverage) errors.zip_code = "CEP fora da área de cobertura";
+    if (hasCoverageAreas && leadCepNormalized.length === 8 && leadViaCep.loading) {
+      errors.zip_code = "Validando CEP, aguarde um instante";
+    } else if (leadCepOutOfCoverage) {
+      errors.zip_code = "CEP fora da área de cobertura";
+    }
     
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
@@ -743,9 +752,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                 maxLength={9}
               />
               {formErrors.zip_code && <p className="text-xs text-destructive mt-1">{formErrors.zip_code}</p>}
-              {hasCoverageAreas && leadCepNormalized.length === 8 && leadCoverageResult && (
-                <div className={`flex items-center gap-1 mt-1 text-xs ${leadCoverageResult.isValid ? "text-primary" : "text-destructive"}`}>
-                  {leadCoverageResult.isValid ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+              {hasCoverageAreas && leadCepNormalized.length === 8 && leadCoverageResult && !leadCoverageResult.isValid && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-destructive">
+                  <AlertTriangle className="h-3 w-3" />
                   {leadCoverageResult.message}
                 </div>
               )}
