@@ -2312,6 +2312,7 @@ export type Database = {
           notes: string | null
           operation_id: string | null
           organization_id: string
+          schedule_type: string
           scheduled_date: string
           start_time: string | null
           status: string
@@ -2330,6 +2331,7 @@ export type Database = {
           notes?: string | null
           operation_id?: string | null
           organization_id: string
+          schedule_type?: string
           scheduled_date: string
           start_time?: string | null
           status?: string
@@ -2348,6 +2350,7 @@ export type Database = {
           notes?: string | null
           operation_id?: string | null
           organization_id?: string
+          schedule_type?: string
           scheduled_date?: string
           start_time?: string | null
           status?: string
@@ -2526,7 +2529,12 @@ export type Database = {
         | "feedback"
         | "instalacao_definitiva"
         | "cadastramento"
-      operation_status: "pendente" | "em_andamento" | "concluida" | "cancelada"
+      operation_status:
+        | "pendente"
+        | "em_andamento"
+        | "concluida"
+        | "cancelada"
+        | "instalacao_agendada"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2677,7 +2685,13 @@ export const Constants = {
         "instalacao_definitiva",
         "cadastramento",
       ],
-      operation_status: ["pendente", "em_andamento", "concluida", "cancelada"],
+      operation_status: [
+        "pendente",
+        "em_andamento",
+        "concluida",
+        "cancelada",
+        "instalacao_agendada",
+      ],
     },
   },
 } as const
