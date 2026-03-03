@@ -150,7 +150,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (lead) {
-      const leadZip = (lead as any).zip_code || "";
       setForm({
         title: lead.title,
         description: lead.description || "",
@@ -160,7 +159,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         contact_email: lead.contact_email || "",
         contact_phone: lead.contact_phone || "",
         categories: parseCategories(lead.category),
-        zip_code: leadZip,
+        zip_code: lead.zip_code || "",
       });
     } else {
       setForm({ ...empty, stage: defaultStage || "novo" });
