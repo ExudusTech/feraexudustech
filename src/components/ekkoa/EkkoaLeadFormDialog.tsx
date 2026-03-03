@@ -139,6 +139,7 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
       value: lead.value ?? 0,
       position: 0,
       category: null,
+      zip_code: null,
     };
     await scheduleTest.mutateAsync({
       lead: leadAsInput,
