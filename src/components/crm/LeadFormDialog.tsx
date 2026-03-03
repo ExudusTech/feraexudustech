@@ -207,7 +207,10 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     }
   }, [showTestForm, existingInstallation, existingConsultantSchedule, form.zip_code, lead, savedLead]);
 
-  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const set = (k: string, v: string) => {
+    setForm((p) => ({ ...p, [k]: v }));
+    setFormErrors((prev) => { const next = { ...prev }; delete next[k]; return next; });
+  };
 
   const toggleCategory = (cat: string) => {
     setForm((p) => ({
