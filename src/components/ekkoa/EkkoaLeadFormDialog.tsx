@@ -12,6 +12,7 @@ import { useConvertEkkoaLeadToClient } from "@/hooks/use-lead-conversion";
 import { useScheduleTestInstallation } from "@/hooks/use-ekkoa-workflow";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
 import { useSchedules } from "@/hooks/use-schedules";
+import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP, formatPhone } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
@@ -21,10 +22,12 @@ interface Props { open: boolean; onOpenChange: (open: boolean) => void; lead?: E
 
 const empty = { title: "", description: "", contact_name: "", contact_email: "", contact_phone: "", source: "", stage: "novo", value: "0", expected_close_date: "", notes: "" };
 
+const emptyTestForm = { street: "", number: "", complement: "", city: "", state: "", zipCode: "", scheduledDate: "", startTime: "", assignedConsultant: "" };
+
 export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props) {
   const [form, setForm] = useState(empty);
   const [showTestForm, setShowTestForm] = useState(false);
-  const [testForm, setTestForm] = useState({ address: "", city: "", state: "", zipCode: "", scheduledDate: "", startTime: "" });
+  const [testForm, setTestForm] = useState(emptyTestForm);
 
   const create = useCreateEkkoaLead();
   const update = useUpdateEkkoaLead();
@@ -32,6 +35,13 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
   const scheduleTest = useScheduleTestInstallation();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: schedules = [] } = useSchedules();
+  const { data: orgUsers = [] } = useOrganizationUsers();
+
+  const consultants = useMemo(() =>
+    orgUsers.filter(u => u.role === "consultor_tecnico" && u.is_active),
+    [orgUsers]
+  );
+
   const isEdit = !!lead;
   const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
   const canScheduleTest = isEdit && lead && (lead.stage === "novo" || lead.stage === "qualificacao");
@@ -46,12 +56,11 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
       });
     } else setForm(empty);
     setShowTestForm(false);
-    setTestForm({ address: "", city: "", state: "", zipCode: "", scheduledDate: "", startTime: "" });
+    setTestForm(emptyTestForm);
   }, [lead, open]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Coverage area matching
   const matchedArea = useMemo(() => {
     if (!testForm.zipCode || testForm.zipCode.replace(/\D/g, "").length < 8) return null;
     return findCoverageAreaByCep(testForm.zipCode, coverageAreas);
@@ -60,40 +69,29 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
   const cepValid = testForm.zipCode.replace(/\D/g, "").length === 8;
   const cepEntered = testForm.zipCode.replace(/\D/g, "").length > 0;
 
-  // Allowed dates based on coverage area
   const allowedDays = useMemo(() => getAllowedDays(matchedArea), [matchedArea]);
   const allowedDates = useMemo(() => getNextAllowedDates(allowedDays, 60), [allowedDays]);
-
-  // Time window
   const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
   const timeSlots = useMemo(() => timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : [], [timeWindow]);
 
-  // Overlap check
-  const assignedTo = lead?.assigned_to || lead?.created_by || "";
+  const assignedTo = testForm.assignedConsultant || lead?.assigned_to || lead?.created_by || "";
   const overlapDetected = useMemo(() => {
     if (!testForm.scheduledDate || !testForm.startTime || !assignedTo) return false;
     return hasScheduleOverlap(schedules, assignedTo, testForm.scheduledDate, testForm.startTime, null);
   }, [schedules, assignedTo, testForm.scheduledDate, testForm.startTime]);
 
-  // ViaCEP auto-fill
   const viaCep = useViaCep(testForm.zipCode);
   useEffect(() => {
     if (viaCep.data && matchedArea) {
       setTestForm((prev) => ({
         ...prev,
-        address: prev.address || (viaCep.data!.logradouro ? `${viaCep.data!.logradouro}${viaCep.data!.bairro ? `, ${viaCep.data!.bairro}` : ""}` : ""),
+        street: prev.street || viaCep.data!.logradouro || "",
         city: prev.city || viaCep.data!.localidade || "",
         state: prev.state || viaCep.data!.uf || "",
       }));
     }
   }, [viaCep.data, matchedArea]);
 
-  // Reset fields when CEP changes
-  useEffect(() => {
-    setTestForm((prev) => ({ ...prev, scheduledDate: "", startTime: "", address: "", city: "", state: "" }));
-  }, [testForm.zipCode]);
-
-  // Auto-fill time from time window
   useEffect(() => {
     if (timeWindow && testForm.scheduledDate && !testForm.startTime) {
       setTestForm((prev) => ({ ...prev, startTime: timeWindow.start }));
@@ -120,11 +118,20 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
     onOpenChange(false);
   };
 
+  const isTestFormValid =
+    !!testForm.street.trim() &&
+    !!testForm.number.trim() &&
+    !!testForm.city.trim() &&
+    !!testForm.state.trim() &&
+    !!testForm.scheduledDate &&
+    !!assignedTo;
+
   const handleScheduleTest = async () => {
     if (!lead) return;
-    if (!cepValid || !matchedArea) return;
-    if (!testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate) return;
-    if (overlapDetected) return;
+    if (!cepValid || !matchedArea || overlapDetected || !isTestFormValid) return;
+
+    const complementPart = testForm.complement.trim() ? ` - ${testForm.complement.trim()}` : "";
+    const fullAddress = `${testForm.street.trim()}, ${testForm.number.trim()}${complementPart}`;
 
     const leadAsInput = {
       ...lead,
@@ -136,26 +143,24 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
     await scheduleTest.mutateAsync({
       lead: leadAsInput,
       installationTitle: `Teste - ${lead.title}`,
-      address: testForm.address,
-      city: testForm.city,
-      state: testForm.state,
+      address: fullAddress,
+      city: testForm.city.trim(),
+      state: testForm.state.trim().toUpperCase(),
       zipCode: testForm.zipCode,
       scheduledDate: testForm.scheduledDate,
       startTime: testForm.startTime || undefined,
-      assignedTo: lead.assigned_to || lead.created_by,
+      assignedTo: assignedTo,
     });
     onOpenChange(false);
   };
 
   const isPending = create.isPending || update.isPending || convert.isPending || scheduleTest.isPending;
-  const testFormBlocked = !matchedArea && cepValid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Lead Ekkoa" : "Novo Lead Ekkoa"}</DialogTitle></DialogHeader>
 
-        {/* Workflow Actions */}
         {isEdit && (canConvert || canScheduleTest) && (
           <>
             <div className="flex flex-wrap gap-2">
@@ -174,12 +179,10 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
           </>
         )}
 
-        {/* Schedule Test Form — CEP First */}
         {showTestForm && (
           <div className="space-y-3 p-3 rounded-lg border border-dashed bg-muted/30">
             <p className="text-sm font-medium">Agendar Instalação de Teste (15 dias)</p>
 
-            {/* Step 1: CEP */}
             <div>
               <Label className="text-xs font-semibold">1. CEP do local *</Label>
               <Input
@@ -194,7 +197,6 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
               )}
             </div>
 
-            {/* Coverage feedback */}
             {cepValid && (
               <Alert variant={matchedArea ? "default" : "destructive"} className="py-2">
                 <div className="flex items-center gap-2">
@@ -218,13 +220,38 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
               </Alert>
             )}
 
-            {/* Step 2+: Only show if area matched */}
             {matchedArea && (
               <>
+                {cepValid && !viaCep.loading && !viaCep.data && (
+                  <p className="text-xs text-muted-foreground">
+                    Não foi possível autopreencher o endereço por CEP. Preencha manualmente.
+                  </p>
+                )}
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
-                    <Label className="text-xs">2. Endereço *</Label>
-                    <Input value={testForm.address} onChange={(e) => setTestForm({ ...testForm, address: e.target.value })} placeholder="Rua, nº" />
+                    <Label className="text-xs">2. Endereço (rua/avenida) *</Label>
+                    <Input
+                      value={testForm.street}
+                      onChange={(e) => setTestForm({ ...testForm, street: e.target.value })}
+                      placeholder="Rua John Kennedy"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Número *</Label>
+                    <Input
+                      value={testForm.number}
+                      onChange={(e) => setTestForm({ ...testForm, number: e.target.value })}
+                      placeholder="120"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Complemento</Label>
+                    <Input
+                      value={testForm.complement}
+                      onChange={(e) => setTestForm({ ...testForm, complement: e.target.value })}
+                      placeholder="Centro, Loja 2, Sala 3..."
+                    />
                   </div>
                   <div>
                     <Label className="text-xs">Cidade *</Label>
@@ -236,7 +263,6 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
                   </div>
                 </div>
 
-                {/* Step 3: Date — filtered by coverage day */}
                 <div>
                   <Label className="text-xs font-semibold">3. Data do agendamento *</Label>
                   {allowedDates.length > 0 ? (
@@ -266,7 +292,6 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
                   )}
                 </div>
 
-                {/* Step 4: Time — restricted to allowed slots */}
                 {testForm.scheduledDate && (
                   <div>
                     <Label className="text-xs font-semibold">4. Horário</Label>
@@ -298,11 +323,32 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
                   </div>
                 )}
 
+                {/* Consultant selector */}
+                <div>
+                  <Label className="text-xs font-semibold">5. Consultor responsável *</Label>
+                  <Select
+                    value={testForm.assignedConsultant}
+                    onValueChange={(v) => setTestForm({ ...testForm, assignedConsultant: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o consultor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {consultants.map((u) => (
+                        <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>
+                      ))}
+                      {consultants.length === 0 && (
+                        <SelectItem value="_none" disabled>Nenhum consultor técnico cadastrado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <Button
                   type="button"
                   size="sm"
                   onClick={handleScheduleTest}
-                  disabled={isPending || !testForm.address || !testForm.city || !testForm.state || !testForm.scheduledDate || overlapDetected}
+                  disabled={isPending || !isTestFormValid || overlapDetected}
                 >
                   {scheduleTest.isPending ? "Agendando..." : "Confirmar Agendamento"}
                 </Button>
