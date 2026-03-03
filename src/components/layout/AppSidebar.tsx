@@ -26,6 +26,7 @@ const mainNavItems = [
   { icon: Package, label: "Produtos", path: "/produtos" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: BarChart3, label: "Relatórios", path: "/relatorios" },
+  { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: MapPin, label: "Áreas de Cobertura", path: "/areas-cobertura" },
 ];
 
