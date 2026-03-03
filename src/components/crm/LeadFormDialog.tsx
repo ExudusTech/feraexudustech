@@ -83,10 +83,17 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: schedules = [] } = useSchedules();
   const { data: installations = [] } = useEkkoaInstallations();
+  const { data: orgUsers = [] } = useOrganizationUsers();
+
+  const consultants = useMemo(() =>
+    orgUsers.filter(u => u.role === "consultor_tecnico" && u.is_active),
+    [orgUsers]
+  );
 
   const isEdit = !!lead;
   const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
-  const isEkkoa = form.category === "Neutralizadores";
+  // Allow test scheduling for any category (Ekkoa products: Neutralizadores, Odorizadores, etc.)
+  const isEkkoa = !!form.category;
 
   const leadSearchToken = (lead?.contact_name || lead?.title || "").toLowerCase();
   const existingConsultantSchedule = useMemo(() => {
