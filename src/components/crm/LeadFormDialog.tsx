@@ -702,7 +702,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <Label>Nome do Cliente/Empresa *</Label>
-              <Input value={form.title} onChange={(e) => set("title", e.target.value)} required />
+              <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
+              {formErrors.title && <p className="text-xs text-destructive mt-1">{formErrors.title}</p>}
             </div>
             <div className="col-span-2">
               <Label>Categorias</Label>
@@ -730,13 +731,20 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               </div>
             </div>
             <div>
-              <Label>CEP do local</Label>
+              <Label>CEP do local *</Label>
               <Input
                 value={form.zip_code}
                 onChange={(e) => set("zip_code", formatCEP(e.target.value))}
                 placeholder="00000-000"
                 maxLength={9}
               />
+              {formErrors.zip_code && <p className="text-xs text-destructive mt-1">{formErrors.zip_code}</p>}
+              {hasCoverageAreas && leadCepNormalized.length === 8 && leadCoverageResult && (
+                <div className={`flex items-center gap-1 mt-1 text-xs ${leadCoverageResult.isValid ? "text-primary" : "text-destructive"}`}>
+                  {leadCoverageResult.isValid ? <CheckCircle className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                  {leadCoverageResult.message}
+                </div>
+              )}
             </div>
             <div>
               <Label>Estágio</Label>
@@ -758,17 +766,19 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
             </div>
             <div>
-              <Label>Telefone contato</Label>
+              <Label>Telefone contato *</Label>
               <Input
                 value={form.contact_phone}
                 onChange={(e) => set("contact_phone", formatPhone(e.target.value))}
                 placeholder="(00) 00000-0000"
                 maxLength={15}
               />
+              {formErrors.contact_phone && <p className="text-xs text-destructive mt-1">{formErrors.contact_phone}</p>}
             </div>
             <div>
-              <Label>E-mail contato</Label>
+              <Label>E-mail contato *</Label>
               <Input type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} />
+              {formErrors.contact_email && <p className="text-xs text-destructive mt-1">{formErrors.contact_email}</p>}
             </div>
             <div className="col-span-2">
               <Label>Descrição</Label>
