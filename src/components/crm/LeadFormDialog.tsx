@@ -173,6 +173,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (!showTestForm) return;
+    const leadZip = form.zip_code || (lead as any)?.zip_code || (savedLead as any)?.zip_code || "";
     if (existingInstallation) {
       const parsed = parseAddressParts(existingInstallation.address);
       const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
@@ -183,12 +184,17 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         complement: prev.complement || parsed.complement,
         city: prev.city || existingInstallation.city || "",
         state: prev.state || existingInstallation.state || "",
-        zipCode: prev.zipCode || existingInstallation.zip_code || "",
+        zipCode: prev.zipCode || existingInstallation.zip_code || leadZip,
         scheduledDate: prev.scheduledDate || consultantDate,
         startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
       }));
+    } else if (leadZip) {
+      setTestForm((prev) => ({
+        ...prev,
+        zipCode: prev.zipCode || leadZip,
+      }));
     }
-  }, [showTestForm, existingInstallation, existingConsultantSchedule]);
+  }, [showTestForm, existingInstallation, existingConsultantSchedule, form.zip_code, lead, savedLead]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
