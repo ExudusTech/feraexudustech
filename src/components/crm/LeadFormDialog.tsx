@@ -258,7 +258,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
     const categoryStr = form.categories.length > 0 ? form.categories.join(", ") : null;
 
-    const payload = {
+    const payload: any = {
       title: form.title,
       description: form.description || null,
       stage: form.stage,
@@ -269,6 +269,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       contact_phone: form.contact_phone || null,
       expected_close_date: null,
       category: categoryStr,
+      zip_code: form.zip_code || null,
     };
 
     if (isEdit) {
