@@ -170,20 +170,22 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   }, [lead, open, defaultStage]);
 
   useEffect(() => {
-    if (!showTestForm || !existingInstallation) return;
-    const parsed = parseAddressParts(existingInstallation.address);
-    const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
-    setTestForm((prev) => ({
-      ...prev,
-      street: prev.street || parsed.street,
-      number: prev.number || parsed.number,
-      complement: prev.complement || parsed.complement,
-      city: prev.city || existingInstallation.city || "",
-      state: prev.state || existingInstallation.state || "",
-      zipCode: prev.zipCode || existingInstallation.zip_code || "",
-      scheduledDate: prev.scheduledDate || consultantDate,
-      startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
-    }));
+    if (!showTestForm) return;
+    if (existingInstallation) {
+      const parsed = parseAddressParts(existingInstallation.address);
+      const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
+      setTestForm((prev) => ({
+        ...prev,
+        street: prev.street || parsed.street,
+        number: prev.number || parsed.number,
+        complement: prev.complement || parsed.complement,
+        city: prev.city || existingInstallation.city || "",
+        state: prev.state || existingInstallation.state || "",
+        zipCode: prev.zipCode || existingInstallation.zip_code || "",
+        scheduledDate: prev.scheduledDate || consultantDate,
+        startTime: prev.startTime || existingConsultantSchedule?.start_time || "",
+      }));
+    }
   }, [showTestForm, existingInstallation, existingConsultantSchedule]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
