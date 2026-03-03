@@ -162,7 +162,6 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       scheduledDate: testForm.scheduledDate,
       startTime: testForm.startTime || undefined,
       assignedTo: lead.assigned_to || lead.created_by,
-      leadTable: "leads",
     });
     onOpenChange(false);
   };
