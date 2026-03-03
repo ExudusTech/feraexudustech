@@ -316,7 +316,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       zipCode: testForm.zipCode,
       scheduledDate: testForm.scheduledDate,
       startTime: testForm.startTime || undefined,
-      assignedTo: lead.assigned_to || lead.created_by,
+      assignedTo: assignedTo,
     });
 
     onOpenChange(false);
