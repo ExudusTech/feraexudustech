@@ -37,7 +37,6 @@ export function useScheduleTestInstallation() {
     mutationFn: async (input: ScheduleTestInput) => {
       if (!user?.organization_id) throw new Error("Sem organização");
 
-      // Validate CEP
       if (input.zipCode && !validateCEP(input.zipCode)) {
         throw new Error("CEP inválido. Use o formato 00000-000");
       }
@@ -47,13 +46,23 @@ export function useScheduleTestInstallation() {
       const endDateStr = addDays(input.scheduledDate, 15);
       const location = `${input.address}, ${input.city} - ${input.state}`;
 
-      // 1. Create Ekkoa installation (test type)
+      const crmClientId = await resolveCrmClientId(input.lead.client_id);
+      const ekkoaClientId = await resolveOrCreateEkkoaClient({
+        lead: input.lead,
+        orgId,
+        userId,
+        address: input.address,
+        city: input.city,
+        state: input.state,
+        zipCode: input.zipCode,
+      });
+
       const { data: installation, error: instError } = await supabase
         .from("ekkoa_installations")
         .insert({
           title: input.installationTitle,
           installation_type: "teste",
-          client_id: input.lead.client_id,
+          client_id: ekkoaClientId,
           address: input.address,
           city: input.city,
           state: input.state,
@@ -70,7 +79,6 @@ export function useScheduleTestInstallation() {
         .single();
       if (instError) throw new Error(`Erro ao criar instalação: ${instError.message}`);
 
-      // 2. Create operation with status instalacao_agendada
       const { data: operation, error: opError } = await supabase
         .from("operations")
         .insert({
@@ -78,7 +86,7 @@ export function useScheduleTestInstallation() {
           description: `Instalação de teste para lead: ${input.lead.contact_name || input.lead.title}`,
           status: "instalacao_agendada",
           priority: "alta",
-          client_id: input.lead.client_id,
+          client_id: crmClientId,
           assigned_to: input.assignedTo,
           start_date: new Date(input.scheduledDate).toISOString(),
           end_date: new Date(endDateStr).toISOString(),
@@ -90,7 +98,6 @@ export function useScheduleTestInstallation() {
         .single();
       if (opError) throw new Error(`Erro ao criar operação: ${opError.message}`);
 
-      // 3. Create schedule for the consultant (instalacao_teste)
       const { error: schedError } = await supabase
         .from("schedules")
         .insert({
@@ -100,7 +107,7 @@ export function useScheduleTestInstallation() {
           start_time: input.startTime || null,
           status: "agendado",
           schedule_type: "instalacao_teste",
-          client_id: input.lead.client_id,
+          client_id: crmClientId,
           assigned_to: input.assignedTo,
           location,
           operation_id: operation.id,
@@ -109,7 +116,6 @@ export function useScheduleTestInstallation() {
         });
       if (schedError) throw new Error(`Erro ao criar agendamento do consultor: ${schedError.message}`);
 
-      // 4. Create D-1 schedule for operational (pre_emissao_nf)
       const dMinus1Date = addDays(input.scheduledDate, -1);
       const { error: d1Error } = await supabase
         .from("schedules")
@@ -119,7 +125,7 @@ export function useScheduleTestInstallation() {
           scheduled_date: dMinus1Date,
           status: "agendado",
           schedule_type: "pre_emissao_nf",
-          client_id: input.lead.client_id,
+          client_id: crmClientId,
           location,
           operation_id: operation.id,
           organization_id: orgId,
@@ -127,7 +133,6 @@ export function useScheduleTestInstallation() {
         });
       if (d1Error) throw new Error(`Erro ao criar agendamento D-1: ${d1Error.message}`);
 
-      // 5. Reserve equipment in inventory (serial: RES-XXXXXXXX)
       const reserveSerial = `RES-${operation.id.substring(0, 8).toUpperCase()}`;
       const { error: invError } = await supabase
         .from("inventory_items")
@@ -145,7 +150,6 @@ export function useScheduleTestInstallation() {
         });
       if (invError) throw new Error(`Erro ao reservar equipamento: ${invError.message}`);
 
-      // 6. Update lead stage to em_teste
       const { error: leadError } = await supabase
         .from("leads")
         .update({ stage: "em_teste" })
@@ -306,14 +310,12 @@ export function useCompleteVisit() {
       photoUrl?: string;
       notes?: string;
     }) => {
-      // 1. Update schedule to concluido
       const { error: schedError } = await supabase
         .from("schedules")
         .update({ status: "concluido", notes })
         .eq("id", scheduleId);
       if (schedError) throw schedError;
 
-      // 2. Update operation to em_teste
       if (operationId) {
         const { error: opError } = await supabase
           .from("operations")
@@ -322,7 +324,6 @@ export function useCompleteVisit() {
         if (opError) throw opError;
       }
 
-      // 3. Update installation with GPS and notes
       if (installationId) {
         const updatePayload: Record<string, unknown> = {};
         if (latitude !== undefined) updatePayload.latitude = latitude;
@@ -339,9 +340,7 @@ export function useCompleteVisit() {
         }
       }
 
-      // 4. Update inventory item with real serial number
       if (realSerialNumber && operationId) {
-        // Find the reserved item by RES- prefix
         const reservePrefix = `RES-${operationId.substring(0, 8).toUpperCase()}`;
         const { error: invError } = await supabase
           .from("inventory_items")
@@ -367,9 +366,85 @@ export function useCompleteVisit() {
   });
 }
 
-// Helper to add days to a date string
 function addDays(dateStr: string, days: number): string {
   const date = new Date(dateStr);
   date.setDate(date.getDate() + days);
   return date.toISOString().split("T")[0];
+}
+
+function normalizeText(value?: string | null): string | null {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : null;
+}
+
+async function resolveCrmClientId(clientId: string | null): Promise<string | null> {
+  if (!clientId) return null;
+  const { data, error } = await supabase.from("clients").select("id").eq("id", clientId).maybeSingle();
+  if (error) throw new Error(`Erro ao validar cliente CRM: ${error.message}`);
+  return data?.id ?? null;
+}
+
+async function resolveOrCreateEkkoaClient({
+  lead,
+  orgId,
+  userId,
+  address,
+  city,
+  state,
+  zipCode,
+}: {
+  lead: Lead;
+  orgId: string;
+  userId: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}): Promise<string> {
+  if (lead.client_id) {
+    const { data: existingEkkoa, error: checkError } = await supabase
+      .from("ekkoa_clients")
+      .select("id")
+      .eq("id", lead.client_id)
+      .maybeSingle();
+
+    if (checkError) throw new Error(`Erro ao validar cliente técnico: ${checkError.message}`);
+    if (existingEkkoa?.id) return existingEkkoa.id;
+  }
+
+  const email = normalizeText(lead.contact_email);
+  if (email) {
+    const { data: byEmail, error: emailError } = await supabase
+      .from("ekkoa_clients")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (emailError) throw new Error(`Erro ao buscar cliente técnico por email: ${emailError.message}`);
+    if (byEmail?.id) return byEmail.id;
+  }
+
+  const contactName = normalizeText(lead.contact_name);
+  const fallbackName = normalizeText(lead.title) ?? "Cliente Lead";
+
+  const { data: created, error: createError } = await supabase
+    .from("ekkoa_clients")
+    .insert({
+      name: contactName ?? fallbackName,
+      email,
+      phone: normalizeText(lead.contact_phone),
+      address: normalizeText(address),
+      city: normalizeText(city),
+      state: normalizeText(state),
+      zip_code: normalizeText(zipCode),
+      notes: "Cliente técnico criado automaticamente durante o agendamento de teste.",
+      organization_id: orgId,
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+
+  if (createError) throw new Error(`Erro ao criar cliente técnico: ${createError.message}`);
+  return created.id;
 }

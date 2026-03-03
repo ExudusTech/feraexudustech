@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 
-export type OperationStatus = "pendente" | "em_andamento" | "concluida" | "cancelada";
+export type OperationStatus = "pendente" | "instalacao_agendada" | "em_andamento" | "concluida" | "cancelada";
 
 export interface Operation {
   id: string;
@@ -25,6 +25,7 @@ export interface Operation {
 
 export const STATUS_CONFIG: Record<OperationStatus, { label: string; color: string }> = {
   pendente: { label: "Pendente", color: "bg-amber-500" },
+  instalacao_agendada: { label: "Instalação Agendada", color: "bg-cyan-500" },
   em_andamento: { label: "Em Andamento", color: "bg-blue-500" },
   concluida: { label: "Concluída", color: "bg-emerald-500" },
   cancelada: { label: "Cancelada", color: "bg-red-500" },
