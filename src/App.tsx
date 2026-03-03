@@ -17,6 +17,7 @@ import Financeiro from "@/pages/Financeiro";
 import Relatorios from "@/pages/Relatorios";
 import AreasCobertura from "@/pages/AreasCobertura";
 import Usuarios from "@/pages/Usuarios";
+import MeuPerfil from "@/pages/MeuPerfil";
 import Configuracoes from "@/pages/Configuracoes";
 import Suporte from "@/pages/Suporte";
 import NotFound from "@/pages/NotFound";

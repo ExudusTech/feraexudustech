@@ -189,16 +189,29 @@ export default function AppSidebar() {
       {/* User section */}
       <div className="p-3">
         <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-          <Avatar className="h-9 w-9 shrink-0">
-            <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => navigate("/meu-perfil")}
+                className="shrink-0 cursor-pointer"
+              >
+                <Avatar className="h-9 w-9">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </TooltipTrigger>
+            {collapsed && <TooltipContent side="right">Meu Perfil</TooltipContent>}
+          </Tooltip>
           {!collapsed && (
-            <div className="flex-1 min-w-0">
+            <button
+              onClick={() => navigate("/meu-perfil")}
+              className="flex-1 min-w-0 text-left cursor-pointer hover:opacity-80 transition-opacity"
+            >
               <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.name}</p>
               <p className="text-xs text-sidebar-foreground/60 truncate">{roleLabel}</p>
-            </div>
+            </button>
           )}
           <Tooltip>
             <TooltipTrigger asChild>
