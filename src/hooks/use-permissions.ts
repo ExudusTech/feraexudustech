@@ -137,6 +137,8 @@ export function usePermissions() {
   const isSuperAdmin = role === "super_admin";
 
   const canAccessRoute = (path: string): boolean => {
+    // Profile page is always accessible
+    if (path === "/meu-perfil") return true;
     // Block Ekkoa routes if org doesn't have access
     if (path.startsWith("/ekkoa") && !orgHasEkkoaAccess) {
       return false;
