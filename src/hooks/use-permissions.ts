@@ -44,7 +44,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
