@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
   BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon, Crown,
+  ChevronLeft, Sun, Moon, Crown, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
