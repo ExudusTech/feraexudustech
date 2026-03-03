@@ -150,21 +150,8 @@ export function useScheduleTestInstallation() {
         });
       if (invError) throw new Error(`Erro ao reservar equipamento: ${invError.message}`);
 
-      // Try updating CRM leads table first, then ekkoa_leads as fallback
-      const { data: crmLead } = await supabase
-        .from("leads")
-        .update({ stage: "em_teste" })
-        .eq("id", input.lead.id)
-        .select("id")
-        .maybeSingle();
-
-      if (!crmLead) {
-        // Lead might be from ekkoa_leads table
-        await supabase
-          .from("ekkoa_leads")
-          .update({ stage: "em_teste" })
-          .eq("id", input.lead.id);
-      }
+      // Lead stays in "novo" stage until consultant completes the visit
+      // Stage will be updated to "em_teste" in useCompleteVisit
 
       return { installation, operation, reserveSerial };
     },
