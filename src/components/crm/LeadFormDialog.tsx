@@ -265,7 +265,20 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) return;
+    const errors: Record<string, string> = {};
+    
+    if (!form.title.trim()) errors.title = "Nome do Cliente/Empresa é obrigatório";
+    if (!form.contact_phone.trim()) errors.contact_phone = "Telefone é obrigatório";
+    else if (!validatePhone(form.contact_phone)) errors.contact_phone = "Telefone inválido";
+    if (!form.zip_code.trim()) errors.zip_code = "CEP é obrigatório";
+    else if (form.zip_code.replace(/\D/g, "").length !== 8) errors.zip_code = "CEP inválido (8 dígitos)";
+    if (!form.contact_email.trim()) errors.contact_email = "E-mail é obrigatório";
+    else if (!validateEmail(form.contact_email)) errors.contact_email = "E-mail inválido";
+    
+    if (leadCepOutOfCoverage) errors.zip_code = "CEP fora da área de cobertura";
+    
+    setFormErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
     const categoryStr = form.categories.length > 0 ? form.categories.join(", ") : null;
 
