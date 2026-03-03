@@ -265,10 +265,10 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const isTestFormValid =
     !!testForm.street.trim() &&
     !!testForm.number.trim() &&
-    !!testForm.complement.trim() &&
     !!testForm.city.trim() &&
     !!testForm.state.trim() &&
-    !!testForm.scheduledDate;
+    !!testForm.scheduledDate &&
+    !!assignedTo;
 
   const handleScheduleTest = async () => {
     if (!lead) return;
