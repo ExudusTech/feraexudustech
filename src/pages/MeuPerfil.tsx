@@ -10,7 +10,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
-import { User, Lock, Save } from "lucide-react";
+import { User, Lock, Save, Eye, EyeOff } from "lucide-react";
 
 export default function MeuPerfil() {
   const { user } = useAuth();
