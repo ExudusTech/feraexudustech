@@ -172,7 +172,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   useEffect(() => {
     if (!showTestForm) return;
-    const leadZip = form.zip_code || (lead as any)?.zip_code || (savedLead as any)?.zip_code || "";
+    const leadZip = form.zip_code || lead?.zip_code || savedLead?.zip_code || "";
     if (existingInstallation) {
       const parsed = parseAddressParts(existingInstallation.address);
       const consultantDate = existingConsultantSchedule?.scheduled_date || existingInstallation.start_date || "";
