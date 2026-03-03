@@ -42,6 +42,7 @@ const emptyTestForm = {
   zipCode: "",
   scheduledDate: "",
   startTime: "",
+  assignedConsultant: "",
 };
 
 function parseAddressParts(value: string | null) {
