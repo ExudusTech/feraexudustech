@@ -13,6 +13,7 @@ export interface Schedule {
   start_time: string | null;
   end_time: string | null;
   status: string;
+  schedule_type: string;
   client_id: string | null;
   assigned_to: string | null;
   location: string | null;
