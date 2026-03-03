@@ -198,7 +198,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const timeWindow = useMemo(() => getTimeWindow(matchedArea), [matchedArea]);
   const timeSlots = useMemo(() => (timeWindow ? generateTimeSlots(timeWindow.start, timeWindow.end, 30) : []), [timeWindow]);
 
-  const assignedTo = lead?.assigned_to || lead?.created_by || "";
+  const assignedTo = testForm.assignedConsultant || lead?.assigned_to || lead?.created_by || "";
   const overlapDetected = useMemo(() => {
     if (!testForm.scheduledDate || !testForm.startTime || !assignedTo) return false;
     return hasScheduleOverlap(
