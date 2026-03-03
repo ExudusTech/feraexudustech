@@ -148,7 +148,7 @@ export default function Agenda() {
                 <div className="text-xs font-medium mb-1">{format(day, "d")}</div>
                 <div className="space-y-0.5">
                   {daySchedules.slice(0, 2).map((s) => (
-                    <div key={s.id} className="text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 truncate cursor-pointer" title={s.title}>
+                    <div key={s.id} className="text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 truncate cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium">{s.start_time.slice(0, 5)} </span>}
                       {s.title}
                     </div>
@@ -182,7 +182,7 @@ export default function Agenda() {
                 </div>
                 <div className="p-1 space-y-1">
                   {daySchedules.map((s) => (
-                    <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5">
+                    <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "—"}</div>
@@ -207,7 +207,7 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {daySchedules.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg">
+              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
                   <div className="font-medium">{s.title}</div>
