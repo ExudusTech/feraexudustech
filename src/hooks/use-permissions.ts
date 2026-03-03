@@ -44,7 +44,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -54,7 +54,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   vendedor: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/suporte"],
+    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -64,7 +64,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   consultor_tecnico: {
-    routes: ["/dashboard", "/ekkoa", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -74,7 +74,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   operacional: {
-    routes: ["/dashboard", "/ekkoa", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -94,7 +94,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   financeiro: {
-    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/suporte"],
+    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,

@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
   BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon, Crown,
+  ChevronLeft, Sun, Moon, Crown, CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ const mainNavItems = [
   { icon: Package, label: "Produtos", path: "/produtos" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: BarChart3, label: "Relatórios", path: "/relatorios" },
+  { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: MapPin, label: "Áreas de Cobertura", path: "/areas-cobertura" },
 ];
 
