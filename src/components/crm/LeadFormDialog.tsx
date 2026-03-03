@@ -32,7 +32,7 @@ interface Props {
 const empty = {
   title: "", description: "", stage: "novo" as LeadStage,
   source: "", contact_name: "", contact_email: "", contact_phone: "",
-  categories: [] as string[],
+  categories: [] as string[], zip_code: "",
 };
 
 const emptyTestForm = {
