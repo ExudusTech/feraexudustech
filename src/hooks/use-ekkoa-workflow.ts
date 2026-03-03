@@ -373,3 +373,80 @@ function addDays(dateStr: string, days: number): string {
   date.setDate(date.getDate() + days);
   return date.toISOString().split("T")[0];
 }
+
+function normalizeText(value?: string | null): string | null {
+  const cleaned = value?.trim();
+  return cleaned ? cleaned : null;
+}
+
+async function resolveCrmClientId(clientId: string | null): Promise<string | null> {
+  if (!clientId) return null;
+  const { data, error } = await supabase.from("clients").select("id").eq("id", clientId).maybeSingle();
+  if (error) throw new Error(`Erro ao validar cliente CRM: ${error.message}`);
+  return data?.id ?? null;
+}
+
+async function resolveOrCreateEkkoaClient({
+  lead,
+  orgId,
+  userId,
+  address,
+  city,
+  state,
+  zipCode,
+}: {
+  lead: Lead;
+  orgId: string;
+  userId: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+}): Promise<string> {
+  if (lead.client_id) {
+    const { data: existingEkkoa, error: checkError } = await supabase
+      .from("ekkoa_clients")
+      .select("id")
+      .eq("id", lead.client_id)
+      .maybeSingle();
+
+    if (checkError) throw new Error(`Erro ao validar cliente técnico: ${checkError.message}`);
+    if (existingEkkoa?.id) return existingEkkoa.id;
+  }
+
+  const email = normalizeText(lead.contact_email);
+  if (email) {
+    const { data: byEmail, error: emailError } = await supabase
+      .from("ekkoa_clients")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (emailError) throw new Error(`Erro ao buscar cliente técnico por email: ${emailError.message}`);
+    if (byEmail?.id) return byEmail.id;
+  }
+
+  const contactName = normalizeText(lead.contact_name);
+  const fallbackName = normalizeText(lead.title) ?? "Cliente Lead";
+
+  const { data: created, error: createError } = await supabase
+    .from("ekkoa_clients")
+    .insert({
+      name: contactName ?? fallbackName,
+      email,
+      phone: normalizeText(lead.contact_phone),
+      address: normalizeText(address),
+      city: normalizeText(city),
+      state: normalizeText(state),
+      zip_code: normalizeText(zipCode),
+      notes: "Cliente técnico criado automaticamente durante o agendamento de teste.",
+      organization_id: orgId,
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+
+  if (createError) throw new Error(`Erro ao criar cliente técnico: ${createError.message}`);
+  return created.id;
+}
