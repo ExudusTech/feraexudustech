@@ -19,7 +19,8 @@ import { useSchedules, useUpdateSchedule } from "@/hooks/use-schedules";
 import { useViaCep } from "@/hooks/use-viacep";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock, X } from "lucide-react";
-import { formatCEP, formatPhone } from "@/lib/validations";
+import { formatCEP, formatPhone, validateEmail, validatePhone } from "@/lib/validations";
+import { useCoverageValidation } from "@/hooks/use-coverage-validation";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
 
 interface Props {
