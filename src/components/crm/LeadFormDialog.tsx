@@ -507,6 +507,26 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                     )}
                   </div>
                 )}
+                {/* Consultant selector */}
+                <div>
+                  <Label className="text-xs font-semibold">5. Consultor responsável *</Label>
+                  <Select
+                    value={testForm.assignedConsultant}
+                    onValueChange={(v) => setTestForm({ ...testForm, assignedConsultant: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o consultor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {consultants.map((u) => (
+                        <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>
+                      ))}
+                      {consultants.length === 0 && (
+                        <SelectItem value="_none" disabled>Nenhum consultor técnico cadastrado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <Button
                   type="button"
