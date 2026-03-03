@@ -676,7 +676,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <Label>Título *</Label>
+              <Label>Nome do Cliente/Empresa *</Label>
               <Input value={form.title} onChange={(e) => set("title", e.target.value)} required />
             </div>
             <div className="col-span-2">
