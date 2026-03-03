@@ -284,7 +284,11 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     if (!form.contact_email.trim()) errors.contact_email = "E-mail é obrigatório";
     else if (!validateEmail(form.contact_email)) errors.contact_email = "E-mail inválido";
     
-    if (leadCepOutOfCoverage) errors.zip_code = "CEP fora da área de cobertura";
+    if (hasCoverageAreas && leadCepNormalized.length === 8 && leadViaCep.loading) {
+      errors.zip_code = "Validando CEP, aguarde um instante";
+    } else if (leadCepOutOfCoverage) {
+      errors.zip_code = "CEP fora da área de cobertura";
+    }
     
     setFormErrors(errors);
     if (Object.keys(errors).length > 0) return;
