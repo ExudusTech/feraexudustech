@@ -32,6 +32,7 @@ export interface Lead {
   created_by: string;
   position: number;
   category: string | null;
+  zip_code: string | null;
   created_at: string;
   updated_at: string | null;
 }
