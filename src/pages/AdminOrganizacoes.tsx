@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Building2, Crown, Pencil } from "lucide-react";
+import { Building2, Crown, Pencil, Plus } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import OrganizationEditDialog from "@/components/admin/OrganizationEditDialog";
 const PLAN_OPTIONS = [
@@ -23,6 +23,7 @@ export default function AdminOrganizacoes() {
   const { data: orgs, isLoading } = useAllOrganizations();
   const updateOrg = useUpdateOrganization();
   const [editOrg, setEditOrg] = useState<Organization | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />;
@@ -97,11 +98,15 @@ export default function AdminOrganizacoes() {
 
         {/* Table */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Crown className="h-5 w-5 text-primary" />
               Organizações
             </CardTitle>
+            <Button onClick={() => setShowCreate(true)} size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              Nova Organização
+            </Button>
           </CardHeader>
           <CardContent>
             <Table>
@@ -209,6 +214,13 @@ export default function AdminOrganizacoes() {
         org={editOrg}
         open={!!editOrg}
         onOpenChange={(open) => !open && setEditOrg(null)}
+      />
+
+      <OrganizationEditDialog
+        org={null}
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        mode="create"
       />
     </AppLayout>
   );

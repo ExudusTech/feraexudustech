@@ -66,6 +66,26 @@ export function useUpdateOrganization() {
   });
 }
 
+export function useCreateOrganization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (org: Omit<Organization, "id" | "created_at" | "updated_at" | "logo_url">) => {
+      const { data, error } = await supabase
+        .from("organizations")
+        .insert(org)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["all_organizations"] });
+      toast({ title: "Organização criada com sucesso" });
+    },
+    onError: (e: Error) => toast({ title: "Erro ao criar", description: e.message, variant: "destructive" }),
+  });
+}
+
 // Super Admin: view all organizations
 export function useAllOrganizations() {
   const { isSuperAdmin } = usePermissions();
