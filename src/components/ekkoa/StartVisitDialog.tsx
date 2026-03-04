@@ -104,7 +104,8 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
     // Upload photo if selected
     if (photoFile) {
       setUploading(true);
-      const ext = photoFile.name.split(".").pop();
+      const mimeToExt: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+      const ext = mimeToExt[photoFile.type] || "jpg";
       const path = `visits/${schedule.id}/${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("visit-photos")
