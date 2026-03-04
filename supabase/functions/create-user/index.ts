@@ -98,11 +98,11 @@ Deno.serve(async (req) => {
     // We need to update the profile to point to the caller's org and set the correct role.
     const userId = newUser.user.id;
 
-    // Update profile to caller's organization
+    // Update profile to target organization
     await adminClient
       .from("profiles")
       .update({
-        organization_id: callerProfile.organization_id,
+        organization_id: targetOrgId,
         name,
         is_active: true,
         is_email_verified: true,
