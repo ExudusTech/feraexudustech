@@ -10,6 +10,7 @@ import { MapPin, Camera, Navigation, Loader2, CheckCircle } from "lucide-react";
 import { useCompleteVisit } from "@/hooks/use-ekkoa-workflow";
 import { useEkkoaEquipment } from "@/hooks/use-ekkoa-equipment";
 import { useEkkoaFragranceLines } from "@/hooks/use-ekkoa-fragrance-lines";
+import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Schedule } from "@/hooks/use-schedules";
 
@@ -33,6 +34,7 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const { user } = useAuth();
   const completeVisit = useCompleteVisit();
   const { data: equipment = [] } = useEkkoaEquipment();
   const { data: fragrances = [] } = useEkkoaFragranceLines();
@@ -102,18 +104,20 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
     let photoUrl: string | undefined;
 
     // Upload photo if selected
-    if (photoFile) {
+    if (photoFile && user?.organization_id) {
       setUploading(true);
       const mimeToExt: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
       const ext = mimeToExt[photoFile.type] || "jpg";
-      const path = `visits/${schedule.id}/${Date.now()}.${ext}`;
+      const path = `${user.organization_id}/visits/${schedule.id}/${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("visit-photos")
         .upload(path, photoFile);
 
       if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("visit-photos").getPublicUrl(path);
-        photoUrl = urlData.publicUrl;
+        const { data: signedData } = await supabase.storage
+          .from("visit-photos")
+          .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
+        photoUrl = signedData?.signedUrl;
       }
       setUploading(false);
     }
