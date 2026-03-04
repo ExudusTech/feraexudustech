@@ -34,6 +34,7 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+  const { user } = useAuth();
   const completeVisit = useCompleteVisit();
   const { data: equipment = [] } = useEkkoaEquipment();
   const { data: fragrances = [] } = useEkkoaFragranceLines();
