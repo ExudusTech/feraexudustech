@@ -1,0 +1,1 @@
+DELETE FROM organizations WHERE id IN ('b11c2f1c-cb40-438a-ab25-7f68c233d80b', 'e0edb308-c0be-4bba-8092-e76f24656997');
