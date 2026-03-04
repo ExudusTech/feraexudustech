@@ -73,12 +73,27 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
     );
   };
 
+  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setPhotoFile(file);
-      setPhotoPreview(URL.createObjectURL(file));
+    if (!file) return;
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setGpsError("Apenas imagens JPG, PNG ou WebP são permitidas.");
+      e.target.value = "";
+      return;
     }
+    if (file.size > MAX_FILE_SIZE) {
+      setGpsError("Imagem deve ter no máximo 5MB.");
+      e.target.value = "";
+      return;
+    }
+
+    setGpsError("");
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
   };
 
   const handleComplete = async () => {
@@ -89,7 +104,8 @@ export default function StartVisitDialog({ open, onOpenChange, schedule }: Props
     // Upload photo if selected
     if (photoFile) {
       setUploading(true);
-      const ext = photoFile.name.split(".").pop();
+      const mimeToExt: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+      const ext = mimeToExt[photoFile.type] || "jpg";
       const path = `visits/${schedule.id}/${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("visit-photos")
