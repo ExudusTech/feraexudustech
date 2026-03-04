@@ -98,11 +98,15 @@ export default function AdminOrganizacoes() {
 
         {/* Table */}
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Crown className="h-5 w-5 text-primary" />
               Organizações
             </CardTitle>
+            <Button onClick={() => setShowCreate(true)} size="sm">
+              <Plus className="h-4 w-4 mr-1" />
+              Nova Organização
+            </Button>
           </CardHeader>
           <CardContent>
             <Table>
