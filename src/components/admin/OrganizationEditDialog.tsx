@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useUpdateOrganization, type Organization } from "@/hooks/use-organizations";
+import { useUpdateOrganization, useCreateOrganization, type Organization } from "@/hooks/use-organizations";
 import { Loader2 } from "lucide-react";
+import ColorInput from "./ColorInput";
 
 const PLAN_OPTIONS = [
   { value: "starter", label: "Starter" },
@@ -17,36 +18,43 @@ const PLAN_OPTIONS = [
 
 const MAX_USERS_OPTIONS = [3, 5, 10, 15, 25, 50, 100];
 
+const EMPTY_FORM = {
+  name: "",
+  trading_name: "",
+  cnpj: "",
+  email: "",
+  phone: "",
+  website: "",
+  address: "",
+  city: "",
+  state: "",
+  zip_code: "",
+  plan: "starter",
+  max_users: 5,
+  has_ekkoa_access: false,
+  is_active: true,
+  primary_color: "",
+  secondary_color: "",
+  accent_color: "",
+};
+
 interface Props {
   org: Organization | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  mode?: "edit" | "create";
 }
 
-export default function OrganizationEditDialog({ org, open, onOpenChange }: Props) {
+export default function OrganizationEditDialog({ org, open, onOpenChange, mode = "edit" }: Props) {
   const updateOrg = useUpdateOrganization();
-  const [form, setForm] = useState({
-    name: "",
-    trading_name: "",
-    cnpj: "",
-    email: "",
-    phone: "",
-    website: "",
-    address: "",
-    city: "",
-    state: "",
-    zip_code: "",
-    plan: "starter",
-    max_users: 5,
-    has_ekkoa_access: false,
-    is_active: true,
-    primary_color: "",
-    secondary_color: "",
-    accent_color: "",
-  });
+  const createOrg = useCreateOrganization();
+  const isCreate = mode === "create";
+  const [form, setForm] = useState(EMPTY_FORM);
 
   useEffect(() => {
-    if (org) {
+    if (isCreate) {
+      setForm(EMPTY_FORM);
+    } else if (org) {
       setForm({
         name: org.name || "",
         trading_name: org.trading_name || "",
@@ -67,48 +75,50 @@ export default function OrganizationEditDialog({ org, open, onOpenChange }: Prop
         accent_color: org.accent_color || "",
       });
     }
-  }, [org]);
+  }, [org, isCreate, open]);
 
   const handleChange = (field: string, value: string | number | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = () => {
-    if (!org) return;
-    updateOrg.mutate(
-      {
-        id: org.id,
-        name: form.name,
-        trading_name: form.trading_name || null,
-        cnpj: form.cnpj || null,
-        email: form.email,
-        phone: form.phone || null,
-        website: form.website || null,
-        address: form.address || null,
-        city: form.city || null,
-        state: form.state || null,
-        zip_code: form.zip_code || null,
-        plan: form.plan,
-        max_users: form.max_users,
-        has_ekkoa_access: form.has_ekkoa_access,
-        is_active: form.is_active,
-        primary_color: form.primary_color || null,
-        secondary_color: form.secondary_color || null,
-        accent_color: form.accent_color || null,
-      },
-      { onSuccess: () => onOpenChange(false) }
-    );
+    const payload = {
+      name: form.name,
+      trading_name: form.trading_name || null,
+      cnpj: form.cnpj || null,
+      email: form.email,
+      phone: form.phone || null,
+      website: form.website || null,
+      address: form.address || null,
+      city: form.city || null,
+      state: form.state || null,
+      zip_code: form.zip_code || null,
+      plan: form.plan,
+      max_users: form.max_users,
+      has_ekkoa_access: form.has_ekkoa_access,
+      is_active: form.is_active,
+      primary_color: form.primary_color || null,
+      secondary_color: form.secondary_color || null,
+      accent_color: form.accent_color || null,
+    };
+
+    if (isCreate) {
+      createOrg.mutate(payload as any, { onSuccess: () => onOpenChange(false) });
+    } else if (org) {
+      updateOrg.mutate({ id: org.id, ...payload }, { onSuccess: () => onOpenChange(false) });
+    }
   };
+
+  const isPending = isCreate ? createOrg.isPending : updateOrg.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Editar Organização</DialogTitle>
+          <DialogTitle>{isCreate ? "Nova Organização" : "Editar Organização"}</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
-          {/* Identificação */}
           <div className="space-y-2">
             <Label>Nome *</Label>
             <Input value={form.name} onChange={e => handleChange("name", e.target.value)} />
@@ -134,7 +144,6 @@ export default function OrganizationEditDialog({ org, open, onOpenChange }: Prop
             <Input value={form.website} onChange={e => handleChange("website", e.target.value)} />
           </div>
 
-          {/* Endereço */}
           <div className="space-y-2 sm:col-span-2">
             <Label>Endereço</Label>
             <Input value={form.address} onChange={e => handleChange("address", e.target.value)} />
@@ -152,7 +161,6 @@ export default function OrganizationEditDialog({ org, open, onOpenChange }: Prop
             <Input value={form.zip_code} onChange={e => handleChange("zip_code", e.target.value)} />
           </div>
 
-          {/* Plano */}
           <div className="space-y-2">
             <Label>Plano</Label>
             <Select value={form.plan} onValueChange={v => handleChange("plan", v)}>
@@ -176,19 +184,10 @@ export default function OrganizationEditDialog({ org, open, onOpenChange }: Prop
             </Select>
           </div>
 
-          {/* Cores */}
-          <div className="space-y-2">
-            <Label>Cor Primária</Label>
-            <Input value={form.primary_color} onChange={e => handleChange("primary_color", e.target.value)} placeholder="#000000" />
-          </div>
-          <div className="space-y-2">
-            <Label>Cor Secundária</Label>
-            <Input value={form.secondary_color} onChange={e => handleChange("secondary_color", e.target.value)} placeholder="#000000" />
-          </div>
-          <div className="space-y-2">
-            <Label>Cor de Destaque</Label>
-            <Input value={form.accent_color} onChange={e => handleChange("accent_color", e.target.value)} placeholder="#000000" />
-          </div>
+          {/* Cores com preview */}
+          <ColorInput label="Cor Primária" value={form.primary_color} onChange={v => handleChange("primary_color", v)} />
+          <ColorInput label="Cor Secundária" value={form.secondary_color} onChange={v => handleChange("secondary_color", v)} />
+          <ColorInput label="Cor de Destaque" value={form.accent_color} onChange={v => handleChange("accent_color", v)} />
 
           {/* Toggles */}
           <div className="flex items-center gap-3 pt-2">
@@ -203,9 +202,9 @@ export default function OrganizationEditDialog({ org, open, onOpenChange }: Prop
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={!form.name || !form.email || updateOrg.isPending}>
-            {updateOrg.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Salvar
+          <Button onClick={handleSubmit} disabled={!form.name || !form.email || isPending}>
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isCreate ? "Criar" : "Salvar"}
           </Button>
         </div>
       </DialogContent>
