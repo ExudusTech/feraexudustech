@@ -10,6 +10,7 @@ import { MapPin, Camera, Navigation, Loader2, CheckCircle } from "lucide-react";
 import { useCompleteVisit } from "@/hooks/use-ekkoa-workflow";
 import { useEkkoaEquipment } from "@/hooks/use-ekkoa-equipment";
 import { useEkkoaFragranceLines } from "@/hooks/use-ekkoa-fragrance-lines";
+import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import type { Schedule } from "@/hooks/use-schedules";
 
