@@ -1,12 +1,27 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export function exportToExcel(data: Record<string, string | number | null>[], filename: string) {
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Relatório");
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+export async function exportToExcel(data: Record<string, string | number | null>[], filename: string) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Relatório");
+
+  if (data.length > 0) {
+    const headers = Object.keys(data[0]);
+    worksheet.addRow(headers);
+    // Bold header row
+    worksheet.getRow(1).font = { bold: true };
+    data.forEach((row) => worksheet.addRow(headers.map((h) => row[h])));
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function exportToPDF(

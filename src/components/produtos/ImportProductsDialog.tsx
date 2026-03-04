@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileSpreadsheet, Loader2, AlertTriangle } from "lucide-react";
 import { useCreateProductsBatch, type Product } from "@/hooks/use-products";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 interface Props {
   open: boolean;
@@ -64,26 +64,39 @@ export default function ImportProductsDialog({ open, onOpenChange }: Props) {
 
     try {
       const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const workbook = new ExcelJS.Workbook();
 
-      if (raw.length < 2) { setRows([]); setParsing(false); return; }
+      if (file.name.endsWith(".csv")) {
+        await workbook.csv.read(buffer as any);
+      } else {
+        await workbook.xlsx.load(buffer);
+      }
 
-      const headers = raw[0].map(String);
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet || worksheet.rowCount < 2) { setRows([]); setParsing(false); return; }
+
+      const headerRow = worksheet.getRow(1);
+      const headers: string[] = [];
+      headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        headers[colNumber - 1] = String(cell.value ?? "");
+      });
+
       const colMap = mapColumns(headers);
 
-      const parsed: ParsedRow[] = raw.slice(1).filter((r) => r.some((c: any) => c != null && c !== "")).map((row) => {
+      const parsed: ParsedRow[] = [];
+      worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        if (rowNumber === 1) return;
         const item: any = {};
         Object.entries(colMap).forEach(([idx, key]) => {
-          const val = row[Number(idx)];
-          if (["price", "cost"].includes(key)) item[key] = parseFloat(val) || 0;
-          else if (["stock", "min_stock"].includes(key)) item[key] = parseInt(val) || 0;
+          const cell = row.getCell(Number(idx) + 1);
+          const val = cell.value;
+          if (["price", "cost"].includes(key)) item[key] = parseFloat(String(val)) || 0;
+          else if (["stock", "min_stock"].includes(key)) item[key] = parseInt(String(val)) || 0;
           else item[key] = val != null ? String(val).trim() : undefined;
         });
 
         const valid = !!item.name;
-        return { ...item, valid, error: valid ? undefined : "Nome obrigatório" } as ParsedRow;
+        parsed.push({ ...item, valid, error: valid ? undefined : "Nome obrigatório" } as ParsedRow);
       });
 
       setRows(parsed);
