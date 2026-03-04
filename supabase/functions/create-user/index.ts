@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name },
+      user_metadata: { name, organization_id: callerProfile.organization_id },
     });
 
     if (createError) {
