@@ -67,7 +67,7 @@ export default function ImportProductsDialog({ open, onOpenChange }: Props) {
       const workbook = new ExcelJS.Workbook();
 
       if (file.name.endsWith(".csv")) {
-        await workbook.csv.load(buffer);
+        await workbook.csv.read(buffer as any);
       } else {
         await workbook.xlsx.load(buffer);
       }
