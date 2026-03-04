@@ -65,7 +65,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { name, email, password, role } = await req.json();
+    const { name, email, password, role, organization_id: requestedOrgId } = await req.json();
+
+    // Super admins can specify a target org; otherwise use caller's org
+    const targetOrgId = (callerRole === "super_admin" && requestedOrgId) 
+      ? requestedOrgId 
+      : callerProfile.organization_id;
 
     if (!name || !email || !password) {
       return new Response(JSON.stringify({ error: "Nome, e-mail e senha são obrigatórios" }), {
@@ -79,7 +84,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, organization_id: callerProfile.organization_id },
+      user_metadata: { name, organization_id: targetOrgId },
     });
 
     if (createError) {

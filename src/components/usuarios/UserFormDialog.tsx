@@ -43,8 +43,12 @@ export default function UserFormDialog({ open, onOpenChange }: UserFormDialogPro
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      
+      // Get the active organization_id (super admin may have switched orgs)
+      const activeOrgId = sessionStorage.getItem("super_admin_org_id");
+      
       const res = await supabase.functions.invoke("create-user", {
-        body: { name, email, password, role },
+        body: { name, email, password, role, organization_id: activeOrgId || undefined },
       });
 
       if (res.error || res.data?.error) {
