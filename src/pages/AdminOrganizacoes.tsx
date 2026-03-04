@@ -215,6 +215,13 @@ export default function AdminOrganizacoes() {
         open={!!editOrg}
         onOpenChange={(open) => !open && setEditOrg(null)}
       />
+
+      <OrganizationEditDialog
+        org={null}
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        mode="create"
+      />
     </AppLayout>
   );
 }
