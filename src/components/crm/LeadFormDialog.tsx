@@ -277,6 +277,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     const errors: Record<string, string> = {};
     
     if (!form.title.trim()) errors.title = "Nome do Cliente/Empresa é obrigatório";
+    if (!form.contact_name.trim()) errors.contact_name = "Nome do contato é obrigatório";
     if (!form.contact_phone.trim()) errors.contact_phone = "Telefone é obrigatório";
     else if (!validatePhone(form.contact_phone)) errors.contact_phone = "Telefone inválido";
     if (!form.zip_code.trim()) errors.zip_code = "CEP é obrigatório";
@@ -785,8 +786,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Input value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="Site, indicação..." />
             </div>
             <div>
-              <Label>Nome do contato</Label>
+              <Label>Nome do contato *</Label>
               <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
+              {formErrors.contact_name && <p className="text-xs text-destructive mt-1">{formErrors.contact_name}</p>}
             </div>
             <div>
               <Label>Telefone contato *</Label>
