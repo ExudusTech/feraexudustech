@@ -277,6 +277,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     const errors: Record<string, string> = {};
     
     if (!form.title.trim()) errors.title = "Nome do Cliente/Empresa é obrigatório";
+    if (!form.contact_name.trim()) errors.contact_name = "Nome do contato é obrigatório";
     if (!form.contact_phone.trim()) errors.contact_phone = "Telefone é obrigatório";
     else if (!validatePhone(form.contact_phone)) errors.contact_phone = "Telefone inválido";
     if (!form.zip_code.trim()) errors.zip_code = "CEP é obrigatório";
