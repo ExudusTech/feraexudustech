@@ -786,8 +786,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Input value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="Site, indicação..." />
             </div>
             <div>
-              <Label>Nome do contato</Label>
+              <Label>Nome do contato *</Label>
               <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
+              {formErrors.contact_name && <p className="text-xs text-destructive mt-1">{formErrors.contact_name}</p>}
             </div>
             <div>
               <Label>Telefone contato *</Label>
