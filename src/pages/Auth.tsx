@@ -161,8 +161,8 @@ export default function Auth() {
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
                       <Input id="login-password" type={showLoginPassword ? "text" : "password"} placeholder="••••••••" className={inputClasses} value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} required />
-                      <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors">
-                        {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-white/50 dark:hover:text-white/80 transition-colors z-10">
+                        {showLoginPassword ? <EyeOff className="h-4 w-4 drop-shadow-[0_0_2px_rgba(0,0,0,0.3)]" /> : <Eye className="h-4 w-4 drop-shadow-[0_0_2px_rgba(0,0,0,0.3)]" />}
                       </button>
                     </div>
                   </div>
@@ -203,8 +203,8 @@ export default function Auth() {
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
                       <Input id="signup-password" type={showSignupPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" className={inputClasses} value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={6} />
-                      <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors">
-                        {showSignupPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-white/50 dark:hover:text-white/80 transition-colors z-10">
+                        {showSignupPassword ? <EyeOff className="h-4 w-4 drop-shadow-[0_0_2px_rgba(0,0,0,0.3)]" /> : <Eye className="h-4 w-4 drop-shadow-[0_0_2px_rgba(0,0,0,0.3)]" />}
                       </button>
                     </div>
                   </div>
