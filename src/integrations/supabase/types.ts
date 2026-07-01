@@ -1187,6 +1187,57 @@ export type Database = {
           },
         ]
       }
+      flora_interactions: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at: string | null
+          id: string
+          interaction_id: string
+          lead_id: string | null
+          organization_id: string | null
+          payload: Json | null
+          response: Json | null
+          tool_name: string
+        }
+        Insert: {
+          canal?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at?: string | null
+          id?: string
+          interaction_id: string
+          lead_id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          response?: Json | null
+          tool_name: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at?: string | null
+          id?: string
+          interaction_id?: string
+          lead_id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          response?: Json | null
+          tool_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flora_interactions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flora_interactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_messages: {
         Row: {
           body: string
@@ -1321,6 +1372,7 @@ export type Database = {
       leads: {
         Row: {
           assigned_to: string | null
+          canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
           category: string | null
           client_id: string | null
           contact_email: string | null
@@ -1330,9 +1382,15 @@ export type Database = {
           created_by: string
           description: string | null
           expected_close_date: string | null
+          flora_tags: string[] | null
+          fora_cobertura: boolean | null
           id: string
+          instagram_handle: string | null
+          interaction_id: string | null
           organization_id: string
+          origem_especifica: string | null
           position: number
+          precisa_humano: boolean | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
           title: string
@@ -1342,6 +1400,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           category?: string | null
           client_id?: string | null
           contact_email?: string | null
@@ -1351,9 +1410,15 @@ export type Database = {
           created_by: string
           description?: string | null
           expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
           id?: string
+          instagram_handle?: string | null
+          interaction_id?: string | null
           organization_id: string
+          origem_especifica?: string | null
           position?: number
+          precisa_humano?: boolean | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title: string
@@ -1363,6 +1428,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           category?: string | null
           client_id?: string | null
           contact_email?: string | null
@@ -1372,9 +1438,15 @@ export type Database = {
           created_by?: string
           description?: string | null
           expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
           id?: string
+          instagram_handle?: string | null
+          interaction_id?: string | null
           organization_id?: string
+          origem_especifica?: string | null
           position?: number
+          precisa_humano?: boolean | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title?: string
@@ -2521,6 +2593,12 @@ export type Database = {
         | "vendedor"
         | "consultor_tecnico"
         | "operacional"
+      canal_origem_enum:
+        | "WIDGET"
+        | "WHATSAPP"
+        | "MESSENGER"
+        | "INSTAGRAM"
+        | "TELEGRAM"
       lead_stage:
         | "novo"
         | "qualificacao"
@@ -2675,6 +2753,13 @@ export const Constants = {
         "vendedor",
         "consultor_tecnico",
         "operacional",
+      ],
+      canal_origem_enum: [
+        "WIDGET",
+        "WHATSAPP",
+        "MESSENGER",
+        "INSTAGRAM",
+        "TELEGRAM",
       ],
       lead_stage: [
         "novo",
