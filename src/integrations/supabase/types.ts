@@ -1379,7 +1379,8 @@ export type Database = {
           contact_name: string | null
           contact_phone: string | null
           created_at: string
-          created_by: string
+          created_by: string | null
+          created_by_flora: boolean | null
           description: string | null
           expected_close_date: string | null
           flora_tags: string[] | null
@@ -1407,7 +1408,8 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
-          created_by: string
+          created_by?: string | null
+          created_by_flora?: boolean | null
           description?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
@@ -1435,7 +1437,8 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
-          created_by?: string
+          created_by?: string | null
+          created_by_flora?: boolean | null
           description?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
@@ -2379,7 +2382,7 @@ export type Database = {
           assigned_to: string | null
           client_id: string | null
           created_at: string
-          created_by: string
+          created_by: string | null
           description: string | null
           end_time: string | null
           id: string
@@ -2398,7 +2401,7 @@ export type Database = {
           assigned_to?: string | null
           client_id?: string | null
           created_at?: string
-          created_by: string
+          created_by?: string | null
           description?: string | null
           end_time?: string | null
           id?: string
@@ -2417,7 +2420,7 @@ export type Database = {
           assigned_to?: string | null
           client_id?: string | null
           created_at?: string
-          created_by?: string
+          created_by?: string | null
           description?: string | null
           end_time?: string | null
           id?: string
