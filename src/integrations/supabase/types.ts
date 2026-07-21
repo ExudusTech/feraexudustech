@@ -122,6 +122,78 @@ export type Database = {
           },
         ]
       }
+      client_contacts: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          created_by_flora: boolean | null
+          email: string | null
+          id: string
+          instagram_handle: string | null
+          instagram_user_id: string | null
+          is_primary: boolean | null
+          messenger_user_id: string | null
+          name: string
+          organization_id: string
+          phone: string | null
+          role: string | null
+          telegram_user_id: string | null
+          updated_at: string | null
+          whatsapp_id: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          created_by_flora?: boolean | null
+          email?: string | null
+          id?: string
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          is_primary?: boolean | null
+          messenger_user_id?: string | null
+          name: string
+          organization_id: string
+          phone?: string | null
+          role?: string | null
+          telegram_user_id?: string | null
+          updated_at?: string | null
+          whatsapp_id?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          created_by_flora?: boolean | null
+          email?: string | null
+          id?: string
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          is_primary?: boolean | null
+          messenger_user_id?: string | null
+          name?: string
+          organization_id?: string
+          phone?: string | null
+          role?: string | null
+          telegram_user_id?: string | null
+          updated_at?: string | null
+          whatsapp_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_contacts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_visits: {
         Row: {
           client_id: string
@@ -197,9 +269,12 @@ export type Database = {
           notes: string | null
           organization_id: string
           phone: string | null
+          produto_linhas: string[] | null
+          ramo_atuacao: string | null
           state: string | null
           status: string
           updated_at: string | null
+          vinculo: string | null
           zip_code: string | null
         }
         Insert: {
@@ -216,9 +291,12 @@ export type Database = {
           notes?: string | null
           organization_id: string
           phone?: string | null
+          produto_linhas?: string[] | null
+          ramo_atuacao?: string | null
           state?: string | null
           status?: string
           updated_at?: string | null
+          vinculo?: string | null
           zip_code?: string | null
         }
         Update: {
@@ -235,9 +313,12 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          produto_linhas?: string[] | null
+          ramo_atuacao?: string | null
           state?: string | null
           status?: string
           updated_at?: string | null
+          vinculo?: string | null
           zip_code?: string | null
         }
         Relationships: [
@@ -1373,7 +1454,9 @@ export type Database = {
         Row: {
           assigned_to: string | null
           canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato: string | null
           category: string | null
+          client_contact_id: string | null
           client_id: string | null
           contact_email: string | null
           contact_name: string | null
@@ -1382,6 +1465,7 @@ export type Database = {
           created_by: string | null
           created_by_flora: boolean | null
           description: string | null
+          empresa_nome: string | null
           expected_close_date: string | null
           flora_tags: string[] | null
           fora_cobertura: boolean | null
@@ -1391,18 +1475,23 @@ export type Database = {
           organization_id: string
           origem_especifica: string | null
           position: number
+          post_id: string | null
+          post_titulo: string | null
           precisa_humano: boolean | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
           title: string
           updated_at: string | null
           value: number | null
+          vinculo: string | null
           zip_code: string | null
         }
         Insert: {
           assigned_to?: string | null
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
           category?: string | null
+          client_contact_id?: string | null
           client_id?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -1411,6 +1500,7 @@ export type Database = {
           created_by?: string | null
           created_by_flora?: boolean | null
           description?: string | null
+          empresa_nome?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
@@ -1420,18 +1510,23 @@ export type Database = {
           organization_id: string
           origem_especifica?: string | null
           position?: number
+          post_id?: string | null
+          post_titulo?: string | null
           precisa_humano?: boolean | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title: string
           updated_at?: string | null
           value?: number | null
+          vinculo?: string | null
           zip_code?: string | null
         }
         Update: {
           assigned_to?: string | null
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
           category?: string | null
+          client_contact_id?: string | null
           client_id?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -1440,6 +1535,7 @@ export type Database = {
           created_by?: string | null
           created_by_flora?: boolean | null
           description?: string | null
+          empresa_nome?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
@@ -1449,15 +1545,25 @@ export type Database = {
           organization_id?: string
           origem_especifica?: string | null
           position?: number
+          post_id?: string | null
+          post_titulo?: string | null
           precisa_humano?: boolean | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title?: string
           updated_at?: string | null
           value?: number | null
+          vinculo?: string | null
           zip_code?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "leads_client_contact_id_fkey"
+            columns: ["client_contact_id"]
+            isOneToOne: false
+            referencedRelation: "client_contacts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leads_client_id_fkey"
             columns: ["client_id"]
@@ -1952,6 +2058,59 @@ export type Database = {
           zip_code?: string | null
         }
         Relationships: []
+      }
+      otp_verifications: {
+        Row: {
+          canal_envio: string
+          codigo_hash: string
+          created_at: string | null
+          expira_em: string
+          id: string
+          interaction_id: string | null
+          max_tentativas: number
+          organization_id: string
+          telefone: string
+          tentativas: number
+          token: string
+          validado: boolean
+        }
+        Insert: {
+          canal_envio?: string
+          codigo_hash: string
+          created_at?: string | null
+          expira_em: string
+          id?: string
+          interaction_id?: string | null
+          max_tentativas?: number
+          organization_id: string
+          telefone: string
+          tentativas?: number
+          token: string
+          validado?: boolean
+        }
+        Update: {
+          canal_envio?: string
+          codigo_hash?: string
+          created_at?: string | null
+          expira_em?: string
+          id?: string
+          interaction_id?: string | null
+          max_tentativas?: number
+          organization_id?: string
+          telefone?: string
+          tentativas?: number
+          token?: string
+          validado?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "otp_verifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payment_methods: {
         Row: {
