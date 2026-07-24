@@ -125,22 +125,19 @@ export default function Ekkoa() {
   const handleNew = () => {
     const actions: Record<TabKey, () => void> = {
       dashboard: () => {},
-      equipamentos: () => { setSelectedEkEquip(null); setEkEquipDialog(true); },
       instalacoes: () => { setSelectedEkInstall(null); setEkInstallDialog(true); },
       contratos: () => { setSelectedEkContract(null); setEkContractDialog(true); },
       faturamento: () => { setSelectedEkBilling(null); setEkBillingDialog(true); },
       operacoes: () => { setSelectedOp(null); setOpDialog(true); },
       agendamentos: () => { setSelectedSch(null); setSchDialog(true); },
-      inventario: () => { setSelectedInv(null); setInvDialog(true); },
       fragancias: () => { setSelectedFrag(null); setFragDialog(true); },
-      visitas_tecnicas: () => { setSelectedTv(null); setTvDialog(true); },
     };
     actions[tab]();
   };
 
   const handleDelete = () => {
     if (!deleteId) return;
-    const deleters: Record<TabKey, (id: string) => void> = {
+    const deleters: Record<string, (id: string) => void> = {
       dashboard: () => {},
       equipamentos: (id) => deleteEkEquip.mutate(id),
       instalacoes: (id) => deleteEkInstall.mutate(id),
@@ -152,7 +149,7 @@ export default function Ekkoa() {
       fragancias: (id) => deleteFrag.mutate(id),
       visitas_tecnicas: (id) => deleteTv.mutate(id),
     };
-    deleters[deleteId.type](deleteId.id);
+    deleters[deleteId.type]?.(deleteId.id);
     setDeleteId(null);
   };
 
