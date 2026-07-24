@@ -44,7 +44,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -54,7 +54,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   vendedor: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -64,7 +64,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   consultor_tecnico: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -74,7 +74,7 @@ const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   operacional: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
