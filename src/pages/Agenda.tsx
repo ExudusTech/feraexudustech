@@ -89,12 +89,13 @@ export default function Agenda() {
       if (search && !s.title.toLowerCase().includes(search.toLowerCase())) return false;
       if (filterStatus !== "all" && s.status !== filterStatus) return false;
       if (filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
+      if (filterSubtype !== "all" && (s.schedule_subtype ?? "") !== filterSubtype) return false;
       if (filterCity !== "all") {
         if (!s.location || !s.location.toLowerCase().includes(filterCity.toLowerCase())) return false;
       }
       return true;
     });
-  }, [modeFiltered, search, filterStatus, filterResponsavel, filterCity]);
+  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterCity]);
 
   const getStatusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
