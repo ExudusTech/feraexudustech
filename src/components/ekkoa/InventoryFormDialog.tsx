@@ -28,7 +28,7 @@ const empty = {
 };
 
 export default function InventoryFormDialog({ open, onOpenChange, item, defaultItemType }: Props) {
-  const [form, setForm] = useState({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
+  const [form, setForm] = useState<any>({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
   const { data: clients = [] } = useClients();
   const create = useCreateInventoryItem();
   const update = useUpdateInventoryItem();
