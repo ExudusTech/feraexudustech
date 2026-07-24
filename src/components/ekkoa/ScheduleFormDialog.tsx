@@ -8,10 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCreateSchedule, useUpdateSchedule, useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
+import { useLeads } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
+import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel } from "@/lib/linha-produto";
 
 interface Props {
   open: boolean;
@@ -19,7 +21,7 @@ interface Props {
   schedule?: Schedule | null;
 }
 
-const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "" };
+const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "", schedule_subtype: "", lead_id: "" };
 
 export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Props) {
   const [form, setForm] = useState(empty);
@@ -27,6 +29,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
   const update = useUpdateSchedule();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: allSchedules = [] } = useSchedules();
+  const { data: leads = [] } = useLeads();
   const { user } = useAuth();
   const isEdit = !!schedule;
 
@@ -38,6 +41,8 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
         end_time: schedule.end_time || "", status: schedule.status,
         location: schedule.location || "", notes: schedule.notes || "",
         zip_code: "",
+        schedule_subtype: schedule.schedule_subtype || "",
+        lead_id: schedule.lead_id || "",
       });
     } else setForm(empty);
   }, [schedule, open]);
