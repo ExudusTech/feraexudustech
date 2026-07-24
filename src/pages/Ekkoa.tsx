@@ -40,19 +40,16 @@ import ExpiringTestsAlert from "@/components/ekkoa/ExpiringTestsAlert";
 import EkkoaDashboard from "@/components/ekkoa/EkkoaDashboard";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
-type TabKey = "dashboard" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "visitas_tecnicas";
+type TabKey = "dashboard" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "fragancias";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
   dashboard: { label: "Dashboard", icon: BarChart3, newLabel: "" },
-  equipamentos: { label: "Equipamentos", icon: Cpu, newLabel: "Novo Equipamento" },
   instalacoes: { label: "Instalações", icon: Zap, newLabel: "Nova Instalação" },
   contratos: { label: "Contratos", icon: FileText, newLabel: "Novo Contrato" },
   faturamento: { label: "Faturamento", icon: DollarSign, newLabel: "Novo Faturamento" },
   operacoes: { label: "Operações", icon: Wrench, newLabel: "Nova Operação" },
   agendamentos: { label: "Agendamentos", icon: CalendarDays, newLabel: "Novo Agendamento" },
-  inventario: { label: "Inventário", icon: Package, newLabel: "Novo Item" },
   fragancias: { label: "Fragrâncias", icon: Flower2, newLabel: "Nova Fragrância" },
-  visitas_tecnicas: { label: "Visitas Téc.", icon: ClipboardCheck, newLabel: "Nova Visita" },
 };
 
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
