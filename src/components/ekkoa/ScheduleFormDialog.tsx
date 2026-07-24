@@ -93,10 +93,12 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
     if (hasAreas && cepValid && !matchedArea) return;
     if (overlapDetected) return;
 
-    const payload = {
+    const payload: any = {
       title: form.title, description: form.description || null, scheduled_date: form.scheduled_date,
       start_time: form.start_time || null, end_time: form.end_time || null, status: form.status,
       location: form.location || null, notes: form.notes || null,
+      schedule_subtype: form.schedule_subtype || null,
+      lead_id: form.lead_id || null,
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
     else await create.mutateAsync(payload);
