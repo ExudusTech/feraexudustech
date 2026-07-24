@@ -14,7 +14,9 @@ export interface Schedule {
   end_time: string | null;
   status: string;
   schedule_type: string;
+  schedule_subtype: string | null;
   client_id: string | null;
+  lead_id: string | null;
   assigned_to: string | null;
   location: string | null;
   notes: string | null;
@@ -42,11 +44,14 @@ export function useCreateSchedule() {
   return useMutation({
     mutationFn: async (input: Partial<Schedule>) => {
       if (!user?.organization_id) throw new Error("Sem organização");
-      const { data, error } = await supabase.from("schedules").insert({
+      const { data, error } = await (supabase as any).from("schedules").insert({
         title: input.title!, description: input.description, scheduled_date: input.scheduled_date!,
         start_time: input.start_time, end_time: input.end_time, status: input.status || "agendado",
         client_id: input.client_id, location: input.location, notes: input.notes,
-        operation_id: input.operation_id, organization_id: user.organization_id, created_by: user.id,
+        operation_id: input.operation_id,
+        schedule_subtype: input.schedule_subtype ?? null,
+        lead_id: input.lead_id ?? null,
+        organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;
       return data;

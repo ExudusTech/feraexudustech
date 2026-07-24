@@ -8,10 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCreateSchedule, useUpdateSchedule, useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
+import { useLeads } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 import { formatCEP } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
+import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel } from "@/lib/linha-produto";
 
 interface Props {
   open: boolean;
@@ -19,7 +21,7 @@ interface Props {
   schedule?: Schedule | null;
 }
 
-const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "" };
+const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "", schedule_subtype: "", lead_id: "" };
 
 export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Props) {
   const [form, setForm] = useState(empty);
@@ -27,6 +29,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
   const update = useUpdateSchedule();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
   const { data: allSchedules = [] } = useSchedules();
+  const { data: leads = [] } = useLeads();
   const { user } = useAuth();
   const isEdit = !!schedule;
 
@@ -38,6 +41,8 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
         end_time: schedule.end_time || "", status: schedule.status,
         location: schedule.location || "", notes: schedule.notes || "",
         zip_code: "",
+        schedule_subtype: schedule.schedule_subtype || "",
+        lead_id: schedule.lead_id || "",
       });
     } else setForm(empty);
   }, [schedule, open]);
@@ -88,10 +93,12 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
     if (hasAreas && cepValid && !matchedArea) return;
     if (overlapDetected) return;
 
-    const payload = {
+    const payload: any = {
       title: form.title, description: form.description || null, scheduled_date: form.scheduled_date,
       start_time: form.start_time || null, end_time: form.end_time || null, status: form.status,
       location: form.location || null, notes: form.notes || null,
+      schedule_subtype: form.schedule_subtype || null,
+      lead_id: form.lead_id || null,
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -233,6 +240,26 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
 
             <div className="col-span-2"><Label>Local</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
             <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
+            <div>
+              <Label>Subtipo</Label>
+              <Select value={form.schedule_subtype || "none"} onValueChange={(v) => set("schedule_subtype", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {SCHEDULE_SUBTYPE_VALUES.map((v) => <SelectItem key={v} value={v}>{scheduleSubtypeLabel(v)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Lead vinculado</Label>
+              <Select value={form.lead_id || "none"} onValueChange={(v) => set("lead_id", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {leads.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
           </div>
           <div className="flex justify-end gap-2">

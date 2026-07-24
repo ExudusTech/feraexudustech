@@ -40,19 +40,16 @@ import ExpiringTestsAlert from "@/components/ekkoa/ExpiringTestsAlert";
 import EkkoaDashboard from "@/components/ekkoa/EkkoaDashboard";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
-type TabKey = "dashboard" | "equipamentos" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "inventario" | "fragancias" | "visitas_tecnicas";
+type TabKey = "dashboard" | "instalacoes" | "contratos" | "faturamento" | "operacoes" | "agendamentos" | "fragancias";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
   dashboard: { label: "Dashboard", icon: BarChart3, newLabel: "" },
-  equipamentos: { label: "Equipamentos", icon: Cpu, newLabel: "Novo Equipamento" },
   instalacoes: { label: "Instalações", icon: Zap, newLabel: "Nova Instalação" },
   contratos: { label: "Contratos", icon: FileText, newLabel: "Novo Contrato" },
   faturamento: { label: "Faturamento", icon: DollarSign, newLabel: "Novo Faturamento" },
   operacoes: { label: "Operações", icon: Wrench, newLabel: "Nova Operação" },
   agendamentos: { label: "Agendamentos", icon: CalendarDays, newLabel: "Novo Agendamento" },
-  inventario: { label: "Inventário", icon: Package, newLabel: "Novo Item" },
   fragancias: { label: "Fragrâncias", icon: Flower2, newLabel: "Nova Fragrância" },
-  visitas_tecnicas: { label: "Visitas Téc.", icon: ClipboardCheck, newLabel: "Nova Visita" },
 };
 
 const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -60,7 +57,7 @@ const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", c
 export default function Ekkoa() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [search, setSearch] = useState("");
-  const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
+  const [deleteId, setDeleteId] = useState<{ type: string; id: string } | null>(null);
   const [opsView, setOpsView] = useState<"list" | "kanban">("list");
 
   const { data: operations = [], isLoading: opsLoading } = useOperations();
@@ -128,22 +125,19 @@ export default function Ekkoa() {
   const handleNew = () => {
     const actions: Record<TabKey, () => void> = {
       dashboard: () => {},
-      equipamentos: () => { setSelectedEkEquip(null); setEkEquipDialog(true); },
       instalacoes: () => { setSelectedEkInstall(null); setEkInstallDialog(true); },
       contratos: () => { setSelectedEkContract(null); setEkContractDialog(true); },
       faturamento: () => { setSelectedEkBilling(null); setEkBillingDialog(true); },
       operacoes: () => { setSelectedOp(null); setOpDialog(true); },
       agendamentos: () => { setSelectedSch(null); setSchDialog(true); },
-      inventario: () => { setSelectedInv(null); setInvDialog(true); },
       fragancias: () => { setSelectedFrag(null); setFragDialog(true); },
-      visitas_tecnicas: () => { setSelectedTv(null); setTvDialog(true); },
     };
     actions[tab]();
   };
 
   const handleDelete = () => {
     if (!deleteId) return;
-    const deleters: Record<TabKey, (id: string) => void> = {
+    const deleters: Record<string, (id: string) => void> = {
       dashboard: () => {},
       equipamentos: (id) => deleteEkEquip.mutate(id),
       instalacoes: (id) => deleteEkInstall.mutate(id),
@@ -155,7 +149,7 @@ export default function Ekkoa() {
       fragancias: (id) => deleteFrag.mutate(id),
       visitas_tecnicas: (id) => deleteTv.mutate(id),
     };
-    deleters[deleteId.type](deleteId.id);
+    deleters[deleteId.type]?.(deleteId.id);
     setDeleteId(null);
   };
 

@@ -16,6 +16,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, addYears, subYears, isSameDay, isSameMonth, startOfYear, endOfYear, eachMonthOfInterval, eachWeekOfInterval, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { useLeads } from "@/hooks/use-leads";
+import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "minhas" | "criadas";
 type CalendarView = "dia" | "semana" | "mes" | "ano";
@@ -24,6 +26,7 @@ export default function Agenda() {
   const { user } = useAuth();
   const { data: schedules = [], isLoading } = useSchedules();
   const { data: users = [] } = useOrganizationUsers();
+  const { data: leads = [] } = useLeads();
   const deleteSchedule = useDeleteSchedule();
 
   const [viewMode, setViewMode] = useState<ViewMode>("minhas");
@@ -35,6 +38,7 @@ export default function Agenda() {
   const [filterCity, setFilterCity] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
+  const [filterSubtype, setFilterSubtype] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
@@ -45,6 +49,12 @@ export default function Agenda() {
     users.forEach((u) => map.set(u.user_id, u.name));
     return map;
   }, [users]);
+
+  const leadMap = useMemo(() => {
+    const map = new Map<string, string>();
+    leads.forEach((l) => map.set(l.id, l.title));
+    return map;
+  }, [leads]);
 
   // Extract unique cities from locations
   const cities = useMemo(() => {
@@ -79,12 +89,13 @@ export default function Agenda() {
       if (search && !s.title.toLowerCase().includes(search.toLowerCase())) return false;
       if (filterStatus !== "all" && s.status !== filterStatus) return false;
       if (filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
+      if (filterSubtype !== "all" && (s.schedule_subtype ?? "") !== filterSubtype) return false;
       if (filterCity !== "all") {
         if (!s.location || !s.location.toLowerCase().includes(filterCity.toLowerCase())) return false;
       }
       return true;
     });
-  }, [modeFiltered, search, filterStatus, filterResponsavel, filterCity]);
+  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterCity]);
 
   const getStatusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -314,6 +325,13 @@ export default function Agenda() {
                 {users.map((u) => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filterSubtype} onValueChange={setFilterSubtype}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos Subtipos</SelectItem>
+                {SCHEDULE_SUBTYPE_VALUES.map((v) => <SelectItem key={v} value={v}>{scheduleSubtypeLabel(v)}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
@@ -350,6 +368,8 @@ export default function Agenda() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Título</TableHead>
+                  <TableHead>Subtipo</TableHead>
+                  <TableHead>Lead</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Horário</TableHead>
                   <TableHead>Status</TableHead>
@@ -360,11 +380,19 @@ export default function Agenda() {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.title}</TableCell>
+                      <TableCell>
+                        {s.schedule_subtype ? (
+                          <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
+                            {scheduleSubtypeLabel(s.schedule_subtype)}
+                          </span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell>{s.lead_id ? (leadMap.get(s.lead_id) ?? "—") : "—"}</TableCell>
                       <TableCell>{format(parseISO(s.scheduled_date), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{s.start_time?.slice(0, 5) || "—"}</TableCell>
                       <TableCell>{getStatusBadge(s.status)}</TableCell>

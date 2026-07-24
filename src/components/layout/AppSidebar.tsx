@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
   BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon, Crown, CalendarDays,
+  ChevronLeft, Sun, Moon, Crown, CalendarDays, Cpu, HandshakeIcon, Wrench, Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,14 +19,18 @@ import logoExudus from "@/assets/logo-exudus-new.jpeg";
 
 const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Leaf, label: "Ekkoa", path: "/ekkoa" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Target, label: "Leads", path: "/leads" },
+  { icon: Cpu, label: "Equipamentos", path: "/equipamentos" },
+  { icon: HandshakeIcon, label: "Comodatos", path: "/comodatos" },
+  { icon: Boxes, label: "Inventário", path: "/inventario" },
+  { icon: CalendarDays, label: "Agenda", path: "/agenda" },
+  { icon: Wrench, label: "Manutenções", path: "/manutencoes" },
+  { icon: Leaf, label: "Ekkoa", path: "/ekkoa" },
   { icon: FileText, label: "Propostas", path: "/propostas" },
   { icon: Package, label: "Produtos", path: "/produtos" },
   { icon: DollarSign, label: "Financeiro", path: "/financeiro" },
   { icon: BarChart3, label: "Relatórios", path: "/relatorios" },
-  { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: MapPin, label: "Áreas de Cobertura", path: "/areas-cobertura" },
 ];
 
