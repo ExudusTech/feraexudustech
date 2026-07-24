@@ -240,6 +240,26 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
 
             <div className="col-span-2"><Label>Local</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
             <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
+            <div>
+              <Label>Subtipo</Label>
+              <Select value={form.schedule_subtype || "none"} onValueChange={(v) => set("schedule_subtype", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {SCHEDULE_SUBTYPE_VALUES.map((v) => <SelectItem key={v} value={v}>{scheduleSubtypeLabel(v)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Lead vinculado</Label>
+              <Select value={form.lead_id || "none"} onValueChange={(v) => set("lead_id", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {leads.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
           </div>
           <div className="flex justify-end gap-2">
