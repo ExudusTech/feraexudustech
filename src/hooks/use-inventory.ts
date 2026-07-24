@@ -21,6 +21,12 @@ export interface InventoryItem {
   last_maintenance_date: string | null;
   geolocation: string | null;
   photo_url: string | null;
+  linha_produto: string | null;
+  item_type: string | null;
+  em_comodato: boolean | null;
+  client_id: string | null;
+  localizacao_interna: string | null;
+  proxima_manutencao: string | null;
   created_by: string;
   created_at: string;
   updated_at: string | null;
@@ -52,6 +58,12 @@ export function useCreateInventoryItem() {
         unit_cost: input.unit_cost || 0, location: input.location, status: input.status || "active",
         installation_date: input.installation_date, last_maintenance_date: input.last_maintenance_date,
         geolocation: input.geolocation, photo_url: input.photo_url,
+        linha_produto: input.linha_produto ?? null,
+        item_type: input.item_type ?? null,
+        em_comodato: input.em_comodato ?? false,
+        client_id: input.client_id ?? null,
+        localizacao_interna: input.localizacao_interna ?? null,
+        proxima_manutencao: input.proxima_manutencao ?? null,
         organization_id: user.organization_id, created_by: user.id,
       } as any).select().single();
       if (error) throw error;
