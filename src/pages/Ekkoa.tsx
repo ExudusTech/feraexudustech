@@ -57,7 +57,7 @@ const BRL = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", c
 export default function Ekkoa() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [search, setSearch] = useState("");
-  const [deleteId, setDeleteId] = useState<{ type: TabKey; id: string } | null>(null);
+  const [deleteId, setDeleteId] = useState<{ type: string; id: string } | null>(null);
   const [opsView, setOpsView] = useState<"list" | "kanban">("list");
 
   const { data: operations = [], isLoading: opsLoading } = useOperations();
