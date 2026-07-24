@@ -16,6 +16,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, addYears, subYears, isSameDay, isSameMonth, startOfYear, endOfYear, eachMonthOfInterval, eachWeekOfInterval, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { useLeads } from "@/hooks/use-leads";
+import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "minhas" | "criadas";
 type CalendarView = "dia" | "semana" | "mes" | "ano";
@@ -24,6 +26,7 @@ export default function Agenda() {
   const { user } = useAuth();
   const { data: schedules = [], isLoading } = useSchedules();
   const { data: users = [] } = useOrganizationUsers();
+  const { data: leads = [] } = useLeads();
   const deleteSchedule = useDeleteSchedule();
 
   const [viewMode, setViewMode] = useState<ViewMode>("minhas");
@@ -35,6 +38,7 @@ export default function Agenda() {
   const [filterCity, setFilterCity] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
+  const [filterSubtype, setFilterSubtype] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
@@ -45,6 +49,12 @@ export default function Agenda() {
     users.forEach((u) => map.set(u.user_id, u.name));
     return map;
   }, [users]);
+
+  const leadMap = useMemo(() => {
+    const map = new Map<string, string>();
+    leads.forEach((l) => map.set(l.id, l.title));
+    return map;
+  }, [leads]);
 
   // Extract unique cities from locations
   const cities = useMemo(() => {
