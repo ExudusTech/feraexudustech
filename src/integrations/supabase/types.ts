@@ -331,6 +331,126 @@ export type Database = {
           },
         ]
       }
+      comodatos: {
+        Row: {
+          cidade: string | null
+          client_contact_id: string | null
+          client_id: string | null
+          consumo_minimo: number | null
+          created_at: string | null
+          created_by: string | null
+          data_fim: string | null
+          data_inicio: string | null
+          endereco_instalacao: string | null
+          estado: string | null
+          id: string
+          inventory_item_id: string | null
+          linha_produto: string | null
+          localizacao_interna: string | null
+          notes: string | null
+          numero_contrato: string | null
+          organization_id: string
+          periodicidade_manut: string | null
+          product_id: string | null
+          proxima_manutencao: string | null
+          status: string
+          ultima_manutencao: string | null
+          unidade_consumo: string | null
+          updated_at: string | null
+          valor_mensal: number | null
+        }
+        Insert: {
+          cidade?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          consumo_minimo?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          data_fim?: string | null
+          data_inicio?: string | null
+          endereco_instalacao?: string | null
+          estado?: string | null
+          id?: string
+          inventory_item_id?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
+          notes?: string | null
+          numero_contrato?: string | null
+          organization_id: string
+          periodicidade_manut?: string | null
+          product_id?: string | null
+          proxima_manutencao?: string | null
+          status?: string
+          ultima_manutencao?: string | null
+          unidade_consumo?: string | null
+          updated_at?: string | null
+          valor_mensal?: number | null
+        }
+        Update: {
+          cidade?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          consumo_minimo?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          data_fim?: string | null
+          data_inicio?: string | null
+          endereco_instalacao?: string | null
+          estado?: string | null
+          id?: string
+          inventory_item_id?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
+          notes?: string | null
+          numero_contrato?: string | null
+          organization_id?: string
+          periodicidade_manut?: string | null
+          product_id?: string | null
+          proxima_manutencao?: string | null
+          status?: string
+          ultima_manutencao?: string | null
+          unidade_consumo?: string | null
+          updated_at?: string | null
+          valor_mensal?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comodatos_client_contact_id_fkey"
+            columns: ["client_contact_id"]
+            isOneToOne: false
+            referencedRelation: "client_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           created_at: string
@@ -1376,18 +1496,24 @@ export type Database = {
       inventory_items: {
         Row: {
           category: string | null
+          client_id: string | null
           created_at: string
           created_by: string
           description: string | null
+          em_comodato: boolean | null
           geolocation: string | null
           id: string
           installation_date: string | null
+          item_type: string | null
           last_maintenance_date: string | null
+          linha_produto: string | null
+          localizacao_interna: string | null
           location: string | null
           min_quantity: number
           name: string
           organization_id: string
           photo_url: string | null
+          proxima_manutencao: string | null
           quantity: number
           serial_number: string | null
           sku: string | null
@@ -1398,18 +1524,24 @@ export type Database = {
         }
         Insert: {
           category?: string | null
+          client_id?: string | null
           created_at?: string
           created_by: string
           description?: string | null
+          em_comodato?: boolean | null
           geolocation?: string | null
           id?: string
           installation_date?: string | null
+          item_type?: string | null
           last_maintenance_date?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
           location?: string | null
           min_quantity?: number
           name: string
           organization_id: string
           photo_url?: string | null
+          proxima_manutencao?: string | null
           quantity?: number
           serial_number?: string | null
           sku?: string | null
@@ -1420,18 +1552,24 @@ export type Database = {
         }
         Update: {
           category?: string | null
+          client_id?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
+          em_comodato?: boolean | null
           geolocation?: string | null
           id?: string
           installation_date?: string | null
+          item_type?: string | null
           last_maintenance_date?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
           location?: string | null
           min_quantity?: number
           name?: string
           organization_id?: string
           photo_url?: string | null
+          proxima_manutencao?: string | null
           quantity?: number
           serial_number?: string | null
           sku?: string | null
@@ -1441,6 +1579,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "inventory_items_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inventory_items_organization_id_fkey"
             columns: ["organization_id"]
@@ -1585,6 +1730,7 @@ export type Database = {
           actual_cost: number | null
           assigned_to: string | null
           client_id: string | null
+          comodato_id: string | null
           completed_date: string | null
           created_at: string
           created_by: string
@@ -1593,6 +1739,8 @@ export type Database = {
           estimated_cost: number | null
           id: string
           installation_id: string | null
+          inventory_item_id: string | null
+          linha_produto: string | null
           maintenance_type: string
           notes: string | null
           organization_id: string
@@ -1607,6 +1755,7 @@ export type Database = {
           actual_cost?: number | null
           assigned_to?: string | null
           client_id?: string | null
+          comodato_id?: string | null
           completed_date?: string | null
           created_at?: string
           created_by: string
@@ -1615,6 +1764,8 @@ export type Database = {
           estimated_cost?: number | null
           id?: string
           installation_id?: string | null
+          inventory_item_id?: string | null
+          linha_produto?: string | null
           maintenance_type?: string
           notes?: string | null
           organization_id: string
@@ -1629,6 +1780,7 @@ export type Database = {
           actual_cost?: number | null
           assigned_to?: string | null
           client_id?: string | null
+          comodato_id?: string | null
           completed_date?: string | null
           created_at?: string
           created_by?: string
@@ -1637,6 +1789,8 @@ export type Database = {
           estimated_cost?: number | null
           id?: string
           installation_id?: string | null
+          inventory_item_id?: string | null
+          linha_produto?: string | null
           maintenance_type?: string
           notes?: string | null
           organization_id?: string
@@ -1656,10 +1810,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "maintenance_schedule_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "maintenance_schedule_installation_id_fkey"
             columns: ["installation_id"]
             isOneToOne: false
             referencedRelation: "ekkoa_installations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_inventory_item_id_fkey"
+            columns: ["inventory_item_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_items"
             referencedColumns: ["id"]
           },
           {
@@ -2167,9 +2335,11 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          disponivel_comodato: boolean | null
           id: string
           image_url: string | null
           is_active: boolean
+          linha_produto: string | null
           min_stock: number
           name: string
           organization_id: string
@@ -2187,9 +2357,11 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          disponivel_comodato?: boolean | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          linha_produto?: string | null
           min_stock?: number
           name: string
           organization_id: string
@@ -2207,9 +2379,11 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          disponivel_comodato?: boolean | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          linha_produto?: string | null
           min_stock?: number
           name?: string
           organization_id?: string
@@ -2545,10 +2719,12 @@ export type Database = {
           description: string | null
           end_time: string | null
           id: string
+          lead_id: string | null
           location: string | null
           notes: string | null
           operation_id: string | null
           organization_id: string
+          schedule_subtype: string | null
           schedule_type: string
           scheduled_date: string
           start_time: string | null
@@ -2564,10 +2740,12 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           id?: string
+          lead_id?: string | null
           location?: string | null
           notes?: string | null
           operation_id?: string | null
           organization_id: string
+          schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date: string
           start_time?: string | null
@@ -2583,10 +2761,12 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           id?: string
+          lead_id?: string | null
           location?: string | null
           notes?: string | null
           operation_id?: string | null
           organization_id?: string
+          schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date?: string
           start_time?: string | null
@@ -2600,6 +2780,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedules_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
           {
