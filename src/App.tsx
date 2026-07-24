@@ -25,6 +25,10 @@ import NotFound from "@/pages/NotFound";
 import AdminOrganizacoes from "@/pages/AdminOrganizacoes";
 import ResetPassword from "@/pages/ResetPassword";
 import SuperAdminSelector from "@/pages/SuperAdminSelector";
+import Equipamentos from "@/pages/Equipamentos";
+import Comodatos from "@/pages/Comodatos";
+import Inventario from "@/pages/Inventario";
+import Manutencoes from "@/pages/Manutencoes";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +54,10 @@ const App = () => (
             <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
             <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
             <Route path="/areas-cobertura" element={<ProtectedRoute><AreasCobertura /></ProtectedRoute>} />
+            <Route path="/equipamentos" element={<ProtectedRoute><Equipamentos /></ProtectedRoute>} />
+            <Route path="/comodatos" element={<ProtectedRoute><Comodatos /></ProtectedRoute>} />
+            <Route path="/inventario" element={<ProtectedRoute><Inventario /></ProtectedRoute>} />
+            <Route path="/manutencoes" element={<ProtectedRoute><Manutencoes /></ProtectedRoute>} />
             <Route path="/usuarios" element={<ProtectedRoute><Usuarios /></ProtectedRoute>} />
             <Route path="/meu-perfil" element={<ProtectedRoute><MeuPerfil /></ProtectedRoute>} />
             <Route path="/configuracoes" element={<ProtectedRoute><Configuracoes /></ProtectedRoute>} />
