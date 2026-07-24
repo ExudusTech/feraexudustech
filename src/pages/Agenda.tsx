@@ -325,6 +325,13 @@ export default function Agenda() {
                 {users.map((u) => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filterSubtype} onValueChange={setFilterSubtype}>
+              <SelectTrigger className="w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos Subtipos</SelectItem>
+                {SCHEDULE_SUBTYPE_VALUES.map((v) => <SelectItem key={v} value={v}>{scheduleSubtypeLabel(v)}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
@@ -361,6 +368,8 @@ export default function Agenda() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Título</TableHead>
+                  <TableHead>Subtipo</TableHead>
+                  <TableHead>Lead</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Horário</TableHead>
                   <TableHead>Status</TableHead>
@@ -371,11 +380,19 @@ export default function Agenda() {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.title}</TableCell>
+                      <TableCell>
+                        {s.schedule_subtype ? (
+                          <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
+                            {scheduleSubtypeLabel(s.schedule_subtype)}
+                          </span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell>{s.lead_id ? (leadMap.get(s.lead_id) ?? "—") : "—"}</TableCell>
                       <TableCell>{format(parseISO(s.scheduled_date), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{s.start_time?.slice(0, 5) || "—"}</TableCell>
                       <TableCell>{getStatusBadge(s.status)}</TableCell>
