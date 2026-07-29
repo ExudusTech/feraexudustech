@@ -359,7 +359,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   const title = `Visita Técnica — ${empresaLabel} — ${cidade} [${produto_interesse ?? "Ekkoa"}]`;
   const startTime = `${horario}:00`, endHour = parseInt(horario.split(":")[0], 10) + 1, endTime = `${String(endHour).padStart(2, "0")}:00:00`;
   const notesArr = [`Contato: ${nome_contato}${cargo ? ` (${cargo})` : ""}`, telefone ? `Tel: ${telefone}` : null, produto_interesse ? `Produto: ${produto_interesse}` : null, contato_id ? `contato_id: ${contato_id}` : null, interaction_id ? `Flora: ${interaction_id}` : null, notas ?? null].filter(Boolean).join(" | ");
-  const { data: schedule, error } = await supabase.from("schedules").insert({ organization_id: NITSCLEAN_ORG_ID, title, scheduled_date: data_visita, start_time: startTime, end_time: endTime, schedule_type: "visita_tecnica", status: "agendado", location: cidade, notes: notesArr, client_id: clientId ?? null }).select("id, title, scheduled_date, start_time, status").single();
+  const { data: schedule, error } = await supabase.from("schedules").insert({ organization_id: NITSCLEAN_ORG_ID, title, scheduled_date: data_visita, start_time: startTime, end_time: endTime, schedule_type: "visita_tecnica", schedule_subtype: "PROSPECCAO", status: "agendado", location: cidade, notes: notesArr, client_id: clientId ?? null, lead_id: leadId ?? null }).select("id, title, scheduled_date, start_time, status").single();
   if (error) return fail(`Erro ao criar agendamento: ${error.message}`);
   if (leadId) await supabase.from("leads").update({ stage: "agendado", updated_at: new Date().toISOString() }).eq("id", leadId);
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
