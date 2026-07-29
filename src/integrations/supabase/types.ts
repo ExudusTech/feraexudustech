@@ -1603,6 +1603,7 @@ export type Database = {
           category: string | null
           client_contact_id: string | null
           client_id: string | null
+          company: string | null
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
@@ -1638,6 +1639,7 @@ export type Database = {
           category?: string | null
           client_contact_id?: string | null
           client_id?: string | null
+          company?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
@@ -1673,6 +1675,7 @@ export type Database = {
           category?: string | null
           client_contact_id?: string | null
           client_id?: string | null
+          company?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
