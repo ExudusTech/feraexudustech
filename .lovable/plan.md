@@ -1,103 +1,44 @@
-
-# Plano — Onda 2 Frontend: Desisolar Ekkoa e representar toda a NitsClean
+# Plano: Histórico de Importações de Produtos + Upsert por SKU
 
 ## Objetivo
-Refletir no frontend as mudanças da Onda 2 (novos campos em `inventory_items`, `products`, `schedules`, `maintenance_schedule` e nova tabela `comodatos`), tratando Ekkoa como um dos produtos dentro do sistema NitsClean.
+Permitir ao usuário visualizar a data da última importação de produtos, consultar o histórico de importações e enviar novas planilhas que atualizem produtos existentes (pelo SKU) e insiram novos, tudo dentro da organização atual.
 
-## 1. Navegação (`src/components/layout/AppSidebar.tsx` + `src/App.tsx`)
+## Contexto atual
+- A importação de produtos insere registros diretamente em `public.products` sem guardar log.
+- Hoje existem 222 produtos; o `created_at` mais recente aponta 2026-03-02 01:24 UTC como proxy da última importação.
+- A tabela `products` tem índice comum em `sku`, mas não é único por organização.
 
-Nova ordem no menu lateral:
+## O que será entregue
 
-```text
-Dashboard
-CRM
-  ├─ Leads
-  ├─ Clientes
-  └─ Pipeline
-Equipamentos          (NOVO)
-Comodatos             (NOVO)
-Inventário            (NOVO — global, não Ekkoa)
-Agenda                (existente, ampliada)
-Manutenções           (NOVO)
-Ekkoa
-  ├─ Dashboard Ekkoa
-  ├─ Instalações
-  ├─ Fragrâncias
-  ├─ Faturamento Ekkoa
-  └─ Leads Ekkoa
-Comercial
-  ├─ Propostas
-  ├─ Contratos
-  └─ Financeiro
-Configurações
-```
+### 1. Banco de dados
+- Criar tabela `public.product_imports` com os campos:
+  - `id`, `organization_id`, `file_name`, `imported_by`, `total_rows`, `success_count`, `error_count`, `status`, `error_log`, `created_at`, `updated_at`.
+- Adicionar `GRANT` para `authenticated` e `service_role`.
+- Habilitar RLS com políticas por `organization_id`.
+- Adicionar índice único parcial em `products(organization_id, sku)` onde `sku IS NOT NULL`, para garantir upsert seguro por SKU.
 
-Implementação prática: como o sidebar atual é uma lista chata, adicionar suporte a **grupos expansíveis** usando `Collapsible` (shadcn). CRM, Ekkoa e Comercial viram grupos. Manter estado de collapse/dark theme atuais.
+### 2. Backend (hooks)
+- Criar hook `useProductImports` para listar histórico de importações da organização.
+- Criar hook `useCreateProductImport` para registrar cada importação.
+- Alterar `useCreateProductsBatch` para:
+  - Receber flag `upsertBySku`.
+  - Quando ativa, para cada linha com SKU preenchido, tentar atualizar o produto existente da mesma organização; SKU vazio continua inserindo novo.
+  - Incrementar contadores de sucesso/erro e atualizar o registro de importação.
 
-## 2. Novas páginas
+### 3. Frontend
+- Atualizar `ImportProductsDialog`:
+  - Mostrar histórico de importações recentes (data, arquivo, status, quantidade).
+  - Adicionar checkbox "Atualizar produtos existentes pelo SKU".
+  - Ao importar, criar registro em `product_imports`, executar upsert/inserção e atualizar o registro com sucesso/erro.
+- Atualizar `Produtos.tsx`:
+  - Exibir a data da última importação registrada em `product_imports` (ou inferida dos produtos enquanto não houver registro).
 
-### `src/pages/Equipamentos.tsx`
-- Consulta `inventory_items` onde `item_type = 'EQUIPAMENTO'`.
-- Colunas: Nome, Linha (badge colorido), Marca, Nº Série, Status, Cliente (via `client_id` se `em_comodato`), Localização Interna, Próxima Manutenção.
-- Filtros: `linha_produto`, `status`, `em_comodato`.
-- Reutiliza `InventoryFormDialog` (será estendido com os novos campos, ver §5).
+### 4. Validações
+- Testar importação com SKU repetido dentro da mesma planilha.
+- Testar atualização de produto existente.
+- Verificar se RLS permite apenas usuários da organização visualizar/importar.
 
-### `src/pages/Comodatos.tsx`
-- Nova hook `use-comodatos.ts` (CRUD + join com `clients`, `inventory_items`, `products`).
-- Tabela com: Nº Contrato, Cliente, Equipamento, Linha (badge), Localização, Consumo Mínimo + Unidade, Status (badge colorido), Próxima Manutenção.
-- Botão "Novo Comodato" abre `ComodatoFormDialog` (novo componente) com selects em cascata:
-  cliente → equipamento disponível (inventory_items `item_type=EQUIPAMENTO` e livre) → produto consumível (products onde `disponivel_comodato=true`).
-
-### `src/pages/Inventario.tsx`
-- Lista `inventory_items` com filtros por `linha_produto` e `item_type`.
-- Reutiliza `InventoryFormDialog`.
-
-### `src/pages/Manutencoes.tsx`
-- Lista `maintenance_schedule` com filtro por `linha_produto`.
-- Se `inventory_item_id` preenchido → mostra nome do equipamento (join client-side com hook `useInventory`).
-- Se `comodato_id` preenchido → link para `/comodatos?id=...`.
-
-## 3. Atualizações em telas existentes
-
-### `src/pages/Agenda.tsx`
-- Adicionar coluna `schedule_subtype` com badge por subtipo (PROSPECCAO=azul, DIAGNOSTICO=cyan, INSTALACAO=roxo, MANUTENCAO=laranja, REPOSICAO=verde, COBRANCA=vermelho, OUTRO=cinza).
-- Filtros: `schedule_type` e `schedule_subtype`.
-- Quando `lead_id` preenchido → mostrar nome do lead (join com `useLeads`).
-
-### `src/pages/Ekkoa.tsx`
-- Remover abas "Equipamentos", "Inventário" e "Visitas Técnicas" (essas passam para os módulos genéricos; hooks/dialogs permanecem no código para não quebrar nada).
-- Manter: Dashboard, Instalações, Fragrâncias, Faturamento Ekkoa, Leads Ekkoa, Contratos Ekkoa, Operações, Agendamentos-Ekkoa (opcional; ou remover).
-
-## 4. Hooks novos e ajustes
-
-- `src/hooks/use-comodatos.ts` — CRUD completo.
-- `src/hooks/use-inventory.ts` — estender interface com `linha_produto`, `item_type`, `em_comodato`, `client_id`, `localizacao_interna`, `proxima_manutencao`; ajustar `insert`/`update`.
-- `src/hooks/use-products.ts` — adicionar `linha_produto`, `disponivel_comodato`.
-- `src/hooks/use-schedules.ts` — adicionar `lead_id`, `schedule_subtype`.
-- `src/hooks/use-maintenance.ts` (se não existe, criar) — adicionar `inventory_item_id`, `comodato_id`, `linha_produto`.
-
-## 5. Componentes de formulário
-
-- `InventoryFormDialog` — novos campos: linha_produto (select), item_type (select), em_comodato (switch), client_id (autocomplete opcional), localização interna (input), próxima manutenção (date).
-- `ComodatoFormDialog` — novo (ver §2).
-- `ScheduleFormDialog` — adicionar select de `schedule_subtype` e opcional `lead_id`.
-
-## 6. Utilitário compartilhado
-
-Criar `src/lib/linha-produto.ts` com:
-- enum `LINHA_PRODUTO` = EKKOA | HIGIENE_MAOS | PAPEL | GEL | QUIMICO | OUTRO
-- mapa `LINHA_LABEL` e `LINHA_BADGE_CLASS` (cores tailwind semânticas — sem hex hardcoded, usando classes já definidas).
-
-## 7. Permissões
-
-Atualizar `use-permissions.ts` para incluir os novos paths (`/equipamentos`, `/comodatos`, `/inventario`, `/manutencoes`) — mesma regra do módulo Ekkoa/operacional.
-
-## Fora do escopo
-- Não deleta nenhuma tabela `ekkoa_*` nem seus hooks/dialogs (continuam funcionando).
-- Sem mudanças de banco.
-- Sem alteração de auth, RLS ou tipos gerados.
-
-## Detalhes técnicos (referência rápida)
-- Tipos de `inventory_items.item_type` e `linha_produto` já existem no banco; usar como texto (`string`) no client, pois tipos gerados são regenerados após migrations e provavelmente já refletem os enums.
-- Badges de linha e subtipo: usar tailwind com `bg-*/10 text-* border-*/20` seguindo o design system existente (glassmorphism dark).
-- Todas as consultas continuam com Supabase JS; RLS por `organization_id` já está no banco.
+## Fora do escopo deste plano
+- Exportação/download da planilha atual de produtos.
+- Notificações automáticas de importação.
+- Importação agendada.
