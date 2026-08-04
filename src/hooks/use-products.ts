@@ -19,6 +19,7 @@ export interface Product {
   image_url: string | null;
   is_active: boolean;
   specifications: Record<string, any>;
+  fornecedor: string | null;
   linha_produto: string | null;
   disponivel_comodato: boolean | null;
   created_by: string;
