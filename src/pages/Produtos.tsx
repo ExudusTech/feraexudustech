@@ -9,13 +9,14 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Package, Upload, AlertTriangle, LayoutGrid, List } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
-import { useProducts, useDeleteProduct, type Product } from "@/hooks/use-products";
+import { useProducts, useDeleteProduct, useLastProductImport, type Product } from "@/hooks/use-products";
 import { usePermissions } from "@/hooks/use-permissions";
 import ProductFormDialog from "@/components/produtos/ProductFormDialog";
 import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
 
 export default function Produtos() {
   const { data: products = [], isLoading } = useProducts();
+  const { data: lastImport } = useLastProductImport();
   const deleteProduct = useDeleteProduct();
   const { isAdmin, role, permissions } = usePermissions();
   const canEditProducts = (isAdmin || role === "gestor") && permissions.canWrite;
@@ -27,7 +28,7 @@ export default function Produtos() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const filtered = products.filter((p) =>
-    [p.name, p.sku, p.category, p.brand].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
+    [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
   );
 
   const handleEdit = (p: Product) => { setSelected(p); setDialogOpen(true); };
@@ -51,6 +52,12 @@ export default function Produtos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar produtos..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          {lastImport && (
+            <p className="text-xs text-muted-foreground hidden md:block">
+              Última importação: {new Date(lastImport.created_at).toLocaleString("pt-BR")}
+              {" · "}{lastImport.inserted_count} novos · {lastImport.updated_count} atualizados
+            </p>
+          )}
           <div className="flex border rounded-md">
             <Button variant={view === "table" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-r-none" onClick={() => setView("table")}><List className="h-4 w-4" /></Button>
             <Button variant={view === "grid" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-l-none" onClick={() => setView("grid")}><LayoutGrid className="h-4 w-4" /></Button>
@@ -77,7 +84,7 @@ export default function Produtos() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead>
+                  <TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead><TableHead>Fornecedor</TableHead>
                   <TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -92,6 +99,7 @@ export default function Produtos() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
                     <TableCell>{p.category || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>
                     <TableCell className="font-medium">{fmt(p.price)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
