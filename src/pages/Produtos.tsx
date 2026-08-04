@@ -99,6 +99,7 @@ export default function Produtos() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
                     <TableCell>{p.category || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>
                     <TableCell className="font-medium">{fmt(p.price)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
