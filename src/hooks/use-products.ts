@@ -60,7 +60,6 @@ export function useCreateProduct() {
   });
 }
 
-export function useCreateProductsBatch() {
 export interface ImportProductInput {
   name: string;
   sku: string;
