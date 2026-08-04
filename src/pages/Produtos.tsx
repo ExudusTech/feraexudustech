@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Package, Upload, AlertTriangle, LayoutGrid, List } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
-import { useProducts, useDeleteProduct, type Product } from "@/hooks/use-products";
+import { useProducts, useDeleteProduct, useLastProductImport, type Product } from "@/hooks/use-products";
 import { usePermissions } from "@/hooks/use-permissions";
 import ProductFormDialog from "@/components/produtos/ProductFormDialog";
 import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
