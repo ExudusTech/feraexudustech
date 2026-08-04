@@ -36,7 +36,7 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 };
 
 const empty = {
-  name: "", description: "", sku: "", category: "", brand: "", unit: "un",
+  name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
   price: "", cost: "", stock: "0", min_stock: "0", is_active: true,
 };
 
