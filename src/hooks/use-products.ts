@@ -48,7 +48,7 @@ export function useCreateProduct() {
       if (!user?.organization_id) throw new Error("Sem organização");
       const { data, error } = await supabase.from("products").insert({
         name: input.name!, description: input.description, sku: input.sku, category: input.category,
-        brand: input.brand, unit: input.unit || "un", price: input.price || 0, cost: input.cost || 0,
+        brand: input.brand, fornecedor: input.fornecedor, unit: input.unit || "un", price: input.price || 0, cost: input.cost || 0,
         stock: input.stock || 0, min_stock: input.min_stock || 0, is_active: input.is_active ?? true,
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
