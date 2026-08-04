@@ -2330,6 +2330,59 @@ export type Database = {
           },
         ]
       }
+      product_imports: {
+        Row: {
+          created_at: string
+          error_count: number
+          error_log: Json | null
+          file_name: string | null
+          id: string
+          imported_by: string | null
+          inserted_count: number
+          organization_id: string
+          status: string
+          total_rows: number
+          updated_at: string
+          updated_count: number
+        }
+        Insert: {
+          created_at?: string
+          error_count?: number
+          error_log?: Json | null
+          file_name?: string | null
+          id?: string
+          imported_by?: string | null
+          inserted_count?: number
+          organization_id: string
+          status?: string
+          total_rows?: number
+          updated_at?: string
+          updated_count?: number
+        }
+        Update: {
+          created_at?: string
+          error_count?: number
+          error_log?: Json | null
+          file_name?: string | null
+          id?: string
+          imported_by?: string | null
+          inserted_count?: number
+          organization_id?: string
+          status?: string
+          total_rows?: number
+          updated_at?: string
+          updated_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_imports_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           brand: string | null
@@ -2339,6 +2392,7 @@ export type Database = {
           created_by: string
           description: string | null
           disponivel_comodato: boolean | null
+          fornecedor: string | null
           id: string
           image_url: string | null
           is_active: boolean
@@ -2361,6 +2415,7 @@ export type Database = {
           created_by: string
           description?: string | null
           disponivel_comodato?: boolean | null
+          fornecedor?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
@@ -2383,6 +2438,7 @@ export type Database = {
           created_by?: string
           description?: string | null
           disponivel_comodato?: boolean | null
+          fornecedor?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
