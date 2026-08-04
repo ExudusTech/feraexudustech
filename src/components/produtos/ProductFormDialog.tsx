@@ -112,6 +112,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
             <div><Label>SKU</Label><Input value={form.sku} onChange={(e) => set("sku", e.target.value)} /></div>
             <div><Label>Categoria</Label><Input value={form.category} onChange={(e) => set("category", e.target.value)} placeholder="Ex: Aromatização, Energia Solar..." /></div>
             <div><Label>Marca</Label><Input value={form.brand} onChange={(e) => set("brand", e.target.value)} /></div>
+            <div className="col-span-2"><Label>Fornecedor</Label><Input value={form.fornecedor} onChange={(e) => set("fornecedor", e.target.value)} placeholder="Nome do fornecedor" /></div>
             <div><Label>Unidade</Label><Input value={form.unit} onChange={(e) => set("unit", e.target.value)} placeholder="un, kg, m..." /></div>
             <div><Label>Preço (R$)</Label><Input type="number" step="0.01" value={form.price} onChange={(e) => set("price", e.target.value)} /></div>
             <div><Label>Custo (R$)</Label><Input type="number" step="0.01" value={form.cost} onChange={(e) => set("cost", e.target.value)} /></div>
