@@ -84,7 +84,7 @@ export default function Produtos() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead>
+                  <TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead><TableHead>Fornecedor</TableHead>
                   <TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
