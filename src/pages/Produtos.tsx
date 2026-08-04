@@ -16,6 +16,7 @@ import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
 
 export default function Produtos() {
   const { data: products = [], isLoading } = useProducts();
+  const { data: lastImport } = useLastProductImport();
   const deleteProduct = useDeleteProduct();
   const { isAdmin, role, permissions } = usePermissions();
   const canEditProducts = (isAdmin || role === "gestor") && permissions.canWrite;
@@ -27,7 +28,7 @@ export default function Produtos() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const filtered = products.filter((p) =>
-    [p.name, p.sku, p.category, p.brand].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
+    [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
   );
 
   const handleEdit = (p: Product) => { setSelected(p); setDialogOpen(true); };
