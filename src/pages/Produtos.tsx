@@ -52,6 +52,12 @@ export default function Produtos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar produtos..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          {lastImport && (
+            <p className="text-xs text-muted-foreground hidden md:block">
+              Última importação: {new Date(lastImport.created_at).toLocaleString("pt-BR")}
+              {" · "}{lastImport.inserted_count} novos · {lastImport.updated_count} atualizados
+            </p>
+          )}
           <div className="flex border rounded-md">
             <Button variant={view === "table" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-r-none" onClick={() => setView("table")}><List className="h-4 w-4" /></Button>
             <Button variant={view === "grid" ? "secondary" : "ghost"} size="icon" className="h-9 w-9 rounded-l-none" onClick={() => setView("grid")}><LayoutGrid className="h-4 w-4" /></Button>
