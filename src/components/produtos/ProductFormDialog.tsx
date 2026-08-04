@@ -90,7 +90,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
 
     const payload = {
       name: form.name, description: form.description || null, sku: form.sku || null,
-      category: form.category || null, brand: form.brand || null, unit: form.unit || "un",
+      category: form.category || null, brand: form.brand || null, fornecedor: form.fornecedor || null, unit: form.unit || "un",
       price: parseFloat(form.price) || 0, cost: parseFloat(form.cost) || 0,
       stock: parseInt(form.stock) || 0, min_stock: parseInt(form.min_stock) || 0,
       is_active: form.is_active, specifications: allSpecs,
