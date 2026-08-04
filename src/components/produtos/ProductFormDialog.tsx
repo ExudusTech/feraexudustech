@@ -52,7 +52,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
     if (product) {
       setForm({
         name: product.name, description: product.description || "", sku: product.sku || "",
-        category: product.category || "", brand: product.brand || "", unit: product.unit,
+        category: product.category || "", brand: product.brand || "", fornecedor: product.fornecedor || "", unit: product.unit,
         price: String(product.price), cost: String(product.cost), stock: String(product.stock),
         min_stock: String(product.min_stock), is_active: product.is_active,
       });
