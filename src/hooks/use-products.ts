@@ -22,6 +22,10 @@ export interface Product {
   fornecedor: string | null;
   linha_produto: string | null;
   disponivel_comodato: boolean | null;
+  is_dispenser: boolean;
+  dispenser_family_id: string | null;
+  compatible_dispenser_families: string[];
+
   created_by: string;
   created_at: string;
   updated_at: string | null;
