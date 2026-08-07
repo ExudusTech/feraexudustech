@@ -112,6 +112,8 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
       inventory_item_id: form.inventory_item_id || null,
       product_id: form.product_id || null,
       linha_produto: form.linha_produto || null,
+      dispenser_family_id: form.dispenser_family_id || null,
+
       localizacao_interna: form.localizacao_interna || null,
       endereco_instalacao: form.endereco_instalacao || null,
       cidade: form.cidade || null,
