@@ -6,8 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { useCreateProduct, useUpdateProduct, type Product } from "@/hooks/use-products";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
+
 
 interface Props {
   open: boolean;
