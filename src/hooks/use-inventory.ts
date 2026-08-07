@@ -27,6 +27,8 @@ export interface InventoryItem {
   client_id: string | null;
   localizacao_interna: string | null;
   proxima_manutencao: string | null;
+  dispenser_family_id: string | null;
+
   created_by: string;
   created_at: string;
   updated_at: string | null;
