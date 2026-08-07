@@ -8,8 +8,9 @@ export interface DispenserFamily {
   code: string;
   name: string;
   description: string | null;
-  linha_produto: string | null;
+  sort_order: number | null;
   is_active: boolean;
+
   created_at: string;
 }
 
