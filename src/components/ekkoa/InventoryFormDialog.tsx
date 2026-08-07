@@ -27,14 +27,17 @@ const empty = {
   em_comodato: false, client_id: "",
   localizacao_interna: "", proxima_manutencao: "",
   category: "", sku: "", quantity: "0", unit: "un",
+  dispenser_family_id: "",
 };
 
 export default function InventoryFormDialog({ open, onOpenChange, item, defaultItemType }: Props) {
   const [form, setForm] = useState<any>({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
   const { data: clients = [] } = useClients();
+  const { data: families = [] } = useDispenserFamilies();
   const create = useCreateInventoryItem();
   const update = useUpdateInventoryItem();
   const isEdit = !!item;
+
 
   useEffect(() => {
     if (item) {
