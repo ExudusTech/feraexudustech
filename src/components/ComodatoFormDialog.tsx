@@ -82,17 +82,26 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Equipment options: only EQUIPAMENTO items (all items considered — user pode escolher)
+  const familyId = form.dispenser_family_id;
+
+  // Equipamentos (dispensers físicos), filtrados pela família quando informada
   const equipmentOptions = useMemo(
-    () => inventory.filter((i) => (i.item_type ?? "EQUIPAMENTO") === "EQUIPAMENTO"),
-    [inventory]
+    () =>
+      inventory
+        .filter((i) => (i.item_type ?? "EQUIPAMENTO") === "EQUIPAMENTO")
+        .filter((i) => !familyId || !i.dispenser_family_id || i.dispenser_family_id === familyId),
+    [inventory, familyId]
   );
 
-  // Product options: consumíveis disponíveis para comodato
+  // Consumíveis disponíveis para comodato, compatíveis com a família selecionada
   const productOptions = useMemo(
-    () => products.filter((p) => p.disponivel_comodato !== false),
-    [products]
+    () =>
+      products
+        .filter((p) => p.disponivel_comodato !== false && !p.is_dispenser)
+        .filter((p) => !familyId || (p.compatible_dispenser_families || []).includes(familyId)),
+    [products, familyId]
   );
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
