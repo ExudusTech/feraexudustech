@@ -47,6 +47,8 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
   const { data: clients = [] } = useClients();
   const { data: inventory = [] } = useInventory();
   const { data: products = [] } = useProducts();
+  const { data: families = [] } = useDispenserFamilies();
+
   const create = useCreateComodato();
   const update = useUpdateComodato();
   const isEdit = !!comodato;
