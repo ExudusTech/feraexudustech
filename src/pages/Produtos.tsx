@@ -27,9 +27,16 @@ export default function Produtos() {
   const [selected, setSelected] = useState<Product | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const filtered = products.filter((p) =>
-    [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
-  );
+  const [tipo, setTipo] = useState<"todos" | "dispensers" | "consumiveis">("todos");
+
+  const filtered = products
+    .filter((p) =>
+      tipo === "todos" ? true : tipo === "dispensers" ? p.is_dispenser : !p.is_dispenser
+    )
+    .filter((p) =>
+      [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
+    );
+
 
   const handleEdit = (p: Product) => { setSelected(p); setDialogOpen(true); };
   const handleNew = () => { setSelected(null); setDialogOpen(true); };
