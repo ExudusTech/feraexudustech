@@ -114,10 +114,17 @@ export default function Produtos() {
                   <TableRow key={p.id} className="cursor-pointer" onClick={() => handleEdit(p)}>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{p.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{p.name}</p>
+                          {p.is_dispenser && <Badge variant="outline" className="text-xs">Dispenser</Badge>}
+                          {!p.is_dispenser && (p.compatible_dispenser_families?.length ?? 0) > 0 && (
+                            <Badge variant="secondary" className="text-xs">Usa dispenser</Badge>
+                          )}
+                        </div>
                         {p.brand && <p className="text-xs text-muted-foreground">{p.brand}</p>}
                       </div>
                     </TableCell>
+
                     <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
                     <TableCell>{p.category || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>
