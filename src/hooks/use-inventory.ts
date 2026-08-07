@@ -66,7 +66,9 @@ export function useCreateInventoryItem() {
         client_id: input.client_id ?? null,
         localizacao_interna: input.localizacao_interna ?? null,
         proxima_manutencao: input.proxima_manutencao ?? null,
+        dispenser_family_id: input.dispenser_family_id ?? null,
         organization_id: user.organization_id, created_by: user.id,
+
       } as any).select().single();
       if (error) throw error;
       return data;
