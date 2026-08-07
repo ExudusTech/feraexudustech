@@ -9,7 +9,9 @@ import { useCreateComodato, useUpdateComodato, type Comodato } from "@/hooks/use
 import { useClients } from "@/hooks/use-clients";
 import { useInventory } from "@/hooks/use-inventory";
 import { useProducts } from "@/hooks/use-products";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { LINHA_PRODUTO_VALUES, linhaLabel } from "@/lib/linha-produto";
+
 
 interface Props {
   open: boolean;
