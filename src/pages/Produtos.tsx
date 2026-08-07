@@ -59,6 +59,20 @@ export default function Produtos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar produtos..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <div className="flex border rounded-md">
+            {([["todos", "Todos"], ["dispensers", "Dispensers"], ["consumiveis", "Consumíveis"]] as const).map(([v, label], i) => (
+              <Button
+                key={v}
+                variant={tipo === v ? "secondary" : "ghost"}
+                size="sm"
+                className={`h-9 rounded-none ${i === 0 ? "rounded-l-md" : ""} ${i === 2 ? "rounded-r-md" : ""}`}
+                onClick={() => setTipo(v)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+
           {lastImport && (
             <p className="text-xs text-muted-foreground hidden md:block">
               Última importação: {new Date(lastImport.created_at).toLocaleString("pt-BR")}
