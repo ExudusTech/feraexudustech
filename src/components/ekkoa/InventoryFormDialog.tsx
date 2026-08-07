@@ -138,6 +138,17 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
               </Select>
             </div>
             <div>
+              <Label>Família de Dispenser</Label>
+              <Select value={form.dispenser_family_id || "none"} onValueChange={(v) => set("dispenser_family_id", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label>Marca / Categoria</Label>
               <Input value={form.category} onChange={(e) => set("category", e.target.value)} placeholder="Ex: Ekkoa 500" />
             </div>
