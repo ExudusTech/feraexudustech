@@ -12,6 +12,8 @@ export interface Comodato {
   product_id: string | null;
   numero_contrato: string | null;
   linha_produto: string | null;
+  dispenser_family_id: string | null;
+
   localizacao_interna: string | null;
   endereco_instalacao: string | null;
   cidade: string | null;
