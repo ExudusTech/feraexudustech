@@ -24,7 +24,9 @@ const empty = {
   client_id: "",
   inventory_item_id: "",
   product_id: "",
+  dispenser_family_id: "",
   linha_produto: "",
+
   localizacao_interna: "",
   endereco_instalacao: "",
   cidade: "",
