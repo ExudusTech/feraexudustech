@@ -179,6 +179,22 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
               </Select>
             </div>
             <div>
+              <Label>Tipo de Dispenser</Label>
+              <Select
+                value={form.dispenser_family_id || "none"}
+                onValueChange={(v) => {
+                  const next = v === "none" ? "" : v;
+                  setForm((p) => ({ ...p, dispenser_family_id: next, inventory_item_id: "", product_id: "" }));
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Equipamento</Label>
               <Select value={form.inventory_item_id || "none"} onValueChange={(v) => set("inventory_item_id", v === "none" ? "" : v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
@@ -197,8 +213,12 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
                   {productOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {familyId && productOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">Nenhum consumível compatível com este dispenser.</p>
+              )}
             </div>
             <div>
+
               <Label>Consumo Mínimo</Label>
               <Input type="number" step="0.01" value={form.consumo_minimo} onChange={(e) => set("consumo_minimo", e.target.value)} />
             </div>
