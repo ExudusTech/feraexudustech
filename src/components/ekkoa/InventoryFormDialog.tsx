@@ -59,6 +59,8 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
         sku: item.sku || "",
         quantity: String(item.quantity ?? 0),
         unit: item.unit || "un",
+        dispenser_family_id: item.dispenser_family_id || "",
+
       });
     } else {
       setForm({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
