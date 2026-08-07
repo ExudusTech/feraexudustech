@@ -42,12 +42,16 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 const empty = {
   name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
   price: "", cost: "", stock: "0", min_stock: "0", is_active: true,
+  is_dispenser: false, dispenser_family_id: "",
 };
 
 export default function ProductFormDialog({ open, onOpenChange, product }: Props) {
   const [form, setForm] = useState(empty);
+  const [compatible, setCompatible] = useState<string[]>([]);
+  const { data: families = [] } = useDispenserFamilies();
   const [specs, setSpecs] = useState<Record<string, string>>({});
   const [customSpecs, setCustomSpecs] = useState<{ key: string; value: string }[]>([]);
+
   const create = useCreateProduct();
   const update = useUpdateProduct();
   const isEdit = !!product;
