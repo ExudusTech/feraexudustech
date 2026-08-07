@@ -54,8 +54,12 @@ export function useCreateProduct() {
         name: input.name!, description: input.description, sku: input.sku, category: input.category,
         brand: input.brand, fornecedor: input.fornecedor, unit: input.unit || "un", price: input.price || 0, cost: input.cost || 0,
         stock: input.stock || 0, min_stock: input.min_stock || 0, is_active: input.is_active ?? true,
+        is_dispenser: input.is_dispenser ?? false,
+        dispenser_family_id: input.dispenser_family_id ?? null,
+        compatible_dispenser_families: input.compatible_dispenser_families ?? [],
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
+
       if (error) throw error;
       return data;
     },
