@@ -27,9 +27,16 @@ export default function Produtos() {
   const [selected, setSelected] = useState<Product | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const filtered = products.filter((p) =>
-    [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
-  );
+  const [tipo, setTipo] = useState<"todos" | "dispensers" | "consumiveis">("todos");
+
+  const filtered = products
+    .filter((p) =>
+      tipo === "todos" ? true : tipo === "dispensers" ? p.is_dispenser : !p.is_dispenser
+    )
+    .filter((p) =>
+      [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
+    );
+
 
   const handleEdit = (p: Product) => { setSelected(p); setDialogOpen(true); };
   const handleNew = () => { setSelected(null); setDialogOpen(true); };
@@ -52,6 +59,20 @@ export default function Produtos() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar produtos..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <div className="flex border rounded-md">
+            {([["todos", "Todos"], ["dispensers", "Dispensers"], ["consumiveis", "Consumíveis"]] as const).map(([v, label], i) => (
+              <Button
+                key={v}
+                variant={tipo === v ? "secondary" : "ghost"}
+                size="sm"
+                className={`h-9 rounded-none ${i === 0 ? "rounded-l-md" : ""} ${i === 2 ? "rounded-r-md" : ""}`}
+                onClick={() => setTipo(v)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+
           {lastImport && (
             <p className="text-xs text-muted-foreground hidden md:block">
               Última importação: {new Date(lastImport.created_at).toLocaleString("pt-BR")}
@@ -93,10 +114,17 @@ export default function Produtos() {
                   <TableRow key={p.id} className="cursor-pointer" onClick={() => handleEdit(p)}>
                     <TableCell>
                       <div>
-                        <p className="font-medium">{p.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{p.name}</p>
+                          {p.is_dispenser && <Badge variant="outline" className="text-xs">Dispenser</Badge>}
+                          {!p.is_dispenser && (p.compatible_dispenser_families?.length ?? 0) > 0 && (
+                            <Badge variant="secondary" className="text-xs">Usa dispenser</Badge>
+                          )}
+                        </div>
                         {p.brand && <p className="text-xs text-muted-foreground">{p.brand}</p>}
                       </div>
                     </TableCell>
+
                     <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
                     <TableCell>{p.category || "—"}</TableCell>
                     <TableCell className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>

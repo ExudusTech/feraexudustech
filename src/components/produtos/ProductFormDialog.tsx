@@ -6,8 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { useCreateProduct, useUpdateProduct, type Product } from "@/hooks/use-products";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
+
 
 interface Props {
   open: boolean;
@@ -38,12 +42,16 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 const empty = {
   name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
   price: "", cost: "", stock: "0", min_stock: "0", is_active: true,
+  is_dispenser: false, dispenser_family_id: "",
 };
 
 export default function ProductFormDialog({ open, onOpenChange, product }: Props) {
   const [form, setForm] = useState(empty);
+  const [compatible, setCompatible] = useState<string[]>([]);
+  const { data: families = [] } = useDispenserFamilies();
   const [specs, setSpecs] = useState<Record<string, string>>({});
   const [customSpecs, setCustomSpecs] = useState<{ key: string; value: string }[]>([]);
+
   const create = useCreateProduct();
   const update = useUpdateProduct();
   const isEdit = !!product;
@@ -55,7 +63,10 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
         category: product.category || "", brand: product.brand || "", fornecedor: product.fornecedor || "", unit: product.unit,
         price: String(product.price), cost: String(product.cost), stock: String(product.stock),
         min_stock: String(product.min_stock), is_active: product.is_active,
+        is_dispenser: !!product.is_dispenser, dispenser_family_id: product.dispenser_family_id || "",
       });
+      setCompatible(product.compatible_dispenser_families || []);
+
       // Parse existing specifications
       const existingSpecs = (product.specifications || {}) as Record<string, any>;
       const categoryFields = CATEGORY_FIELDS[product.category || ""] || [];
@@ -70,6 +81,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       setCustomSpecs(custom.length > 0 ? custom : []);
     } else {
       setForm(empty);
+      setCompatible([]);
       setSpecs({});
       setCustomSpecs([]);
     }
@@ -77,6 +89,9 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
   const dynamicFields = CATEGORY_FIELDS[form.category] || [];
+
+  const toggleCompatible = (id: string) =>
+    setCompatible((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,7 +109,11 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       price: parseFloat(form.price) || 0, cost: parseFloat(form.cost) || 0,
       stock: parseInt(form.stock) || 0, min_stock: parseInt(form.min_stock) || 0,
       is_active: form.is_active, specifications: allSpecs,
+      is_dispenser: form.is_dispenser,
+      dispenser_family_id: form.is_dispenser ? (form.dispenser_family_id || null) : null,
+      compatible_dispenser_families: form.is_dispenser ? [] : compatible,
     };
+
     if (isEdit) await update.mutateAsync({ id: product!.id, ...payload });
     else await create.mutateAsync(payload);
     onOpenChange(false);
@@ -124,6 +143,50 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
               <Label>Produto ativo</Label>
             </div>
           </div>
+
+          {/* Dispenser / compatibilidade */}
+          <Separator />
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Dispenser</p>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_dispenser} onCheckedChange={(v) => set("is_dispenser", v)} />
+              <Label>Este produto é um dispenser (equipamento cedido em comodato)</Label>
+            </div>
+
+            {form.is_dispenser ? (
+              <div>
+                <Label>Família do dispenser</Label>
+                <Select
+                  value={form.dispenser_family_id || "none"}
+                  onValueChange={(v) => set("dispenser_family_id", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">—</SelectItem>
+                    {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Dispensers compatíveis (usado no comodato e no inventário)
+                </Label>
+                <div className="mt-2 grid grid-cols-2 gap-2 max-h-48 overflow-y-auto rounded-md border p-3">
+                  {families.map((f) => (
+                    <label key={f.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox checked={compatible.includes(f.id)} onCheckedChange={() => toggleCompatible(f.id)} />
+                      <span>{f.name}</span>
+                    </label>
+                  ))}
+                  {families.length === 0 && (
+                    <p className="text-xs text-muted-foreground col-span-2">Nenhuma família cadastrada.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
 
           {/* Dynamic fields based on category */}
           {dynamicFields.length > 0 && (

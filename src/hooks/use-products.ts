@@ -22,6 +22,10 @@ export interface Product {
   fornecedor: string | null;
   linha_produto: string | null;
   disponivel_comodato: boolean | null;
+  is_dispenser: boolean;
+  dispenser_family_id: string | null;
+  compatible_dispenser_families: string[];
+
   created_by: string;
   created_at: string;
   updated_at: string | null;
@@ -50,8 +54,12 @@ export function useCreateProduct() {
         name: input.name!, description: input.description, sku: input.sku, category: input.category,
         brand: input.brand, fornecedor: input.fornecedor, unit: input.unit || "un", price: input.price || 0, cost: input.cost || 0,
         stock: input.stock || 0, min_stock: input.min_stock || 0, is_active: input.is_active ?? true,
+        is_dispenser: input.is_dispenser ?? false,
+        dispenser_family_id: input.dispenser_family_id ?? null,
+        compatible_dispenser_families: input.compatible_dispenser_families ?? [],
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
+
       if (error) throw error;
       return data;
     },

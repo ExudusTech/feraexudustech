@@ -27,6 +27,8 @@ export interface InventoryItem {
   client_id: string | null;
   localizacao_interna: string | null;
   proxima_manutencao: string | null;
+  dispenser_family_id: string | null;
+
   created_by: string;
   created_at: string;
   updated_at: string | null;
@@ -64,7 +66,9 @@ export function useCreateInventoryItem() {
         client_id: input.client_id ?? null,
         localizacao_interna: input.localizacao_interna ?? null,
         proxima_manutencao: input.proxima_manutencao ?? null,
+        dispenser_family_id: input.dispenser_family_id ?? null,
         organization_id: user.organization_id, created_by: user.id,
+
       } as any).select().single();
       if (error) throw error;
       return data;

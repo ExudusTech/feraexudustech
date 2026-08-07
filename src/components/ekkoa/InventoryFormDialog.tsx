@@ -8,7 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateInventoryItem, useUpdateInventoryItem, type InventoryItem } from "@/hooks/use-inventory";
 import { useClients } from "@/hooks/use-clients";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { LINHA_PRODUTO_VALUES, linhaLabel } from "@/lib/linha-produto";
+
 
 interface Props {
   open: boolean;
@@ -25,14 +27,17 @@ const empty = {
   em_comodato: false, client_id: "",
   localizacao_interna: "", proxima_manutencao: "",
   category: "", sku: "", quantity: "0", unit: "un",
+  dispenser_family_id: "",
 };
 
 export default function InventoryFormDialog({ open, onOpenChange, item, defaultItemType }: Props) {
   const [form, setForm] = useState<any>({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
   const { data: clients = [] } = useClients();
+  const { data: families = [] } = useDispenserFamilies();
   const create = useCreateInventoryItem();
   const update = useUpdateInventoryItem();
   const isEdit = !!item;
+
 
   useEffect(() => {
     if (item) {
@@ -54,6 +59,8 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
         sku: item.sku || "",
         quantity: String(item.quantity ?? 0),
         unit: item.unit || "un",
+        dispenser_family_id: item.dispenser_family_id || "",
+
       });
     } else {
       setForm({ ...empty, item_type: defaultItemType ?? "EQUIPAMENTO" });
@@ -85,7 +92,9 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
       sku: form.sku || null,
       quantity: Number(form.quantity) || 0,
       unit: form.unit || "un",
+      dispenser_family_id: form.dispenser_family_id || null,
     };
+
     if (isEdit) await update.mutateAsync({ id: item!.id, ...payload });
     else await create.mutateAsync(payload);
     onOpenChange(false);
@@ -128,6 +137,17 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <Label>Família de Dispenser</Label>
+              <Select value={form.dispenser_family_id || "none"} onValueChange={(v) => set("dispenser_family_id", v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <Label>Marca / Categoria</Label>
               <Input value={form.category} onChange={(e) => set("category", e.target.value)} placeholder="Ex: Ekkoa 500" />

@@ -9,7 +9,9 @@ import { useCreateComodato, useUpdateComodato, type Comodato } from "@/hooks/use
 import { useClients } from "@/hooks/use-clients";
 import { useInventory } from "@/hooks/use-inventory";
 import { useProducts } from "@/hooks/use-products";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { LINHA_PRODUTO_VALUES, linhaLabel } from "@/lib/linha-produto";
+
 
 interface Props {
   open: boolean;
@@ -22,7 +24,9 @@ const empty = {
   client_id: "",
   inventory_item_id: "",
   product_id: "",
+  dispenser_family_id: "",
   linha_produto: "",
+
   localizacao_interna: "",
   endereco_instalacao: "",
   cidade: "",
@@ -43,6 +47,8 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
   const { data: clients = [] } = useClients();
   const { data: inventory = [] } = useInventory();
   const { data: products = [] } = useProducts();
+  const { data: families = [] } = useDispenserFamilies();
+
   const create = useCreateComodato();
   const update = useUpdateComodato();
   const isEdit = !!comodato;
@@ -54,6 +60,8 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
         client_id: comodato.client_id ?? "",
         inventory_item_id: comodato.inventory_item_id ?? "",
         product_id: comodato.product_id ?? "",
+        dispenser_family_id: comodato.dispenser_family_id ?? "",
+
         linha_produto: comodato.linha_produto ?? "",
         localizacao_interna: comodato.localizacao_interna ?? "",
         endereco_instalacao: comodato.endereco_instalacao ?? "",
@@ -76,17 +84,26 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
-  // Equipment options: only EQUIPAMENTO items (all items considered — user pode escolher)
+  const familyId = form.dispenser_family_id;
+
+  // Equipamentos (dispensers físicos), filtrados pela família quando informada
   const equipmentOptions = useMemo(
-    () => inventory.filter((i) => (i.item_type ?? "EQUIPAMENTO") === "EQUIPAMENTO"),
-    [inventory]
+    () =>
+      inventory
+        .filter((i) => (i.item_type ?? "EQUIPAMENTO") === "EQUIPAMENTO")
+        .filter((i) => !familyId || !i.dispenser_family_id || i.dispenser_family_id === familyId),
+    [inventory, familyId]
   );
 
-  // Product options: consumíveis disponíveis para comodato
+  // Consumíveis disponíveis para comodato, compatíveis com a família selecionada
   const productOptions = useMemo(
-    () => products.filter((p) => p.disponivel_comodato !== false),
-    [products]
+    () =>
+      products
+        .filter((p) => p.disponivel_comodato !== false && !p.is_dispenser)
+        .filter((p) => !familyId || (p.compatible_dispenser_families || []).includes(familyId)),
+    [products, familyId]
   );
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,6 +114,8 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
       inventory_item_id: form.inventory_item_id || null,
       product_id: form.product_id || null,
       linha_produto: form.linha_produto || null,
+      dispenser_family_id: form.dispenser_family_id || null,
+
       localizacao_interna: form.localizacao_interna || null,
       endereco_instalacao: form.endereco_instalacao || null,
       cidade: form.cidade || null,
@@ -162,6 +181,22 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
               </Select>
             </div>
             <div>
+              <Label>Tipo de Dispenser</Label>
+              <Select
+                value={form.dispenser_family_id || "none"}
+                onValueChange={(v) => {
+                  const next = v === "none" ? "" : v;
+                  setForm((p) => ({ ...p, dispenser_family_id: next, inventory_item_id: "", product_id: "" }));
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">—</SelectItem>
+                  {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Equipamento</Label>
               <Select value={form.inventory_item_id || "none"} onValueChange={(v) => set("inventory_item_id", v === "none" ? "" : v)}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
@@ -180,8 +215,12 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
                   {productOptions.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {familyId && productOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground mt-1">Nenhum consumível compatível com este dispenser.</p>
+              )}
             </div>
             <div>
+
               <Label>Consumo Mínimo</Label>
               <Input type="number" step="0.01" value={form.consumo_minimo} onChange={(e) => set("consumo_minimo", e.target.value)} />
             </div>
