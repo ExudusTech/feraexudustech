@@ -8,7 +8,9 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateInventoryItem, useUpdateInventoryItem, type InventoryItem } from "@/hooks/use-inventory";
 import { useClients } from "@/hooks/use-clients";
+import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { LINHA_PRODUTO_VALUES, linhaLabel } from "@/lib/linha-produto";
+
 
 interface Props {
   open: boolean;
