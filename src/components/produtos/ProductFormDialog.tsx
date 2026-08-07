@@ -81,6 +81,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       setCustomSpecs(custom.length > 0 ? custom : []);
     } else {
       setForm(empty);
+      setCompatible([]);
       setSpecs({});
       setCustomSpecs([]);
     }
@@ -88,6 +89,9 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
 
   const set = (k: string, v: any) => setForm((p) => ({ ...p, [k]: v }));
   const dynamicFields = CATEGORY_FIELDS[form.category] || [];
+
+  const toggleCompatible = (id: string) =>
+    setCompatible((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,7 +109,11 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       price: parseFloat(form.price) || 0, cost: parseFloat(form.cost) || 0,
       stock: parseInt(form.stock) || 0, min_stock: parseInt(form.min_stock) || 0,
       is_active: form.is_active, specifications: allSpecs,
+      is_dispenser: form.is_dispenser,
+      dispenser_family_id: form.is_dispenser ? (form.dispenser_family_id || null) : null,
+      compatible_dispenser_families: form.is_dispenser ? [] : compatible,
     };
+
     if (isEdit) await update.mutateAsync({ id: product!.id, ...payload });
     else await create.mutateAsync(payload);
     onOpenChange(false);
