@@ -144,6 +144,50 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
             </div>
           </div>
 
+          {/* Dispenser / compatibilidade */}
+          <Separator />
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Dispenser</p>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_dispenser} onCheckedChange={(v) => set("is_dispenser", v)} />
+              <Label>Este produto é um dispenser (equipamento cedido em comodato)</Label>
+            </div>
+
+            {form.is_dispenser ? (
+              <div>
+                <Label>Família do dispenser</Label>
+                <Select
+                  value={form.dispenser_family_id || "none"}
+                  onValueChange={(v) => set("dispenser_family_id", v === "none" ? "" : v)}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">—</SelectItem>
+                    {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Dispensers compatíveis (usado no comodato e no inventário)
+                </Label>
+                <div className="mt-2 grid grid-cols-2 gap-2 max-h-48 overflow-y-auto rounded-md border p-3">
+                  {families.map((f) => (
+                    <label key={f.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox checked={compatible.includes(f.id)} onCheckedChange={() => toggleCompatible(f.id)} />
+                      <span>{f.name}</span>
+                    </label>
+                  ))}
+                  {families.length === 0 && (
+                    <p className="text-xs text-muted-foreground col-span-2">Nenhuma família cadastrada.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+
           {/* Dynamic fields based on category */}
           {dynamicFields.length > 0 && (
             <>
