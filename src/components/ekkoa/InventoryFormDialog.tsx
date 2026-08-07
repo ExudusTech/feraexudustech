@@ -92,7 +92,9 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
       sku: form.sku || null,
       quantity: Number(form.quantity) || 0,
       unit: form.unit || "un",
+      dispenser_family_id: form.dispenser_family_id || null,
     };
+
     if (isEdit) await update.mutateAsync({ id: item!.id, ...payload });
     else await create.mutateAsync(payload);
     onOpenChange(false);
