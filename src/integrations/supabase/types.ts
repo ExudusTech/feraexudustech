@@ -341,6 +341,7 @@ export type Database = {
           created_by: string | null
           data_fim: string | null
           data_inicio: string | null
+          dispenser_family_id: string | null
           endereco_instalacao: string | null
           estado: string | null
           id: string
@@ -368,6 +369,7 @@ export type Database = {
           created_by?: string | null
           data_fim?: string | null
           data_inicio?: string | null
+          dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
           id?: string
@@ -395,6 +397,7 @@ export type Database = {
           created_by?: string | null
           data_fim?: string | null
           data_inicio?: string | null
+          dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
           id?: string
@@ -426,6 +429,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_dispenser_family_id_fkey"
+            columns: ["dispenser_family_id"]
+            isOneToOne: false
+            referencedRelation: "dispenser_families"
             referencedColumns: ["id"]
           },
           {
@@ -485,6 +495,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "departments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispenser_families: {
+        Row: {
+          code: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          sort_order: number | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispenser_families_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1500,6 +1554,7 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          dispenser_family_id: string | null
           em_comodato: boolean | null
           geolocation: string | null
           id: string
@@ -1528,6 +1583,7 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          dispenser_family_id?: string | null
           em_comodato?: boolean | null
           geolocation?: string | null
           id?: string
@@ -1556,6 +1612,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          dispenser_family_id?: string | null
           em_comodato?: boolean | null
           geolocation?: string | null
           id?: string
@@ -1584,6 +1641,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_dispenser_family_id_fkey"
+            columns: ["dispenser_family_id"]
+            isOneToOne: false
+            referencedRelation: "dispenser_families"
             referencedColumns: ["id"]
           },
           {
@@ -2387,15 +2451,18 @@ export type Database = {
         Row: {
           brand: string | null
           category: string | null
+          compatible_dispenser_families: string[]
           cost: number | null
           created_at: string
           created_by: string
           description: string | null
+          dispenser_family_id: string | null
           disponivel_comodato: boolean | null
           fornecedor: string | null
           id: string
           image_url: string | null
           is_active: boolean
+          is_dispenser: boolean
           linha_produto: string | null
           min_stock: number
           name: string
@@ -2410,15 +2477,18 @@ export type Database = {
         Insert: {
           brand?: string | null
           category?: string | null
+          compatible_dispenser_families?: string[]
           cost?: number | null
           created_at?: string
           created_by: string
           description?: string | null
+          dispenser_family_id?: string | null
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_dispenser?: boolean
           linha_produto?: string | null
           min_stock?: number
           name: string
@@ -2433,15 +2503,18 @@ export type Database = {
         Update: {
           brand?: string | null
           category?: string | null
+          compatible_dispenser_families?: string[]
           cost?: number | null
           created_at?: string
           created_by?: string
           description?: string | null
+          dispenser_family_id?: string | null
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_dispenser?: boolean
           linha_produto?: string | null
           min_stock?: number
           name?: string
@@ -2454,6 +2527,13 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "products_dispenser_family_id_fkey"
+            columns: ["dispenser_family_id"]
+            isOneToOne: false
+            referencedRelation: "dispenser_families"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "products_organization_id_fkey"
             columns: ["organization_id"]
