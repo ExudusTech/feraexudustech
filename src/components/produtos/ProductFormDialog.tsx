@@ -63,7 +63,10 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
         category: product.category || "", brand: product.brand || "", fornecedor: product.fornecedor || "", unit: product.unit,
         price: String(product.price), cost: String(product.cost), stock: String(product.stock),
         min_stock: String(product.min_stock), is_active: product.is_active,
+        is_dispenser: !!product.is_dispenser, dispenser_family_id: product.dispenser_family_id || "",
       });
+      setCompatible(product.compatible_dispenser_families || []);
+
       // Parse existing specifications
       const existingSpecs = (product.specifications || {}) as Record<string, any>;
       const categoryFields = CATEGORY_FIELDS[product.category || ""] || [];
