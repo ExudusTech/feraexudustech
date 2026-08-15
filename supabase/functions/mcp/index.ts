@@ -657,7 +657,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (!authenticate(req)) return jsonRpcError(null, -32001, "Unauthorized");
   const url = new URL(req.url);
-  if (url.pathname.endsWith("/health")) return new Response(JSON.stringify({ status: "ok", version: "2.0.0", tools: TOOLS_MANIFEST.length }), { headers: CORS_HEADERS });
+  if (url.pathname.endsWith("/health")) return new Response(JSON.stringify({ status: "ok", version: "3.0.0", tools: TOOLS_MANIFEST.length }), { headers: CORS_HEADERS });
   if (req.method === "GET" && url.pathname.endsWith("/tools")) return new Response(JSON.stringify({ tools: TOOLS_MANIFEST }), { headers: CORS_HEADERS });
   let rpc: JsonRpcRequest;
   try { rpc = await req.json(); } catch { return jsonRpcError(null, -32700, "Parse error"); }
