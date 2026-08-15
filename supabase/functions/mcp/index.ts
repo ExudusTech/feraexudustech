@@ -434,6 +434,28 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (leadId) await supabase.from("leads").update({ stage: "agendado", updated_at: new Date().toISOString() }).eq("id", leadId);
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+  // ── Notificar equipe (admin + consultor) ──
+  const notifMsg =
+    `📅 *Nova visita técnica agendada!*\n\n` +
+    `👤 Lead: ${nome_contato}${empresa ? ` — ${empresa}` : ""}\n` +
+    `📍 Cidade: ${cidade}\n` +
+    `🗓️ Data: ${dataFmt} às ${horario}h\n` +
+    `🔬 Produto: ${produto_interesse ?? "Ekkoa"}\n` +
+    (telefone ? `📞 Tel: ${telefone}\n` : "") +
+    `\n_Agendado pela Flora via ${["Instagram", "WhatsApp", "WebChat", "Messenger"].find((c) => interaction_id?.includes(c)) ?? "canal digital"}_`;
+
+  notificarEquipe(supabase, ["admin", "consultor"], "visita_agendada", notifMsg, {
+    schedule_id: schedule!.id,
+    lead_id: leadId,
+    nome_contato,
+    empresa,
+    cidade,
+    data_visita,
+    horario,
+    produto_interesse,
+  }).catch((err) => console.error("[notificar_equipe] Erro não tratado:", err));
+
   const mensagemParaLead = `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. Nosso consultor levará uma demonstração completa do ${produto_interesse ?? "sistema Ekkoa"} até você. Qualquer dúvida, pode chamar aqui! 😊`;
   return ok({ agendamento_id: schedule!.id, confirmado_provisoriamente: true, agendamento: schedule, lead_id: leadId, mensagem_para_lead: mensagemParaLead }, `Visita técnica agendada: ${dataFmt} às ${horario}h em ${cidade}`, `Envie ao lead: "${mensagemParaLead}"`);
 }
