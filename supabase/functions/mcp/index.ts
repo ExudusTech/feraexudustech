@@ -19,6 +19,9 @@
  *   Block 6 — WebChat OTP:             enviar_codigo_otp, validar_codigo_otp
  *
  * Changelog:
+ *   v3.0.0 (2026-08-12) — Onda 3 / Fase A: Sistema de notificações. notificar_equipe (interno),
+ *                          integrado a agendar_visita_tecnica. Variáveis GPTMAKER_API_TOKEN e
+ *                          GPTMAKER_FLORAZAP_CHANNEL_ID adicionadas.
  *   v2.0.0 (2026-07-21) — Onda 1: buscar_contato reescrito (LGPD/B2B), consultar_rota_consultor,
  *                          agendar_visita_tecnica, agendar_reuniao_sede, enviar_codigo_otp,
  *                          validar_codigo_otp. criar_lead com campos B2B + post tracking.
@@ -32,6 +35,73 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MCP_BEARER_TOKEN        = Deno.env.get("MCP_BEARER_TOKEN")!;
 
 const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID")!;
+
+// GPT Maker — notificações via Florazap (WhatsApp)
+const GPTMAKER_API_TOKEN = Deno.env.get("GPTMAKER_API_TOKEN") ?? "";
+const GPTMAKER_FLORAZAP_CHANNEL_ID = Deno.env.get("GPTMAKER_FLORAZAP_CHANNEL_ID") ?? "3DF9D839DDCF463A3A350ADF91C40B89";
+
+/**
+ * notificar_equipe — função interna (NÃO exposta como tool MCP).
+ * Busca destinatários ativos por role e envia WhatsApp via GPT Maker (Florazap),
+ * logando cada envio em notification_logs. Erros são silenciosos.
+ */
+async function notificarEquipe(
+  supabase: ReturnType<typeof getClient>,
+  roles: string[],
+  event_type: string,
+  mensagem: string,
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  if (!GPTMAKER_API_TOKEN) {
+    console.warn("[notificar_equipe] GPTMAKER_API_TOKEN não configurado — pulando notificações");
+    return;
+  }
+
+  const { data: recipients, error } = await supabase
+    .from("notification_recipients")
+    .select("id, nome, whatsapp, email, roles")
+    .eq("organization_id", NITSCLEAN_ORG_ID)
+    .eq("ativo", true)
+    .overlaps("roles", roles);
+
+  if (error || !recipients?.length) {
+    console.warn(`[notificar_equipe] Nenhum destinatário encontrado para roles: ${roles.join(", ")}`);
+    return;
+  }
+
+  for (const r of recipients) {
+    if (!r.whatsapp) continue;
+    let status: "SENT" | "FAILED" = "SENT";
+    let errorMsg: string | null = null;
+    try {
+      const res = await fetch(
+        `https://app.gptmaker.ai/v2/channel/${GPTMAKER_FLORAZAP_CHANNEL_ID}/start-conversation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GPTMAKER_API_TOKEN}` },
+          body: JSON.stringify({ phone: r.whatsapp, message: mensagem }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    } catch (err) {
+      status = "FAILED";
+      errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[notificar_equipe] Falha ao notificar ${r.nome}:`, errorMsg);
+    }
+
+    await supabase.from("notification_logs").insert({
+      organization_id: NITSCLEAN_ORG_ID,
+      event_type,
+      recipient_id: r.id,
+      recipient_name: r.nome,
+      channel: "WHATSAPP",
+      destination: r.whatsapp,
+      payload: payload ?? null,
+      status,
+      error_message: errorMsg,
+    });
+  }
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
