@@ -1948,6 +1948,110 @@ export type Database = {
           },
         ]
       }
+      notification_logs: {
+        Row: {
+          channel: string
+          destination: string | null
+          error_message: string | null
+          event_type: string
+          id: string
+          organization_id: string
+          payload: Json | null
+          recipient_id: string | null
+          recipient_name: string | null
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          channel?: string
+          destination?: string | null
+          error_message?: string | null
+          event_type: string
+          id?: string
+          organization_id: string
+          payload?: Json | null
+          recipient_id?: string | null
+          recipient_name?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Update: {
+          channel?: string
+          destination?: string | null
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          organization_id?: string
+          payload?: Json | null
+          recipient_id?: string | null
+          recipient_name?: string | null
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_logs_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "notification_recipients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_recipients: {
+        Row: {
+          ativo: boolean
+          created_at: string | null
+          email: string | null
+          id: string
+          nome: string
+          notes: string | null
+          organization_id: string
+          roles: string[]
+          updated_at: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          nome: string
+          notes?: string | null
+          organization_id: string
+          roles?: string[]
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          nome?: string
+          notes?: string | null
+          organization_id?: string
+          roles?: string[]
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_recipients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operational_expenses: {
         Row: {
           amount: number
