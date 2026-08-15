@@ -19,6 +19,9 @@
  *   Block 6 — WebChat OTP:             enviar_codigo_otp, validar_codigo_otp
  *
  * Changelog:
+ *   v3.0.0 (2026-08-12) — Onda 3 / Fase A: Sistema de notificações. notificar_equipe (interno),
+ *                          integrado a agendar_visita_tecnica. Variáveis GPTMAKER_API_TOKEN e
+ *                          GPTMAKER_FLORAZAP_CHANNEL_ID adicionadas.
  *   v2.0.0 (2026-07-21) — Onda 1: buscar_contato reescrito (LGPD/B2B), consultar_rota_consultor,
  *                          agendar_visita_tecnica, agendar_reuniao_sede, enviar_codigo_otp,
  *                          validar_codigo_otp. criar_lead com campos B2B + post tracking.
@@ -32,6 +35,73 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MCP_BEARER_TOKEN        = Deno.env.get("MCP_BEARER_TOKEN")!;
 
 const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID")!;
+
+// GPT Maker — notificações via Florazap (WhatsApp)
+const GPTMAKER_API_TOKEN = Deno.env.get("GPTMAKER_API_TOKEN") ?? "";
+const GPTMAKER_FLORAZAP_CHANNEL_ID = Deno.env.get("GPTMAKER_FLORAZAP_CHANNEL_ID") ?? "3DF9D839DDCF463A3A350ADF91C40B89";
+
+/**
+ * notificar_equipe — função interna (NÃO exposta como tool MCP).
+ * Busca destinatários ativos por role e envia WhatsApp via GPT Maker (Florazap),
+ * logando cada envio em notification_logs. Erros são silenciosos.
+ */
+async function notificarEquipe(
+  supabase: ReturnType<typeof getClient>,
+  roles: string[],
+  event_type: string,
+  mensagem: string,
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  if (!GPTMAKER_API_TOKEN) {
+    console.warn("[notificar_equipe] GPTMAKER_API_TOKEN não configurado — pulando notificações");
+    return;
+  }
+
+  const { data: recipients, error } = await supabase
+    .from("notification_recipients")
+    .select("id, nome, whatsapp, email, roles")
+    .eq("organization_id", NITSCLEAN_ORG_ID)
+    .eq("ativo", true)
+    .overlaps("roles", roles);
+
+  if (error || !recipients?.length) {
+    console.warn(`[notificar_equipe] Nenhum destinatário encontrado para roles: ${roles.join(", ")}`);
+    return;
+  }
+
+  for (const r of recipients) {
+    if (!r.whatsapp) continue;
+    let status: "SENT" | "FAILED" = "SENT";
+    let errorMsg: string | null = null;
+    try {
+      const res = await fetch(
+        `https://app.gptmaker.ai/v2/channel/${GPTMAKER_FLORAZAP_CHANNEL_ID}/start-conversation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GPTMAKER_API_TOKEN}` },
+          body: JSON.stringify({ phone: r.whatsapp, message: mensagem }),
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    } catch (err) {
+      status = "FAILED";
+      errorMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[notificar_equipe] Falha ao notificar ${r.nome}:`, errorMsg);
+    }
+
+    await supabase.from("notification_logs").insert({
+      organization_id: NITSCLEAN_ORG_ID,
+      event_type,
+      recipient_id: r.id,
+      recipient_name: r.nome,
+      channel: "WHATSAPP",
+      destination: r.whatsapp,
+      payload: payload ?? null,
+      status,
+      error_message: errorMsg,
+    });
+  }
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -364,6 +434,28 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (leadId) await supabase.from("leads").update({ stage: "agendado", updated_at: new Date().toISOString() }).eq("id", leadId);
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+
+  // ── Notificar equipe (admin + consultor) ──
+  const notifMsg =
+    `📅 *Nova visita técnica agendada!*\n\n` +
+    `👤 Lead: ${nome_contato}${empresa ? ` — ${empresa}` : ""}\n` +
+    `📍 Cidade: ${cidade}\n` +
+    `🗓️ Data: ${dataFmt} às ${horario}h\n` +
+    `🔬 Produto: ${produto_interesse ?? "Ekkoa"}\n` +
+    (telefone ? `📞 Tel: ${telefone}\n` : "") +
+    `\n_Agendado pela Flora via ${["Instagram", "WhatsApp", "WebChat", "Messenger"].find((c) => interaction_id?.includes(c)) ?? "canal digital"}_`;
+
+  notificarEquipe(supabase, ["admin", "consultor"], "visita_agendada", notifMsg, {
+    schedule_id: schedule!.id,
+    lead_id: leadId,
+    nome_contato,
+    empresa,
+    cidade,
+    data_visita,
+    horario,
+    produto_interesse,
+  }).catch((err) => console.error("[notificar_equipe] Erro não tratado:", err));
+
   const mensagemParaLead = `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. Nosso consultor levará uma demonstração completa do ${produto_interesse ?? "sistema Ekkoa"} até você. Qualquer dúvida, pode chamar aqui! 😊`;
   return ok({ agendamento_id: schedule!.id, confirmado_provisoriamente: true, agendamento: schedule, lead_id: leadId, mensagem_para_lead: mensagemParaLead }, `Visita técnica agendada: ${dataFmt} às ${horario}h em ${cidade}`, `Envie ao lead: "${mensagemParaLead}"`);
 }
@@ -565,7 +657,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (!authenticate(req)) return jsonRpcError(null, -32001, "Unauthorized");
   const url = new URL(req.url);
-  if (url.pathname.endsWith("/health")) return new Response(JSON.stringify({ status: "ok", version: "2.0.0", tools: TOOLS_MANIFEST.length }), { headers: CORS_HEADERS });
+  if (url.pathname.endsWith("/health")) return new Response(JSON.stringify({ status: "ok", version: "3.0.0", tools: TOOLS_MANIFEST.length }), { headers: CORS_HEADERS });
   if (req.method === "GET" && url.pathname.endsWith("/tools")) return new Response(JSON.stringify({ tools: TOOLS_MANIFEST }), { headers: CORS_HEADERS });
   let rpc: JsonRpcRequest;
   try { rpc = await req.json(); } catch { return jsonRpcError(null, -32700, "Parse error"); }
