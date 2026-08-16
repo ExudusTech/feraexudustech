@@ -244,8 +244,13 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
     return ok({ encontrado: true, contato: { contato_id: matched.id, nome: matched.name, cargo: matched.role ?? null, cliente_id: matched.client_id, empresa: client?.name ?? null, cidade: client?.city ?? null, ramo: client?.ramo_atuacao ?? null, vinculo: client?.vinculo ?? null, status_cliente: client?.status ?? null } }, undefined, "Use consultar_rota_consultor para propor visita ou criar_lead para registrar interação");
   }
 
-  return fail("Forneça (canal_id + canal_tipo) para Modo 1, ou (telefone + nome) para Modo 2");
+  // Sem dados suficientes para identificar o contato — retorna não encontrado
+  // em vez de erro, para Flora prosseguir com criação de lead normalmente.
+  // Ocorre tipicamente em WebChat (canal_tipo=WIDGET, canal_id vazio) ou quando
+  // Flora não tem acesso ao identificador do canal no contexto da conversa.
+  return notFound;
 }
+
 
 async function verificarCoberturaRegiao(params: Record<string, unknown>): Promise<McpResponse> {
   const { cidade, cep } = params as { cidade?: string; cep?: string };
