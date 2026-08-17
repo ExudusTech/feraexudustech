@@ -34,7 +34,7 @@ const SUPABASE_URL            = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MCP_BEARER_TOKEN        = Deno.env.get("MCP_BEARER_TOKEN")!;
 
-const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID")!;
+const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID") ?? "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 
 // GPT Maker — notificações via Florazap (WhatsApp)
 const GPTMAKER_API_TOKEN = Deno.env.get("GPTMAKER_API_TOKEN") ?? "";
