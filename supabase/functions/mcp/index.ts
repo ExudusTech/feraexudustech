@@ -314,32 +314,110 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
 // BLOCK 2 — LEAD CAPTURE
 
 async function criarLead(params: Record<string, unknown>): Promise<McpResponse> {
-  const { nome, telefone, email, empresa, empresa_nome, cargo_contato, canal, origem_especifica, interaction_id, instagram_handle, produto_interesse, cidade, mensagem_inicial, post_id, post_titulo, vinculo, client_contact_id } = params as {
-    nome: string; telefone?: string; email?: string; empresa?: string; empresa_nome?: string; cargo_contato?: string;
-    canal: string; origem_especifica?: string; interaction_id: string; instagram_handle?: string;
-    produto_interesse?: string; cidade?: string; mensagem_inicial?: string;
-    post_id?: string; post_titulo?: string; vinculo?: string; client_contact_id?: string;
+  const {
+    nome,
+    telefone,
+    email,
+    empresa,
+    empresa_nome,
+    cargo_contato,
+    canal,
+    canal_origem,
+    origem_especifica,
+    interaction_id,
+    instagram_handle,
+    produto_interesse,
+    cidade,
+    mensagem_inicial,
+    post_id,
+    post_titulo,
+    vinculo,
+    client_contact_id,
+  } = params as {
+    nome: string;
+    telefone?: string;
+    email?: string;
+    empresa?: string;
+    empresa_nome?: string;
+    cargo_contato?: string;
+    canal?: string;
+    canal_origem?: string;
+    origem_especifica?: string;
+    interaction_id?: string;
+    instagram_handle?: string;
+    produto_interesse?: string;
+    cidade?: string;
+    mensagem_inicial?: string;
+    post_id?: string;
+    post_titulo?: string;
+    vinculo?: string;
+    client_contact_id?: string;
   };
+
   if (!nome) return fail("Nome do contato é obrigatório");
-  if (!canal) return fail("Canal de origem é obrigatório");
-  if (!interaction_id) return fail("interaction_id é obrigatório para idempotência");
-  if (!telefone && !instagram_handle) return fail("Forneça telefone ou instagram_handle");
+
+  const canalFinal = canal_origem ?? canal ?? "WIDGET";
+  const interactionFinal = interaction_id ?? "1";
+
   const supabase = getClient();
-  const { data: existing } = await supabase.from("leads").select("id, contact_name, stage").eq("interaction_id", interaction_id).single();
-  if (existing) return ok({ lead: existing, criado: false }, `Lead já existe: ${existing.contact_name}`, "Lead já registrado — use atualizar_lead ou agendar_visita_tecnica");
+
+  // Idempotência
+  const { data: existing } = await supabase
+    .from("leads")
+    .select("id, contact_name, stage")
+    .eq("interaction_id", interactionFinal)
+    .single();
+
+  if (existing) {
+    return ok(
+      { lead: existing, criado: false },
+      `Lead já existe: ${existing.contact_name}`,
+      "Lead já registrado — use atualizar_lead ou agendar_visita_tecnica"
+    );
+  }
+
   const empresaFinal = empresa_nome ?? empresa ?? null;
-  const { data: lead, error } = await supabase.from("leads").insert({
-    organization_id: NITSCLEAN_ORG_ID, contact_name: nome, contact_phone: telefone ?? null, contact_email: email ?? null,
-    title: empresaFinal ? `${nome} — ${empresaFinal}` : nome, company: empresaFinal, empresa_nome: empresaFinal,
-    cargo_contato: cargo_contato ?? null, stage: "novo", source: canal.toLowerCase(), canal_origem: canal as string,
-    origem_especifica: origem_especifica ?? null, interaction_id, instagram_handle: instagram_handle ?? null,
-    description: mensagem_inicial ?? produto_interesse ?? null, category: produto_interesse ?? null,
-    post_id: post_id ?? null, post_titulo: post_titulo ?? null, vinculo: vinculo ?? null,
-    client_contact_id: client_contact_id ?? null, position: 0, created_by_flora: true,
-  }).select("id, contact_name, stage").single();
-  if (error) return fail(`Erro ao criar lead: ${error.message}`);
-  await logInteraction(supabase, "criar_lead", params, ok(lead), lead!.id, canal, interaction_id);
-  return ok({ lead, criado: true }, `Lead criado: ${nome}`, "Use consultar_rota_consultor para verificar cobertura e propor visita técnica");
+
+  const { data: lead, error } = await supabase
+    .from("leads")
+    .insert({
+      organization_id:   NITSCLEAN_ORG_ID,
+      contact_name:      nome,
+      contact_phone:     telefone      ?? null,
+      contact_email:     email         ?? null,
+      title:             empresaFinal ? `${nome} — ${empresaFinal}` : nome,
+      company:           empresaFinal,
+      empresa_nome:      empresaFinal,
+      cargo_contato:     cargo_contato ?? null,
+      stage:             "novo",
+      source:            canalFinal.toLowerCase(),
+      canal_origem:      canalFinal,
+      origem_especifica: origem_especifica ?? null,
+      interaction_id:    interactionFinal,
+      instagram_handle:  instagram_handle ?? null,
+      description:       mensagem_inicial ?? produto_interesse ?? null,
+      category:          produto_interesse ?? null,
+      post_id:           post_id     ?? null,
+      post_titulo:       post_titulo ?? null,
+      vinculo:           vinculo     ?? null,
+      client_contact_id: client_contact_id ?? null,
+      position:          0,
+      created_by_flora:  true,
+    })
+    .select("id, contact_name, stage")
+    .single();
+
+  if (error) {
+    return fail(`Erro ao criar lead: ${error.message}`, "Tente novamente ou registre manualmente no Fera");
+  }
+
+  await logInteraction(supabase, "criar_lead", params, ok(lead), lead!.id, canalFinal, interactionFinal);
+
+  return ok(
+    { lead, criado: true },
+    `Lead criado: ${nome}`,
+    "Use consultar_rota_consultor para verificar cobertura e propor visita técnica"
+  );
 }
 
 async function atualizarLead(params: Record<string, unknown>): Promise<McpResponse> {
