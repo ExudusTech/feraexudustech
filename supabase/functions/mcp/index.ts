@@ -201,11 +201,23 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
     const tipo = canal_tipo.toUpperCase();
     const handle = canal_id.replace(/^@/, "");
     const fieldMap: Record<string, string> = {
-      WHATSAPP: "whatsapp_id", INSTAGRAM: "instagram_handle",
-      INSTAGRAM_UID: "instagram_user_id", MESSENGER: "messenger_user_id", TELEGRAM: "telegram_user_id",
+      WHATSAPP:      "whatsapp_id",
+      INSTAGRAM:     "instagram_handle",
+      INSTAGRAM_UID: "instagram_user_id",
+      MESSENGER:     "messenger_user_id",
+      TELEGRAM:      "telegram_user_id",
     };
+
     const field = fieldMap[tipo];
-    if (!field) return fail(`canal_tipo inválido: ${canal_tipo}`, "Use: WHATSAPP, INSTAGRAM, INSTAGRAM_UID, MESSENGER, TELEGRAM");
+
+    // WIDGET/WebChat: sem canal_id vinculável — retorna não encontrado sem erro
+    if (!field) {
+      if (tipo === "WIDGET") return notFound;
+      return fail(
+        `canal_tipo inválido: ${canal_tipo}`,
+        "Use: WHATSAPP, INSTAGRAM, INSTAGRAM_UID, MESSENGER, TELEGRAM, WIDGET"
+      );
+    }
     const { data: contacts } = await supabase
       .from("client_contacts")
       .select("id, name, role, phone, whatsapp_id, instagram_handle, client_id, clients!inner(id, name, city, ramo_atuacao, vinculo, status)")
