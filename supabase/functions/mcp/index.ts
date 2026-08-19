@@ -201,11 +201,23 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
     const tipo = canal_tipo.toUpperCase();
     const handle = canal_id.replace(/^@/, "");
     const fieldMap: Record<string, string> = {
-      WHATSAPP: "whatsapp_id", INSTAGRAM: "instagram_handle",
-      INSTAGRAM_UID: "instagram_user_id", MESSENGER: "messenger_user_id", TELEGRAM: "telegram_user_id",
+      WHATSAPP:      "whatsapp_id",
+      INSTAGRAM:     "instagram_handle",
+      INSTAGRAM_UID: "instagram_user_id",
+      MESSENGER:     "messenger_user_id",
+      TELEGRAM:      "telegram_user_id",
     };
+
     const field = fieldMap[tipo];
-    if (!field) return fail(`canal_tipo inválido: ${canal_tipo}`, "Use: WHATSAPP, INSTAGRAM, INSTAGRAM_UID, MESSENGER, TELEGRAM");
+
+    // WIDGET/WebChat: sem canal_id vinculável — retorna não encontrado sem erro
+    if (!field) {
+      if (tipo === "WIDGET") return notFound;
+      return fail(
+        `canal_tipo inválido: ${canal_tipo}`,
+        "Use: WHATSAPP, INSTAGRAM, INSTAGRAM_UID, MESSENGER, TELEGRAM, WIDGET"
+      );
+    }
     const { data: contacts } = await supabase
       .from("client_contacts")
       .select("id, name, role, phone, whatsapp_id, instagram_handle, client_id, clients!inner(id, name, city, ramo_atuacao, vinculo, status)")
@@ -624,10 +636,17 @@ async function adicionarTag(params: Record<string, unknown>): Promise<McpRespons
 // BLOCK 5 — ROUTING / EXCEPTIONS
 
 async function solicitarAtendimentoHumano(params: Record<string, unknown>): Promise<McpResponse> {
-  const { lead_id, interaction_id, motivo, urgencia } = params as { lead_id?: string; interaction_id?: string; motivo?: string; urgencia?: string };
+  const { lead_id, contato_id, interaction_id, motivo, urgencia } = params as {
+    lead_id?: string; contato_id?: string; interaction_id?: string; motivo?: string; urgencia?: string;
+  };
+
   const supabase = getClient();
-  let leadId = lead_id;
-  if (!leadId && interaction_id) { const { data } = await supabase.from("leads").select("id").eq("interaction_id", interaction_id).single(); leadId = data?.id; }
+  // Tratar string vazia como não fornecido
+  let leadId = lead_id && lead_id.trim() !== "" ? lead_id : undefined;
+  if (!leadId && interaction_id) {
+    const { data } = await supabase.from("leads").select("id").eq("interaction_id", interaction_id).single();
+    leadId = data?.id;
+  }
   if (leadId) await supabase.from("leads").update({ precisa_humano: true, description: motivo ? `⚠️ HUMANO: ${motivo}` : "⚠️ Solicitou atendimento humano", updated_at: new Date().toISOString() }).eq("id", leadId);
   await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true }), leadId, undefined, interaction_id);
   return ok({ solicitado: true, urgencia: urgencia ?? "media" }, "Atendimento humano solicitado — Arilson será notificado", "Informe ao cliente: 'Vou chamar um especialista da NitsClean para te atender. Ele entrará em contato em breve!'");
