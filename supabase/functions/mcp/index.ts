@@ -69,7 +69,14 @@ interface McpResponse {
 
 function authenticate(req: Request): boolean {
   const auth = req.headers.get("Authorization") ?? "";
-  return auth === `Bearer ${MCP_BEARER_TOKEN}`;
+  const expected = `Bearer ${MCP_BEARER_TOKEN}`;
+  const match = auth === expected;
+  if (!match) {
+    console.warn(
+      `[AUTH FAIL] received_length=${auth.length} expected_length=${expected.length} received_prefix="${auth.substring(0, 15)}"`
+    );
+  }
+  return match;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
