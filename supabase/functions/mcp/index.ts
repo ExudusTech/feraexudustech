@@ -76,6 +76,50 @@ function authenticate(req: Request): boolean {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const EMPTY_PARAM_VALUES = new Set([
+  "nao informado", "nao informada", "n/a", "na", "-", "nenhum", "nenhuma",
+  "null", "undefined", "desconhecido", "sem", "",
+]);
+
+function normalizeParamValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return EMPTY_PARAM_VALUES.has(comparable) || /^\{\{[^{}]*\}\}$/.test(trimmed) ? null : value;
+  }
+  if (Array.isArray(value)) return value.map(normalizeParamValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeParamValue(item)]));
+  }
+  return value;
+}
+
+async function resolveVisitProduct(
+  supabase: ReturnType<typeof getClient>, leadId: string | undefined, product: string | undefined
+): Promise<string | null> {
+  const supplied = normalizeParamValue(product);
+  if (typeof supplied === "string") return supplied.trim();
+  if (!leadId) return null;
+  const { data, error } = await supabase.from("leads").select("category")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
+  if (error) throw new Error(`Erro ao consultar produto do lead: ${error.message}`);
+  const category = normalizeParamValue(data?.category);
+  return typeof category === "string" ? category.trim() : null;
+}
+
+function timeMinutes(time: string): number {
+  const match = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(time);
+  if (!match) return NaN;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : NaN;
+}
+
+function displayTime(time: string): string {
+  const [hours, minutes] = time.split(":");
+  return `${Number(hours)}h${minutes === "00" ? "" : minutes}`;
+}
+
 function ok(data: unknown, message?: string, hint?: string): McpResponse {
   return { success: true, data, message, next_action_hint: hint };
 }
@@ -921,9 +965,8 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     clientId = data?.client_id;
   }
 
-  const title     = empresa
-    ? `Visita NitsClean — ${empresa} [${produto_interesse ?? "Ekkoa"}]`
-    : `Visita NitsClean — ${nome_contato} [${produto_interesse ?? "Ekkoa"}]`;
+  const product = await resolveVisitProduct(supabase, leadId, produto_interesse);
+  const title = `Visita NitsClean — ${empresa || nome_contato}${product ? ` [${product}]` : ""}`;
   const startTime = `${horario}:00`;
   const endHour   = parseInt(horario.split(":")[0], 10) + 1;
   const endTime   = `${String(endHour).padStart(2, "0")}:00:00`;
@@ -937,7 +980,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
       notes: [
         notas,
         telefone          ? `Tel: ${telefone}`          : null,
-        produto_interesse ? `Produto: ${produto_interesse}` : null,
+        product           ? `Produto: ${product}`      : null,
         interaction_id    ? `Flora: ${interaction_id}`  : null,
       ].filter(Boolean).join(" | "),
       client_id: clientId ?? null,
@@ -1001,7 +1044,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     .select("dia_semana, horario_inicio, horario_fim, name")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true)
-    .ilike("city", `%${cidade}%`);
+    .ilike("city", cidade.trim());
 
   const coveredDows = new Set<number>();
   for (const a of (areas ?? [])) {
@@ -1020,6 +1063,27 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     );
   }
 
+  // Check only the windows belonging to this city and the requested weekday,
+  // before any schedule, lead update, interaction or notification is written.
+  const requestedMinutes = timeMinutes(horario);
+  if (!Number.isFinite(requestedMinutes)) return fail("horario deve ser um horário válido no formato HH:MM");
+  const windows = (areas ?? [])
+    .filter((area) => parseDiaSemana(area.dia_semana ?? "").includes(visitDow))
+    .filter((area) => area.horario_inicio && area.horario_fim)
+    .map((area) => ({ inicio: area.horario_inicio.slice(0, 5), fim: area.horario_fim.slice(0, 5) }));
+  if (windows.length > 0 && !windows.some((window) =>
+    requestedMinutes >= timeMinutes(window.inicio) && requestedMinutes <= timeMinutes(window.fim)
+  )) {
+    const ranges = windows.map((window) => `das ${displayTime(window.inicio)} às ${displayTime(window.fim)}`).join(" ou ");
+    const mensagemParaLead = `Nesse dia o consultor atende em ${cidade} ${ranges}. Qual horário dentro dessa faixa fica melhor?`;
+    return {
+      success: false,
+      message: mensagemParaLead,
+      data: { cidade, data_visita, janelas: windows, mensagem_para_lead: mensagemParaLead },
+      next_action_hint: `Envie ao lead: "${mensagemParaLead}"`,
+    };
+  }
+
   // Resolver lead
   let leadId = lead_id;
   let clientId: string | null = null;
@@ -1030,8 +1094,9 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     clientId = data?.client_id ?? null;
   }
 
+  const product = await resolveVisitProduct(supabase, leadId, produto_interesse);
   const empresaLabel = empresa ?? "empresa";
-  const title        = `Visita Técnica — ${empresaLabel} — ${cidade} [${produto_interesse ?? "Ekkoa"}]`;
+  const title        = `Visita Técnica — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
   const startTime    = `${horario}:00`;
   const endHour      = parseInt(horario.split(":")[0], 10) + 1;
   const endTime      = `${String(endHour).padStart(2, "0")}:00:00`;
@@ -1039,7 +1104,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   const notesArr = [
     `Contato: ${nome_contato}${cargo ? ` (${cargo})` : ""}`,
     telefone          ? `Tel: ${telefone}`               : null,
-    produto_interesse ? `Produto: ${produto_interesse}`  : null,
+    product           ? `Produto: ${product}`           : null,
     contato_id        ? `contato_id: ${contato_id}`      : null,
     interaction_id    ? `Flora: ${interaction_id}`       : null,
     notas             ? notas                            : null,
@@ -1076,29 +1141,31 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     `👤 Lead: ${nome_contato}${empresa ? ` — ${empresa}` : ""}\n` +
     `📍 Cidade: ${cidade}\n` +
     `🗓️ Data: ${dataFmt} às ${horario}h\n` +
-    `🔬 Produto: ${produto_interesse ?? "Ekkoa"}\n` +
+    (product ? `🔬 Produto: ${product}\n` : "") +
     (telefone ? `📞 Tel: ${telefone}\n` : "") +
     `\n_Agendado pela Flora via ${["Instagram","WhatsApp","WebChat","Messenger"].find(c => interaction_id?.includes(c)) ?? "canal digital"}_`;
 
   notificarEquipe(supabase, ["admin", "consultor"], "visita_agendada", notifMsg, {
-    schedule_id: schedule!.id,
+    schedule_id: schedule?.id,
     lead_id: leadId,
     nome_contato,
     empresa,
     cidade,
     data_visita,
     horario,
-    produto_interesse,
+    produto_interesse: product,
   }).catch(err => console.error("[notificar_equipe] Erro não tratado:", err));
 
   const mensagemParaLead =
     `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
-    `Nosso consultor levará uma demonstração completa do ${produto_interesse ?? "sistema Ekkoa"} até você. ` +
+    (product
+      ? `Nosso consultor vai apresentar ${product} para a sua empresa. `
+      : `Nosso consultor vai apresentar as soluções ideais para a sua empresa. `) +
     `Qualquer dúvida, pode chamar aqui! 😊`;
 
   return ok(
     {
-      agendamento_id:              schedule!.id,
+      agendamento_id:              schedule?.id,
       confirmado_provisoriamente:  true,
       agendamento:                 schedule,
       lead_id:                     leadId,
@@ -1852,6 +1919,9 @@ const TOOLS_MANIFEST = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function routeTool(method: string, params: Record<string, unknown>): Promise<McpResponse> {
+  // Preserve the original received params in request auditing; normalize only
+  // the copy dispatched to tools, including nested strings and array entries.
+  params = normalizeParamValue(params) as Record<string, unknown>;
   switch (method) {
     // Block 1
     case "buscar_contato":               return buscarContato(params);
