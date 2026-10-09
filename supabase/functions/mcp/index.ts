@@ -94,6 +94,45 @@ function normalizeParamValue(value: unknown): unknown {
   return value;
 }
 
+type ChatChannel = "WHATSAPP" | "INSTAGRAM" | "MESSENGER" | "WIDGET";
+
+function resolveChannelFromChatId(chat_id: unknown): { canal: ChatChannel; identificador: string } | null {
+  if (typeof chat_id !== "string" || !chat_id.trim()) return null;
+  const chatId = chat_id.trim();
+  if (chatId.startsWith("public-api-")) {
+    const identificador = chatId.slice("public-api-".length);
+    return identificador ? { canal: "WIDGET", identificador } : null;
+  }
+  const separator = chatId.indexOf("-");
+  if (separator < 1 || separator === chatId.length - 1) return null;
+  const channels: Record<string, ChatChannel> = {
+    "3DF9D839DDCF463A3A350ADF91C40B89": "WHATSAPP",
+    "3E081F8C517E26FF46107A02E12740D2": "INSTAGRAM",
+    "3E082145442EE648F743C673F12AF2BE": "MESSENGER",
+    "3E08E0CA2B9116C7F54E966EEA33054D": "WIDGET",
+    "3E0F16F36DFEF0E420EC0EFA190C3F41": "WIDGET",
+  };
+  const canal = channels[chatId.slice(0, separator)];
+  return canal ? { canal, identificador: chatId.slice(separator + 1) } : null;
+}
+
+function applyChatChannel(method: string, params: Record<string, unknown>): Record<string, unknown> {
+  const resolved = resolveChannelFromChatId(params.chat_id);
+  if (!resolved) return params;
+  const enriched = {
+    ...params,
+    canal: resolved.canal,
+    canal_origem: resolved.canal,
+    canal_tipo: resolved.canal === "INSTAGRAM" ? "INSTAGRAM_UID" : resolved.canal,
+    canal_id: resolved.identificador,
+  };
+  if (resolved.canal === "WHATSAPP" && !params.telefone &&
+      ["buscar_contato", "criar_lead", "registrar_fora_cobertura"].includes(method)) {
+    return { ...enriched, telefone: resolved.identificador };
+  }
+  return enriched;
+}
+
 async function resolveVisitProduct(
   supabase: ReturnType<typeof getClient>, leadId: string | undefined, product: string | undefined
 ): Promise<string | null> {
@@ -370,7 +409,7 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
       );
     }
 
-    const { data: contacts } = await supabase
+    let { data: contacts } = await supabase
       .from("client_contacts")
       .select(`
         id, name, role, phone, whatsapp_id, instagram_handle, client_id,
@@ -379,6 +418,18 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
       .eq("organization_id", NITSCLEAN_ORG_ID)
       .eq(field, handle)
       .limit(1);
+
+    // The trusted WhatsApp identifier may be stored only as a phone, not whatsapp_id.
+    if ((!contacts || contacts.length === 0) && tipo === "WHATSAPP" &&
+        resolveChannelFromChatId(params.chat_id)?.canal === "WHATSAPP") {
+      const { data: phoneContacts } = await supabase.from("client_contacts")
+        .select(`id, name, role, phone, whatsapp_id, instagram_handle, client_id,
+          clients!inner(id, name, city, ramo_atuacao, vinculo, status)`)
+        .eq("organization_id", NITSCLEAN_ORG_ID)
+        .in("phone", [handle, `+${handle}`])
+        .limit(1);
+      contacts = phoneContacts;
+    }
 
     if (!contacts || contacts.length === 0) return notFound;
 
@@ -722,10 +773,30 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 
   const supabase = getClient();
 
+  const chatId = typeof params.chat_id === "string" && params.chat_id.trim()
+    ? params.chat_id.trim() : null;
+  if (chatId) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: chatLead, error: chatError } = await supabase.from("leads")
+      .select("id, contact_name, stage")
+      .eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("gptmaker_chat_id", chatId)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1).maybeSingle();
+    if (chatError) return fail(`Erro ao consultar lead do chat: ${chatError.message}`);
+    if (chatLead) return ok(
+      { lead: chatLead, criado: false },
+      `Lead já existe: ${chatLead.contact_name}`,
+      "Lead já registrado — use atualizar_lead ou agendar_visita_tecnica"
+    );
+  }
+
   // Idempotência
   const { data: existing } = await supabase
     .from("leads")
     .select("id, contact_name, stage")
+    .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("interaction_id", interactionFinal)
     .single();
 
@@ -755,6 +826,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       canal_origem:      canalFinal,
       origem_especifica: origem_especifica && origem_especifica.trim() !== "" ? origem_especifica : null,
       interaction_id:    interactionFinal,
+      gptmaker_chat_id:  chatId,
       instagram_handle:  instagram_handle && instagram_handle.trim() !== "" ? instagram_handle : null,
       description:       mensagem_inicial ?? produto_interesse ?? null,
       category:          produto_interesse ?? null,
@@ -772,7 +844,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     return fail(`Erro ao criar lead: ${error.message}`, "Tente novamente ou registre manualmente no Fera");
   }
 
-  await logInteraction(supabase, "criar_lead", params, ok(lead), lead!.id, canalFinal, interactionFinal);
+  await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
 
   return ok(
     { lead, criado: true },
@@ -1621,7 +1693,7 @@ const TOOLS_MANIFEST = [
       type: "object",
       properties: {
         canal_id:   { type: "string", description: "Identificador do canal. WhatsApp: E.164 sem + (ex: 5521912345678). Instagram: @handle ou handle." },
-        canal_tipo: { type: "string", enum: ["WHATSAPP", "INSTAGRAM", "INSTAGRAM_UID", "MESSENGER", "TELEGRAM"] },
+        canal_tipo: { type: "string", enum: ["WHATSAPP", "INSTAGRAM", "INSTAGRAM_UID", "MESSENGER", "TELEGRAM", "WIDGET"] },
         nome:       { type: "string", description: "Nome do contato — Modo 2, busca fuzzy primeiro+último token" },
         telefone:   { type: "string", description: "Telefone com DDD — Modo 2, busca nos últimos 8 dígitos" },
         vincular_canal_id_se_encontrado: { type: "boolean", description: "Se true e Modo 2 encontrou, vincula canal_id+canal_tipo ao contato encontrado" },
@@ -1670,7 +1742,7 @@ const TOOLS_MANIFEST = [
   // ── Block 2: Lead Capture ─────────────────────────────────────────────────
   {
     name: "criar_lead",
-    description: "Registra novo lead no CRM do Fera. Idempotente via interaction_id. Suporta campos B2B (empresa_nome, cargo_contato) e rastreamento de post IG (post_id, post_titulo).",
+    description: "Registra novo lead no CRM do Fera. Reutiliza lead do mesmo chat_id na organização nas últimas 24h; também idempotente via interaction_id. Suporta campos B2B e rastreamento de post IG.",
     parameters: {
       type: "object",
       required: ["nome", "canal", "interaction_id"],
@@ -1914,6 +1986,13 @@ const TOOLS_MANIFEST = [
   },
 ];
 
+// Expose the trusted chat identifier to every tool without making it required.
+for (const tool of TOOLS_MANIFEST) {
+  Object.assign(tool.parameters.properties, {
+    chat_id: { type: "string", description: "ID real do chat GPT Maker: canal-contato. Prevalece sobre campos de canal preenchidos pelo modelo." },
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TOOL ROUTER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1922,6 +2001,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   // Preserve the original received params in request auditing; normalize only
   // the copy dispatched to tools, including nested strings and array entries.
   params = normalizeParamValue(params) as Record<string, unknown>;
+  params = applyChatChannel(method, params);
   switch (method) {
     // Block 1
     case "buscar_contato":               return buscarContato(params);

@@ -1,4 +1,7 @@
 # Tasks
+- [x] Resolve trusted GPT Maker chat channels across MCP tools without changing auth, auditing or normalization.
+- [x] Add indexed lead chat ID and tenant-scoped 24-hour lead deduplication.
+- [x] Test channel resolution and existing MCP behavior (57 tests passing), then deploy mcp (confirmed).
 - [x] Create service-role-only mcp_request_log table.
 - [x] Record every mcp request asynchronously without changing tool behavior.
 - [x] Verify audit outcomes and deploy mcp.

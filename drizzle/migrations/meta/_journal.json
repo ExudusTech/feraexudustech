@@ -8,6 +8,13 @@
       "when": 1791519382528,
       "tag": "0000_create_mcp_request_log",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791525159395,
+      "tag": "0001_add_leads_gptmaker_chat_id",
+      "breakpoints": true
     }
   ]
 }
