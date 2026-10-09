@@ -1493,6 +1493,41 @@ export type Database = {
           },
         ]
       }
+      holidays: {
+        Row: {
+          city: string | null
+          created_at: string
+          date: string
+          id: string
+          name: string
+          organization_id: string | null
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          date: string
+          id?: string
+          name: string
+          organization_id?: string | null
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          name?: string
+          organization_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "holidays_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_messages: {
         Row: {
           body: string
