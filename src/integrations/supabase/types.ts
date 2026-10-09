@@ -1679,6 +1679,7 @@ export type Database = {
           expected_close_date: string | null
           flora_tags: string[] | null
           fora_cobertura: boolean | null
+          gptmaker_chat_id: string | null
           id: string
           instagram_handle: string | null
           interaction_id: string | null
@@ -1715,6 +1716,7 @@ export type Database = {
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
@@ -1751,6 +1753,7 @@ export type Database = {
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
