@@ -159,6 +159,31 @@ function displayTime(time: string): string {
   return `${Number(hours)}h${minutes === "00" ? "" : minutes}`;
 }
 
+interface Holiday { date: string; name: string; city: string | null }
+
+async function loadHolidays(supabase: ReturnType<typeof getClient>, from: string, to: string): Promise<Holiday[]> {
+  const { data, error } = await supabase.from("holidays").select("date, name, city")
+    .or(`organization_id.is.null,organization_id.eq.${NITSCLEAN_ORG_ID}`)
+    .gte("date", from).lte("date", to);
+  if (error) throw new Error(`Erro ao consultar feriados: ${error.message}`);
+  return data ?? [];
+}
+
+function holidayForDate(holidays: Holiday[], date: string, city?: string | null): Holiday | undefined {
+  const cityKey = (value: string) => value.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return holidays.find(holiday => holiday.date === date &&
+    (holiday.city === null || (typeof city === "string" && cityKey(holiday.city) === cityKey(city))));
+}
+
+async function rejectHolidayVisit(supabase: ReturnType<typeof getClient>, date: string, city?: string): Promise<McpResponse | null> {
+  const holiday = holidayForDate(await loadHolidays(supabase, date, date), date, city);
+  if (!holiday) return null;
+  const message = `Nessa data não teremos atendimento por ser feriado (${holiday.name}). Posso te oferecer outra data?`;
+  return { success: false, message,
+    data: { data_visita: date, feriado: holiday.name, mensagem_para_lead: message },
+    next_action_hint: `Envie ao lead: "${message}"` };
+}
+
 function ok(data: unknown, message?: string, hint?: string): McpResponse {
   return { success: true, data, message, next_action_hint: hint };
 }
@@ -619,7 +644,7 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
     );
   }
 
-  const count = Math.min(proximas_datas_count ?? 3, 6);
+   const count = Math.min(proximas_datas_count ?? 3, 6);
 
   // Consolidar todos os DoWs de todas as regiões encontradas
   const allDows = new Set<number>();
@@ -628,13 +653,21 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   }
 
   const dowsList = Array.from(allDows).sort();
-  const proximas = nextDatesForDows(dowsList, count);
+  const candidates = nextDatesForDows(dowsList, 60);
+  const holidays = candidates.length > 0
+    ? await loadHolidays(supabase, candidates[0], candidates[candidates.length - 1]) : [];
+  const availableArea = (date: string) => {
+    const dow = new Date(date + "T12:00:00-03:00").getDay();
+    return areas.find(area => parseDiaSemana(area.dia_semana ?? "").includes(dow) &&
+      !holidayForDate(holidays, date, area.city ?? cidade));
+  };
+  const proximas = candidates.filter(date => availableArea(date)).slice(0, count);
 
   // Formatar para exibição em pt-BR
   const proximasFormatadas = proximas.map((dateStr) => {
     const d   = new Date(dateStr + "T12:00:00-03:00");
     const dow = d.getDay();
-    const area = areas.find((a) => parseDiaSemana(a.dia_semana ?? "").includes(dow));
+    const area = availableArea(dateStr);
     return {
       data:       dateStr,
       data_ptbr:  d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" }),
@@ -1028,6 +1061,8 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
   if (!nome_contato) return fail("nome_contato é obrigatório");
 
   const supabase = getClient();
+  const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
+  if (holidayRejection) return holidayRejection;
   let leadId = lead_id;
   let clientId: string | null = null;
   if (!leadId && interaction_id) {
@@ -1095,11 +1130,11 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
 async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<McpResponse> {
   const {
     lead_id, interaction_id, contato_id,
-    nome_contato, empresa, telefone, cargo,
+    nome_contato, empresa, telefone, cargo, email,
     data_visita, horario, cidade, produto_interesse, notas,
   } = params as {
     lead_id?: string; interaction_id?: string; contato_id?: string;
-    nome_contato: string; empresa?: string; telefone?: string; cargo?: string;
+    nome_contato: string; empresa?: string; telefone?: string; cargo?: string; email?: string;
     data_visita: string; horario: string; cidade: string;
     produto_interesse?: string; notas?: string;
   };
@@ -1109,6 +1144,10 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (!cidade) return fail("cidade é obrigatória para validar a rota do consultor");
 
   const supabase = getClient();
+  const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
+  if (holidayRejection) return holidayRejection;
+  const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    ? email.trim() : null;
 
   // Validar que a data cai num dia coberto para a cidade
   const { data: areas } = await supabase
@@ -1128,7 +1167,10 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   if (coveredDows.size > 0 && !coveredDows.has(visitDow)) {
     const validDays = Array.from(coveredDows).map(diaSemanaLabel).join(" e ");
-    const proximas  = nextDatesForDows(Array.from(coveredDows), 3);
+    const candidates = nextDatesForDows(Array.from(coveredDows), 60);
+    const holidays = candidates.length > 0
+      ? await loadHolidays(supabase, candidates[0], candidates[candidates.length - 1]) : [];
+    const proximas = candidates.filter(date => !holidayForDate(holidays, date, cidade)).slice(0, 3);
     return fail(
       `${data_visita} não é dia de cobertura em ${cidade}. Dias válidos: ${validDays}`,
       `Próximas datas disponíveis: ${proximas.join(", ")}. Proponha uma dessas ao cliente.`
@@ -1161,7 +1203,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   let clientId: string | null = null;
   if (!leadId && interaction_id) {
     const { data } = await supabase
-      .from("leads").select("id, client_id").eq("interaction_id", interaction_id).single();
+      .from("leads").select("id, client_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("interaction_id", interaction_id).single();
     leadId   = data?.id;
     clientId = data?.client_id ?? null;
   }
@@ -1176,6 +1218,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   const notesArr = [
     `Contato: ${nome_contato}${cargo ? ` (${cargo})` : ""}`,
     telefone          ? `Tel: ${telefone}`               : null,
+    validEmail        ? `E-mail: ${validEmail}`          : null,
     product           ? `Produto: ${product}`           : null,
     contato_id        ? `contato_id: ${contato_id}`      : null,
     interaction_id    ? `Flora: ${interaction_id}`       : null,
@@ -1202,6 +1245,13 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     await supabase.from("leads")
       .update({ stage: "agendado", updated_at: new Date().toISOString() })
       .eq("id", leadId);
+    if (validEmail) {
+      const { error: emailError } = await supabase.from("leads")
+        .update({ contact_email: validEmail })
+        .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId)
+        .or("contact_email.is.null,contact_email.eq.");
+      if (emailError) throw new Error(`Erro ao atualizar e-mail do lead: ${emailError.message}`);
+    }
   }
 
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
@@ -1844,6 +1894,7 @@ const TOOLS_MANIFEST = [
         empresa:           { type: "string" },
         telefone:          { type: "string" },
         cargo:             { type: "string" },
+        email:             { type: "string", description: "E-mail opcional do contato; preenche o lead apenas se vazio" },
         data_visita:       { type: "string", description: "YYYY-MM-DD — deve ser dia de cobertura da cidade" },
         horario:           { type: "string", description: "HH:MM" },
         cidade:            { type: "string", description: "Cidade onde o consultor visitará (obrigatório)" },

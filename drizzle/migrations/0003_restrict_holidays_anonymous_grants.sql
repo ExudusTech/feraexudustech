@@ -1,0 +1,2 @@
+REVOKE ALL ON TABLE public.holidays FROM anon;
+COMMENT ON TABLE public.holidays IS 'Authenticated read access to shared national/RJ and own-tenant municipal holidays. Tenant admins manage only their own entries; shared entries require super_admin or service_role.';

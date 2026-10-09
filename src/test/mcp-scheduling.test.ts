@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 
 function harness(category: string | null = "Diversey", areas = [
   { dia_semana: "2ª feira e 6ª feira", horario_inicio: "13:30:00", horario_fim: "16:30:00" },
-]) {
+], holidays: { date: string; name: string; city: string | null }[] = [], existingEmail: string | null = null, holidayError = false) {
   const writes: { table: string; operation: string; value: any }[] = [];
   const reads: { table: string; filters: any[] }[] = [];
   const tasks: Promise<void>[] = [];
@@ -17,8 +17,8 @@ function harness(category: string | null = "Diversey", areas = [
     const filters: any[] = [];
     const result = () => {
       if (operation === "read") reads.push({ table, filters });
-      else writes.push({ table, operation, value });
-      return { error: null, data: table === "ekkoa_coverage_areas" ? areas
+      else if (!(table === "leads" && value?.contact_email && existingEmail)) writes.push({ table, operation, value });
+      return { error: table === "holidays" && holidayError ? { message: "unavailable" } : null, data: table === "holidays" ? holidays : table === "ekkoa_coverage_areas" ? areas
         : table === "leads" ? { id: "lead", category, client_id: null }
         : table === "schedules" ? { id: "schedule", ...value } : null };
     };
@@ -26,6 +26,9 @@ function harness(category: string | null = "Diversey", areas = [
       select: () => chain,
       eq: (...args: any[]) => { filters.push(args); return chain; },
       ilike: (...args: any[]) => { filters.push(args); return chain; },
+      or: (...args: any[]) => { filters.push(["or", ...args]); return chain; },
+      gte: (...args: any[]) => { filters.push(["gte", ...args]); return chain; },
+      lte: (...args: any[]) => { filters.push(["lte", ...args]); return chain; },
       insert: (data: any) => { operation = "insert"; value = data; return chain; },
       update: (data: any) => { operation = "update"; value = data; return chain; },
       single: async () => result(), maybeSingle: async () => result(),
@@ -39,7 +42,7 @@ function harness(category: string | null = "Diversey", areas = [
     Deno: { env: { get: (key: string) => key === "MCP_BEARER_TOKEN" ? "test-token" : undefined },
       serve: (fn: typeof handler) => { handler = fn; } },
     EdgeRuntime: { waitUntil: (task: Promise<void>) => tasks.push(task) },
-    console, Response, Request, URL, performance, TextEncoder, crypto,
+    console, Response, Request, URL, performance, TextEncoder, crypto, Date,
   });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
@@ -91,7 +94,7 @@ describe("MCP visit scheduling", () => {
     expect(result.data.janelas).toEqual([{ inicio: "13:30", fim: "16:30" }]);
     expect(result.data.mensagem_para_lead).toContain("das 13h30 às 16h30");
     expect(h.writes).toEqual([]);
-    expect(h.reads[0].filters).toContainEqual(["city", "Cabo Frio"]);
+    expect(h.reads.find(r => r.table === "ekkoa_coverage_areas")?.filters).toContainEqual(["city", "Cabo Frio"]);
   });
   it.each(["13:30", "16:30"])("accepts boundary %s", async (horario) => {
     expect((await harness().route({ ...visit, horario })).success).toBe(true);
@@ -107,6 +110,67 @@ describe("MCP visit scheduling", () => {
   it("rejects invalid weekday without operational writes", async () => {
     const h = harness();
     expect((await h.route({ ...visit, data_visita: "2026-10-13" })).success).toBe(false);
+    expect(h.writes).toEqual([]);
+  });
+});
+
+afterEach(() => vi.useRealTimers());
+
+describe("MCP holidays and booking email", () => {
+  const holiday = { date: "2026-10-12", name: "Nossa Senhora Aparecida", city: null };
+  it("skips 12 October and continues until the requested count", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T15:59:00Z"));
+    const h = harness("Diversey", undefined, [holiday]);
+    const result = await h.route({ cidade: "Cabo Frio", proximas_datas_count: 3 }, "consultar_rota_consultor");
+    expect(result.data.proximas_datas.map((d: any) => d.data)).toEqual(["2026-10-16", "2026-10-19", "2026-10-23"]);
+    expect(h.reads.find(r => r.table === "holidays")?.filters).toContainEqual(["or", "organization_id.is.null,organization_id.eq.7fd8333b-578a-4db8-b1be-fdcb8339d4e8"]);
+  });
+  it.each(["Cabo Frio", "Arraial do Cabo"])("municipal holiday applies only to its city (%s)", async (cidade) => {
+    const h = harness("Diversey", undefined, [{ ...holiday, city: " cabo FRIO " }]);
+    const result = await h.route({ ...visit, cidade });
+    expect(result.success).toBe(cidade !== "Cabo Frio");
+    if (cidade === "Cabo Frio") expect(h.writes).toEqual([]);
+  });
+  it("routes retain dates with holidays in another municipality", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T15:59:00Z"));
+    const result = await harness("Diversey", undefined, [{ ...holiday, city: "Arraial do Cabo" }])
+      .route({ cidade: "Cabo Frio" }, "consultar_rota_consultor");
+    expect(result.data.proximas_datas[0].data).toBe("2026-10-12");
+  });
+  it("never looks beyond 60 days even if all dates are holidays", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-09T15:59:00Z"));
+    const days = Array.from({ length: 60 }, (_, i) => ({ date: new Date(Date.UTC(2026, 9, 10 + i)).toISOString().slice(0, 10), name: "Fechado", city: null }));
+    const h = harness("Diversey", undefined, days);
+    expect((await h.route({ cidade: "Cabo Frio", proximas_datas_count: 6 }, "consultar_rota_consultor")).data.proximas_datas).toEqual([]);
+  });
+  it.each(["agendar_visita_tecnica", "agendar_visita"])("%s rejects holidays before every operational write", async method => {
+    const h = harness("Diversey", undefined, [holiday]);
+    const result = await h.route({ ...visit, email: "ph@example.com" }, method);
+    expect(result.success).toBe(false);
+    expect(result.data.mensagem_para_lead).toContain(holiday.name);
+    expect(h.writes).toEqual([]);
+  });
+  it("fills empty lead email and includes it in schedule notes", async () => {
+    const h = harness();
+    expect((await h.route({ ...visit, email: " ph@example.com " })).success).toBe(true);
+    expect(h.writes.find(w => w.table === "schedules")?.value.notes).toContain("E-mail: ph@example.com");
+    expect(h.writes.find(w => w.value?.contact_email)?.value.contact_email).toBe("ph@example.com");
+  });
+  it("does not overwrite existing lead email", async () => {
+    const h = harness("Diversey", undefined, [], "existing@example.com");
+    await h.route({ ...visit, email: "new@example.com" });
+    expect(h.writes.some(w => w.value?.contact_email)).toBe(false);
+    expect(h.writes.find(w => w.table === "schedules")?.value.notes).toContain("new@example.com");
+  });
+  it.each(["invalid", "nao informado", undefined])("ignores invalid or absent email %s", async email => {
+    const h = harness();
+    expect((await h.route({ ...visit, email })).success).toBe(true);
+    expect(h.writes.some(w => w.value?.contact_email)).toBe(false);
+    expect(h.writes.find(w => w.table === "schedules")?.value.notes).not.toContain("E-mail:");
+  });
+  it("calendar read failure cannot create a booking", async () => {
+    const h = harness("Diversey", undefined, [], null, true);
+    await expect(h.route(visit)).rejects.toThrow("Erro ao consultar feriados");
     expect(h.writes).toEqual([]);
   });
 });

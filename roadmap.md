@@ -1,4 +1,8 @@
 # Tasks
+- [x] Add protected holidays table and populate national/RJ holidays for 2026–2027 (28 dates).
+- [x] Skip holidays in consultant routes and reject holiday bookings before writes; capture optional valid email.
+- [x] Delete only specified test lead/schedule and their dependencies (4 rows; absence verified), preserving mcp_request_log (14 rows).
+- [x] Test MCP regressions and new cases (70 MCP tests), deploy mcp (confirmed) and verify results.
 - [x] Resolve trusted GPT Maker chat channels across MCP tools without changing auth, auditing or normalization.
 - [x] Add indexed lead chat ID and tenant-scoped 24-hour lead deduplication.
 - [x] Test channel resolution and existing MCP behavior (57 tests passing), then deploy mcp (confirmed).

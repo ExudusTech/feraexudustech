@@ -15,6 +15,20 @@
       "when": 1791525159395,
       "tag": "0001_add_leads_gptmaker_chat_id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791561653057,
+      "tag": "0002_create_holidays",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791561788224,
+      "tag": "0003_restrict_holidays_anonymous_grants",
+      "breakpoints": true
     }
   ]
 }
