@@ -71,11 +71,6 @@ function authenticate(req: Request): boolean {
   const auth = req.headers.get("Authorization") ?? "";
   const expected = `Bearer ${MCP_BEARER_TOKEN}`;
   const match = auth === expected;
-  if (!match) {
-    console.warn(
-      `[AUTH FAIL] received_length=${auth.length} expected_length=${expected.length} received_prefix="${auth.substring(0, 15)}"`
-    );
-  }
   return match;
 }
 
@@ -1897,50 +1892,109 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
 // ─────────────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
+  const startedAt = performance.now();
+  type AuditDetails = {
+    method?: string | null;
+    params?: unknown;
+    success: boolean;
+    error_code?: number | null;
+    error_message?: string | null;
+  };
+  const finish = (response: Response, details: AuditDetails): Response => {
+    // Snapshot duration before background work; never await the audit insert.
+    const duration_ms = Math.round(performance.now() - startedAt);
+    try {
+      const copy = response.clone();
+      const task = (async () => {
+        try {
+          const text = await copy.text();
+          const storedResponse = text.length > 4000
+            ? text.slice(0, 4000)
+            : text ? JSON.parse(text) : null;
+          const { error } = await getClient().from("mcp_request_log").insert({
+            method: details.method ?? null,
+            params: details.params ?? null,
+            success: details.success,
+            error_code: details.error_code ?? null,
+            error_message: details.error_message ?? null,
+            response: storedResponse,
+            duration_ms,
+          });
+          if (error) console.error("[MCP AUDIT] Insert failed");
+        } catch {
+          console.error("[MCP AUDIT] Background logging failed");
+        }
+      })();
+      const runtime = (globalThis as unknown as {
+        EdgeRuntime?: { waitUntil: (task: Promise<void>) => void };
+      }).EdgeRuntime;
+      runtime?.waitUntil(task);
+    } catch {
+      console.error("[MCP AUDIT] Could not schedule logging");
+    }
+    return response;
+  };
   // CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return finish(new Response(null, { status: 204, headers: CORS_HEADERS }), { success: true });
   }
 
   // Auth
   if (!authenticate(req)) {
-    return jsonRpcError(null, -32001, "Unauthorized");
+    return finish(jsonRpcError(null, -32001, "Unauthorized"), {
+      success: false, error_code: -32001, error_message: "Unauthorized",
+    });
   }
 
   // Health check
   const url = new URL(req.url);
   if (url.pathname.endsWith("/health")) {
-    return new Response(
+    return finish(new Response(
       JSON.stringify({ status: "ok", version: "3.0.0", tools: TOOLS_MANIFEST.length }),
       { headers: CORS_HEADERS }
-    );
+    ), { success: true });
   }
 
   // Tools discovery (GET /tools)
   if (req.method === "GET" && url.pathname.endsWith("/tools")) {
-    return new Response(
+    return finish(new Response(
       JSON.stringify({ tools: TOOLS_MANIFEST }),
       { headers: CORS_HEADERS }
-    );
+    ), { success: true });
   }
 
   // Parse JSON-RPC
   let rpc: JsonRpcRequest;
+  let rawBody = "";
   try {
-    rpc = await req.json();
+    rawBody = await req.text();
+    rpc = JSON.parse(rawBody);
   } catch {
-    return jsonRpcError(null, -32700, "Parse error");
+    return finish(jsonRpcError(null, -32700, "Parse error"), {
+      params: rawBody.slice(0, 2000), success: false,
+      error_code: -32700, error_message: "Parse error",
+    });
   }
 
-  if (rpc.jsonrpc !== "2.0" || !rpc.method) {
-    return jsonRpcError(rpc.id ?? null, -32600, "Invalid Request");
+  if (!rpc || rpc.jsonrpc !== "2.0" || !rpc.method) {
+    return finish(jsonRpcError(rpc?.id ?? null, -32600, "Invalid Request"), {
+      params: rawBody.slice(0, 2000), success: false,
+      error_code: -32600, error_message: "Invalid Request",
+    });
   }
 
   try {
     const result = await routeTool(rpc.method, rpc.params ?? {});
-    return jsonRpcResult(rpc.id, result);
+    return finish(jsonRpcResult(rpc.id, result), {
+      method: rpc.method, params: rpc.params, success: result.success,
+      error_message: result.success ? null : result.message,
+    });
   } catch (err) {
     console.error(`[MCP] Error in ${rpc.method}:`, err);
-    return jsonRpcError(rpc.id, -32603, `Internal error: ${err instanceof Error ? err.message : String(err)}`);
+    const message = `Internal error: ${err instanceof Error ? err.message : String(err)}`;
+    return finish(jsonRpcError(rpc.id, -32603, message), {
+      method: rpc.method, params: rpc.params, success: false,
+      error_code: -32603, error_message: message,
+    });
   }
 });

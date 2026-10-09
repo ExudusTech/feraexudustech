@@ -1906,6 +1906,42 @@ export type Database = {
           },
         ]
       }
+      mcp_request_log: {
+        Row: {
+          created_at: string | null
+          duration_ms: number | null
+          error_code: number | null
+          error_message: string | null
+          id: string
+          method: string | null
+          params: Json | null
+          response: Json | null
+          success: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          duration_ms?: number | null
+          error_code?: number | null
+          error_message?: string | null
+          id?: string
+          method?: string | null
+          params?: Json | null
+          response?: Json | null
+          success?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          duration_ms?: number | null
+          error_code?: number | null
+          error_message?: string | null
+          id?: string
+          method?: string | null
+          params?: Json | null
+          response?: Json | null
+          success?: boolean | null
+        }
+        Relationships: []
+      }
       message_participants: {
         Row: {
           created_at: string
