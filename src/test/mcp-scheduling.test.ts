@@ -42,7 +42,7 @@ function harness(category: string | null = "Diversey", areas = [
     Deno: { env: { get: (key: string) => key === "MCP_BEARER_TOKEN" ? "test-token" : undefined },
       serve: (fn: typeof handler) => { handler = fn; } },
     EdgeRuntime: { waitUntil: (task: Promise<void>) => tasks.push(task) },
-    console, Response, Request, URL, performance, TextEncoder, crypto,
+    console, Response, Request, URL, performance, TextEncoder, crypto, Date,
   });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
