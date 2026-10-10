@@ -1,4 +1,7 @@
 # Tasks
+- [x] Add localizar_estabelecimento with bounded Google/ViaCEP lookup and precise coverage selection.
+- [x] Persist optional lead location fields, test regressions (101 passing) and deploy mcp (confirmed).
+- [ ] Verify Google Places key live (blocked: agent environment does not support live Maps API verification).
 - [x] Add protected holidays table and populate national/RJ holidays for 2026–2027 (28 dates).
 - [x] Skip holidays in consultant routes and reject holiday bookings before writes; capture optional valid email.
 - [x] Delete only specified test lead/schedule and their dependencies (4 rows; absence verified), preserving mcp_request_log (14 rows).

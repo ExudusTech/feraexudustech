@@ -1697,6 +1697,7 @@ export type Database = {
       leads: {
         Row: {
           assigned_to: string | null
+          bairro: string | null
           canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato: string | null
           category: string | null
@@ -1711,6 +1712,7 @@ export type Database = {
           created_by_flora: boolean | null
           description: string | null
           empresa_nome: string | null
+          endereco: string | null
           expected_close_date: string | null
           flora_tags: string[] | null
           fora_cobertura: boolean | null
@@ -1718,12 +1720,17 @@ export type Database = {
           id: string
           instagram_handle: string | null
           interaction_id: string | null
+          latitude: number | null
+          longitude: number | null
+          maps_url: string | null
           organization_id: string
           origem_especifica: string | null
+          place_id: string | null
           position: number
           post_id: string | null
           post_titulo: string | null
           precisa_humano: boolean | null
+          regiao: string | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
           title: string
@@ -1734,6 +1741,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          bairro?: string | null
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato?: string | null
           category?: string | null
@@ -1748,6 +1756,7 @@ export type Database = {
           created_by_flora?: boolean | null
           description?: string | null
           empresa_nome?: string | null
+          endereco?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
@@ -1755,12 +1764,17 @@ export type Database = {
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
           organization_id: string
           origem_especifica?: string | null
+          place_id?: string | null
           position?: number
           post_id?: string | null
           post_titulo?: string | null
           precisa_humano?: boolean | null
+          regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title: string
@@ -1771,6 +1785,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          bairro?: string | null
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato?: string | null
           category?: string | null
@@ -1785,6 +1800,7 @@ export type Database = {
           created_by_flora?: boolean | null
           description?: string | null
           empresa_nome?: string | null
+          endereco?: string | null
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
@@ -1792,12 +1808,17 @@ export type Database = {
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
           organization_id?: string
           origem_especifica?: string | null
+          place_id?: string | null
           position?: number
           post_id?: string | null
           post_titulo?: string | null
           precisa_humano?: boolean | null
+          regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           title?: string
