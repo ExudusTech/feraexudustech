@@ -601,6 +601,147 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   );
 }
 
+interface CoverageRegion {
+  id?: string; name: string; city: string | null; dia_semana: string | null;
+  horario_inicio: string | null; horario_fim: string | null;
+  zip_code_start: string | null; zip_code_end: string | null;
+}
+
+function validCep(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{5}-?\d{3}$/.test(value.trim())) return null;
+  return value.replace(/\D/g, "");
+}
+
+function narrowestCoverage(areas: CoverageRegion[], cep: unknown): CoverageRegion | null {
+  const postal = validCep(cep);
+  if (!postal) return null;
+  return areas.map(area => ({ area, start: validCep(area.zip_code_start),
+    end: validCep(area.zip_code_end ?? area.zip_code_start) }))
+    .filter(item => item.start && item.end && postal >= item.start && postal <= item.end)
+    .sort((a, b) => (Number(a.end) - Number(a.start)) - (Number(b.end) - Number(b.start)) ||
+      a.area.name.localeCompare(b.area.name))[0]?.area ?? null;
+}
+
+async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, exactCity = false): Promise<CoverageRegion[]> {
+  const region = typeof params.regiao === "string" ? params.regiao.trim() : null;
+  const city = typeof params.cidade === "string" ? params.cidade.trim() : null;
+  let query = supabase.from("ekkoa_coverage_areas")
+    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
+  if (region) query = query.eq("name", region);
+  else if (!params.cep && city) query = query.ilike("city", exactCity ? city : `%${city}%`);
+  const { data, error } = await query;
+  if (error) throw new Error(`Erro ao consultar regiões: ${error.message}`);
+  if (!region && params.cep) {
+    const match = narrowestCoverage(data ?? [], params.cep);
+    return match ? [match] : [];
+  }
+  return data ?? [];
+}
+
+type AddressComponent = { types?: string[]; longText?: string; long_name?: string };
+function addressPart(parts: AddressComponent[] | undefined, ...types: string[]): string | null {
+  for (const type of types) {
+    const part = parts?.find(component => component.types?.includes(type));
+    if (part) return part.longText ?? part.long_name ?? null;
+  }
+  return null;
+}
+
+// Existing user-owned server key; never expose it in the response or logs.
+const locationCache = new Map<string, { expires: number; data: unknown }>();
+async function locationRequest(url: string, init: RequestInit, cacheKey: string): Promise<any> {
+  const cached = locationCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.data;
+  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
+  if (!response.ok) {
+    // Read only the provider's structured error, never the request URL or headers.
+    const body = await response.json().catch(() => ({}));
+    const reason = body?.error?.details?.find((detail: any) => detail.reason)?.reason;
+    const fix = reason === "API_KEY_HTTP_REFERRER_BLOCKED"
+      ? "Server key: use None or IP application restrictions, not HTTP referrers."
+      : reason === "API_KEY_SERVICE_BLOCKED" || reason === "SERVICE_DISABLED"
+      ? "Enable the requested API and allow it in the server key API restrictions."
+      : "Check Google Cloud API enablement, billing and server key restrictions.";
+    console.error("[localizar_estabelecimento] Google", response.status, reason ?? body?.error?.status ?? "REQUEST_FAILED", fix);
+    throw new Error("Serviço de localização indisponível");
+  }
+  const data = await response.json();
+  if (locationCache.size >= 100) locationCache.clear();
+  locationCache.set(cacheKey, { expires: Date.now() + 300000, data });
+  return data;
+}
+
+async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
+  const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
+  const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
+  if (!nome || !cidade) return fail("nome e cidade são obrigatórios (até 200 e 120 caracteres)");
+  if (params.bairro != null && !bairro) return fail("bairro inválido");
+  if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
+  const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
+    mensagem_para_lead: "Não encontrei pelo nome. Pode me passar o CEP ou o bairro do estabelecimento?" });
+  try {
+    const areas = await selectCoverage(getClient(), {});
+    const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+    let places: any[] = [];
+    if (params.cep) {
+      const cep = validCep(params.cep);
+      const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) return fallback();
+      const address = await response.json();
+      if (address.erro) return fallback();
+      places = [{ displayName: { text: nome }, formattedAddress: [address.logradouro, address.bairro, address.localidade, address.uf, address.cep].filter(Boolean).join(", "),
+        addressComponents: [
+          { types: ["sublocality_level_1"], longText: address.bairro },
+          { types: ["administrative_area_level_2"], longText: address.localidade },
+          { types: ["postal_code"], longText: address.cep ?? cep },
+        ] }];
+    } else {
+      if (!key) return fallback();
+      const textQuery = [nome, bairro, cidade, "RJ"].filter(Boolean).join(" ");
+      const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
+        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 }),
+      }, `places:${textQuery}`);
+      places = Array.isArray(result.places) ? result.places.slice(0, 3) : [];
+    }
+    const candidatos = [];
+    // Sequential, capped at three reverse lookups; no retries on Google errors.
+    for (const place of places) {
+      let cep = addressPart(place.addressComponents, "postal_code");
+      const latitude = place.location?.latitude ?? null, longitude = place.location?.longitude ?? null;
+      if (!validCep(cep) && key && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        try {
+          const reverse = await locationRequest(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=pt-BR&key=${encodeURIComponent(key)}`, {}, `reverse:${latitude},${longitude}`);
+          if (reverse.status === "OK") {
+            for (const result of reverse.results ?? []) {
+              const postal = addressPart(result.address_components, "postal_code");
+              if (validCep(postal)) { cep = postal; break; }
+            }
+          } else if (reverse.status !== "ZERO_RESULTS") {
+            console.error("[localizar_estabelecimento] Geocoding", reverse.status);
+          }
+        } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
+      }
+      const region = narrowestCoverage(areas, cep);
+      candidatos.push({ nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
+        bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"),
+        cidade: addressPart(place.addressComponents, "administrative_area_level_2", "locality") ?? cidade,
+        cep: validCep(cep) ? cep : null, latitude, longitude, regiao: region?.name ?? null,
+        dias_visita: region?.dia_semana ?? null,
+        horario: region?.horario_inicio && region.horario_fim ? `${region.horario_inicio.slice(0, 5)} às ${region.horario_fim.slice(0, 5)}` : null,
+        maps_url: place.googleMapsUri ?? null, telefone: place.nationalPhoneNumber ?? null, place_id: place.id ?? null });
+    }
+    if (!candidatos.length) return fallback();
+    const first = candidatos[0];
+    const mensagem = candidatos.length === 1
+      ? `É o ${first.nome} da ${first.endereco?.split(",").slice(0, 2).join(",") ?? "localização informada"}${first.bairro ? `, bairro ${first.bairro}` : ""}?`
+      : `Qual destes é o estabelecimento?\n${candidatos.map((candidate, i) => `${i + 1}. ${candidate.nome} — ${candidate.endereco ?? candidate.bairro ?? candidate.cidade}`).join("\n")}`;
+    return ok({ encontrado: true, candidatos, precisa_confirmar: true, mensagem_para_lead: mensagem });
+  } catch { return fallback(); }
+}
+
 /**
  * consultar_rota_consultor — retorna próximas datas em que o consultor
  * estará na cidade do cliente. Flora usa para propor visita proativamente.
@@ -614,32 +755,25 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
  *   4. Lead confirma → Flora chama agendar_visita_tecnica
  */
 async function consultarRotaConsultor(params: Record<string, unknown>): Promise<McpResponse> {
-  const { cidade, cep, proximas_datas_count } = params as {
+  const { cidade, cep, regiao, proximas_datas_count } = params as {
+    regiao?: string;
     cidade?: string;
     cep?: string;
     proximas_datas_count?: number;
   };
 
-  if (!cidade && !cep) {
-    return fail("Forneça cidade", "Pergunte ao lead em qual cidade a empresa está localizada");
+  if (!cidade && !cep && !regiao) {
+    return fail("Forneça cidade, região ou CEP", "Pergunte ao lead em qual cidade a empresa está localizada");
   }
 
   const supabase = getClient();
 
-  let query = supabase
-    .from("ekkoa_coverage_areas")
-    .select("id, name, city, dia_semana, horario_inicio, horario_fim")
-    .eq("organization_id", NITSCLEAN_ORG_ID)
-    .eq("is_active", true);
-
-  if (cidade) query = query.ilike("city", `%${cidade}%`);
-
-  const { data: areas } = await query;
+  const areas = await selectCoverage(supabase, params);
 
   if (!areas || areas.length === 0) {
     return ok(
-      { coberto: false, cidade: cidade ?? cep, proximas_datas: [] },
-      `${cidade ?? cep} não está coberta`,
+      { coberto: false, cidade: regiao ?? cidade ?? cep, proximas_datas: [] },
+      `${regiao ?? cidade ?? cep} não está coberta`,
       "Use registrar_fora_cobertura para registrar o lead mesmo assim"
     );
   }
@@ -682,12 +816,12 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   return ok(
     {
       coberto:         true,
-      cidade:          cidade ?? cep,
+      cidade:          regiao ?? cidade ?? cep,
       dias_de_visita:  diasSemana,
       proximas_datas:  proximasFormatadas,
     },
-    `Consultor visita ${cidade ?? cep} às ${diasSemana}. Próximas: ${proximasFormatadas.map((p) => p.data_ptbr).join(", ")}`,
-    `Proponha ao lead: "Nossa equipe visita ${cidade ?? cep} às ${diasSemana}. Quer agendar para ${proximasFormatadas[0]?.data_ptbr ?? "em breve"}?"`
+    `Consultor visita ${regiao ?? cidade ?? cep} às ${diasSemana}. Próximas: ${proximasFormatadas.map((p) => p.data_ptbr).join(", ")}`,
+    `Proponha ao lead: "Nossa equipe visita ${regiao ?? cidade ?? cep} às ${diasSemana}. Quer agendar para ${proximasFormatadas[0]?.data_ptbr ?? "em breve"}?"`
   );
 }
 
@@ -800,6 +934,30 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 
   if (!nome) return fail("Nome do contato é obrigatório");
 
+  const locationFields: Record<string, unknown> = {};
+  for (const field of ["endereco", "bairro", "maps_url", "place_id", "regiao"]) {
+    const value = params[field];
+    if (value == null) continue;
+    if (typeof value !== "string" || value.trim().length > 1000) return fail(`${field} inválido`);
+    if (field === "maps_url") {
+      try { if (new URL(value).protocol !== "https:") return fail("maps_url deve usar HTTPS"); }
+      catch { return fail("maps_url inválido"); }
+    }
+    locationFields[field] = value.trim();
+  }
+  if (params.cep != null) {
+    const postal = validCep(params.cep);
+    if (!postal) return fail("CEP deve conter oito dígitos");
+    locationFields.zip_code = postal;
+  }
+  for (const field of ["latitude", "longitude"]) {
+    const value = params[field];
+    if (value == null) continue;
+    const number = typeof value === "number" || typeof value === "string" ? Number(value) : NaN;
+    if (!Number.isFinite(number) || Math.abs(number) > (field === "latitude" ? 90 : 180)) return fail(`${field} inválida`);
+    locationFields[field] = number;
+  }
+
   // Aceitar tanto canal quanto canal_origem, com fallback para WHATSAPP
   const canalFinal = canal || canal_origem || "WHATSAPP";
   const interactionFinal = interaction_id ?? String(Date.now());
@@ -860,6 +1018,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       origem_especifica: origem_especifica && origem_especifica.trim() !== "" ? origem_especifica : null,
       interaction_id:    interactionFinal,
       gptmaker_chat_id:  chatId,
+      ...locationFields,
       instagram_handle:  instagram_handle && instagram_handle.trim() !== "" ? instagram_handle : null,
       description:       mensagem_inicial ?? produto_interesse ?? null,
       category:          produto_interesse ?? null,
@@ -1149,13 +1308,9 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     ? email.trim() : null;
 
-  // Validar que a data cai num dia coberto para a cidade
-  const { data: areas } = await supabase
-    .from("ekkoa_coverage_areas")
-    .select("dia_semana, horario_inicio, horario_fim, name")
-    .eq("organization_id", NITSCLEAN_ORG_ID)
-    .eq("is_active", true)
-    .ilike("city", cidade.trim());
+  // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
+  const areas = await selectCoverage(supabase, params, true);
+  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
 
   const coveredDows = new Set<number>();
   for (const a of (areas ?? [])) {
@@ -1735,6 +1890,14 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOOLS_MANIFEST = [
+  {
+    name: "localizar_estabelecimento",
+    description: "Localiza estabelecimento por nome e cidade ou pelo CEP via ViaCEP. Retorna até três candidatos, região de rota e dados de endereço; sempre confirme com o lead.",
+    parameters: { type: "object", required: ["nome", "cidade"], properties: {
+      nome: { type: "string", maxLength: 200 }, cidade: { type: "string", maxLength: 120 },
+      bairro: { type: "string", maxLength: 120 }, cep: { type: "string" },
+    } },
+  },
   // ── Block 1: Identification ──────────────────────────────────────────────
   {
     name: "buscar_contato",
@@ -1769,6 +1932,7 @@ const TOOLS_MANIFEST = [
       properties: {
         cidade:               { type: "string", description: "Cidade do cliente" },
         cep:                  { type: "string" },
+        regiao:               { type: "string", description: "Nome exato da área; prioridade sobre CEP e cidade" },
         proximas_datas_count: { type: "number", description: "Quantas próximas datas retornar (padrão: 3, máximo: 6)" },
       },
     },
@@ -1808,6 +1972,14 @@ const TOOLS_MANIFEST = [
         instagram_handle:  { type: "string" },
         produto_interesse: { type: "string" },
         cidade:            { type: "string" },
+        endereco:          { type: "string" },
+        bairro:            { type: "string" },
+        cep:               { type: "string" },
+        latitude:          { type: "number" },
+        longitude:         { type: "number" },
+        maps_url:          { type: "string" },
+        place_id:          { type: "string" },
+        regiao:            { type: "string" },
         mensagem_inicial:  { type: "string" },
         post_id:           { type: "string", description: "ID do post IG que gerou o lead (BI de performance)" },
         post_titulo:       { type: "string", description: "Título/descrição do post IG" },
@@ -1898,6 +2070,8 @@ const TOOLS_MANIFEST = [
         data_visita:       { type: "string", description: "YYYY-MM-DD — deve ser dia de cobertura da cidade" },
         horario:           { type: "string", description: "HH:MM" },
         cidade:            { type: "string", description: "Cidade onde o consultor visitará (obrigatório)" },
+        regiao:            { type: "string", description: "Nome exato da área; prioridade sobre CEP e cidade" },
+        cep:               { type: "string" },
         produto_interesse: { type: "string" },
         notas:             { type: "string" },
       },
@@ -2055,6 +2229,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   params = applyChatChannel(method, params);
   switch (method) {
     // Block 1
+    case "localizar_estabelecimento":    return localizarEstabelecimento(params);
     case "buscar_contato":               return buscarContato(params);
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
