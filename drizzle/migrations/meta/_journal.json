@@ -29,6 +29,13 @@
       "when": 1791561788224,
       "tag": "0003_restrict_holidays_anonymous_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791644836989,
+      "tag": "0004_add_lead_establishment_location",
+      "breakpoints": true
     }
   ]
 }
