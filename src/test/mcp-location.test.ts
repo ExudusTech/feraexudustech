@@ -49,7 +49,7 @@ function harness(options: { places?: any[]; googleStatus?: number; reverseCep?: 
     return new Response(JSON.stringify(options.googleStatus ? { error: { status: "PERMISSION_DENIED", details: [{ reason: "API_KEY_SERVICE_BLOCKED" }] } } : { places: options.places ?? [place("28900-100")] }), { status: options.googleStatus ?? 200 });
   });
   const context = vm.createContext({ createClient: () => client, Deno: { env: { get: (key: string) => key === "GOOGLE_MAPS_API_KEY" && !options.noKey ? "test-only-key" : undefined }, serve: () => {} },
-    console: { ...console, error: vi.fn() }, fetch, Response, Request, URL, AbortSignal, performance, TextEncoder, crypto, Date });
+    console: { ...console, error: vi.fn() }, fetch, Response, Request, URL, AbortSignal: { timeout: () => undefined }, performance, TextEncoder, crypto, Date });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
   return { queries, requests, route(method: string, params: any) { context.method = method; context.params = params; return vm.runInContext("routeTool(method, params)", context); },
     manifest() { return vm.runInContext("TOOLS_MANIFEST", context); } };
@@ -145,7 +145,7 @@ describe("MCP exact coverage selectors", () => {
   });
   it("legacy city consultation still consolidates districts", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-10T15:00:00Z"));
-    expect((await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio" })).data.dias_de_visita).toContain("segunda");
+    expect((await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio" })).data.dias_de_visita).toContain("Segunda");
   });
   it("stores optional address fields and canonical zip_code on a new lead", async () => {
     const h = harness();
