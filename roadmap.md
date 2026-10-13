@@ -1,4 +1,6 @@
 # Tasks
+- [x] Fix outside-coverage registration using tenant-scoped select/insert/update and valid fechado_perdido stage; exact audited WhatsApp input verified with mocked persistence, without modifying the real lead.
+- [x] Return explicit coverage bindings with normalized city/region/CEP matching; 176 tests passed (29 new), mcp deployed and five authenticated live coverage checks passed, including Armação dos Búzios as DISTRIBUIDORA.
 - [x] Fix organization-wide Agenda visibility, Flora origin and coverage consultant assignment; RLS checked, supplied visit backfilled, 147 tests passed and mcp deployed.
 - [x] Preserve notification destinations through login/reload and successful organization selection; signed-out browser and mocked authenticated navigation verified.
 - [x] Request latest frontend publication to https://fera.exudustech.com.br (scheduled).
