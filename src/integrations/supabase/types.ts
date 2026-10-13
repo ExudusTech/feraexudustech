@@ -2105,10 +2105,12 @@ export type Database = {
           ativo: boolean
           created_at: string | null
           email: string | null
+          eventos: string[]
           id: string
           nome: string
           notes: string | null
           organization_id: string
+          papel: string
           roles: string[]
           updated_at: string | null
           whatsapp: string | null
@@ -2117,10 +2119,12 @@ export type Database = {
           ativo?: boolean
           created_at?: string | null
           email?: string | null
+          eventos?: string[]
           id?: string
           nome: string
           notes?: string | null
           organization_id: string
+          papel?: string
           roles?: string[]
           updated_at?: string | null
           whatsapp?: string | null
@@ -2129,10 +2133,12 @@ export type Database = {
           ativo?: boolean
           created_at?: string | null
           email?: string | null
+          eventos?: string[]
           id?: string
           nome?: string
           notes?: string | null
           organization_id?: string
+          papel?: string
           roles?: string[]
           updated_at?: string | null
           whatsapp?: string | null
