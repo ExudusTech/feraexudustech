@@ -20,7 +20,8 @@ export interface Schedule {
   assigned_to: string | null;
   location: string | null;
   notes: string | null;
-  created_by: string;
+  created_by: string | null;
+  source: string;
   created_at: string;
   updated_at: string | null;
 }
@@ -30,11 +31,12 @@ export function useSchedules() {
   return useQuery({
     queryKey: ["schedules", user?.organization_id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("schedules").select("*").order("scheduled_date", { ascending: true });
+      if (!user?.organization_id) return [];
+      const { data, error } = await supabase.from("schedules").select("*").eq("organization_id", user.organization_id).order("scheduled_date", { ascending: true });
       if (error) throw error;
       return data as Schedule[];
     },
-    enabled: !!user,
+    enabled: !!user?.organization_id,
   });
 }
 
@@ -44,13 +46,15 @@ export function useCreateSchedule() {
   return useMutation({
     mutationFn: async (input: Partial<Schedule>) => {
       if (!user?.organization_id) throw new Error("Sem organização");
+      if (!input.title || !input.scheduled_date) throw new Error("Título e data são obrigatórios");
       const { data, error } = await (supabase as any).from("schedules").insert({
-        title: input.title!, description: input.description, scheduled_date: input.scheduled_date!,
+        title: input.title, description: input.description, scheduled_date: input.scheduled_date,
         start_time: input.start_time, end_time: input.end_time, status: input.status || "agendado",
         client_id: input.client_id, location: input.location, notes: input.notes,
         operation_id: input.operation_id,
         schedule_subtype: input.schedule_subtype ?? null,
         lead_id: input.lead_id ?? null,
+        assigned_to: input.assigned_to ?? null, source: "manual",
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;

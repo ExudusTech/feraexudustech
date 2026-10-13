@@ -20,17 +20,19 @@ import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
-type ViewMode = "minhas" | "criadas";
+type ViewMode = "todas" | "minhas" | "criadas";
 type CalendarView = "dia" | "semana" | "mes" | "ano";
 
 export default function Agenda() {
   const { user } = useAuth();
+  const canViewAll = ["admin", "gestor", "super_admin"].includes(user?.role ?? "");
   const { data: schedules = [], isLoading } = useSchedules();
   const { data: users = [] } = useOrganizationUsers();
   const { data: leads = [] } = useLeads();
   const deleteSchedule = useDeleteSchedule();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("minhas");
+  const [viewMode, setViewMode] = useState<ViewMode>(canViewAll ? "todas" : "minhas");
+  useEffect(() => { setViewMode(canViewAll ? "todas" : "minhas"); }, [canViewAll, user?.organization_id]);
   const [displayMode, setDisplayMode] = useState<"lista" | "calendario">("lista");
   const [calendarView, setCalendarView] = useState<CalendarView>("mes");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -52,8 +54,10 @@ export default function Agenda() {
     const schedule = schedules.find(item => item.id === linkedId);
     if (!schedule || openedId.current === linkedId) return;
     openedId.current = linkedId;
+    if (canViewAll) setViewMode("todas");
+    else setViewMode(schedule.assigned_to === user?.id ? "minhas" : "criadas");
     setEditItem(schedule); setCurrentDate(parseISO(schedule.scheduled_date)); setDialogOpen(true);
-  }, [schedules, linkedId]);
+  }, [schedules, linkedId, canViewAll, user?.id]);
 
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -88,18 +92,19 @@ export default function Agenda() {
   // Filter schedules by view mode
   const modeFiltered = useMemo(() => {
     if (!user) return [];
+    if (viewMode === "todas" && canViewAll) return schedules;
     if (viewMode === "minhas") {
       return schedules.filter((s) => s.assigned_to === user.id);
     }
     return schedules.filter((s) => s.created_by === user.id);
-  }, [schedules, viewMode, user]);
+  }, [schedules, viewMode, user, canViewAll]);
 
   // Apply search and filters
   const filtered = useMemo(() => {
     return modeFiltered.filter((s) => {
       if (search && !s.title.toLowerCase().includes(search.toLowerCase())) return false;
       if (filterStatus !== "all" && s.status !== filterStatus) return false;
-      if (filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
+      if (filterResponsavel === "unassigned" ? s.assigned_to !== null : filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
       if (filterSubtype !== "all" && (s.schedule_subtype ?? "") !== filterSubtype) return false;
       if (filterCity !== "all") {
         if (!s.location || !s.location.toLowerCase().includes(filterCity.toLowerCase())) return false;
@@ -173,6 +178,7 @@ export default function Agenda() {
                     <div key={s.id} className="text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 truncate cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium">{s.start_time.slice(0, 5)} </span>}
                       {s.title}
+                      {s.source === "flora" && <Badge variant="outline" className="ml-1 px-1 text-[9px]">Flora</Badge>}
                     </div>
                   ))}
                   {daySchedules.length > 2 && (
@@ -207,7 +213,8 @@ export default function Agenda() {
                     <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
-                      <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "—"}</div>
+                      {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
+                      <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                     </div>
                   ))}
                 </div>
@@ -232,8 +239,8 @@ export default function Agenda() {
               <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
-                  <div className="font-medium">{s.title}</div>
-                  <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "—"}</div>
+                  <div className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
+                  <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
                 {getStatusBadge(s.status)}
@@ -291,6 +298,7 @@ export default function Agenda() {
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
             <TabsList>
+              {canViewAll && <TabsTrigger value="todas">Todas</TabsTrigger>}
               <TabsTrigger value="minhas">Minhas Agendas</TabsTrigger>
               <TabsTrigger value="criadas">Criadas por mim</TabsTrigger>
             </TabsList>
@@ -334,6 +342,7 @@ export default function Agenda() {
               <SelectTrigger className="w-48"><SelectValue placeholder="Responsável" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos Responsáveis</SelectItem>
+                <SelectItem value="unassigned">Sem responsável</SelectItem>
                 {users.map((u) => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -396,7 +405,7 @@ export default function Agenda() {
                 ) : (
                   filtered.map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.title}</TableCell>
+                      <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</TableCell>
                       <TableCell>
                         {s.schedule_subtype ? (
                           <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
@@ -408,7 +417,7 @@ export default function Agenda() {
                       <TableCell>{format(parseISO(s.scheduled_date), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{s.start_time?.slice(0, 5) || "—"}</TableCell>
                       <TableCell>{getStatusBadge(s.status)}</TableCell>
-                      <TableCell>{userMap.get(s.assigned_to || "") || "—"}</TableCell>
+                      <TableCell>{userMap.get(s.assigned_to || "") || "Sem responsável"}</TableCell>
                       <TableCell className="max-w-[250px] truncate">{s.location || "—"}</TableCell>
                       <TableCell>
                         <DropdownMenu>

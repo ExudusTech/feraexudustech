@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useOrganization } from "@/hooks/use-organizations";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface AppHeaderProps {
   title: string;
@@ -19,6 +19,7 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
   const { isSuperAdmin } = usePermissions();
   const { data: organization } = useOrganization();
   const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b bg-card">
@@ -33,7 +34,7 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
             variant="outline"
             size="sm"
             className="gap-2 text-xs h-8 border-primary/20 hover:border-primary/40"
-            onClick={() => navigate("/admin/selecionar-organizacao")}
+            onClick={() => navigate(`/admin/selecionar-organizacao?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`)}
           >
             <Building2 className="h-3.5 w-3.5 text-primary" />
             <span className="max-w-[150px] truncate">{organization.name}</span>

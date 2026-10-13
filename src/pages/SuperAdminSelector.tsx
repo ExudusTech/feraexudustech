@@ -1,16 +1,20 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useAllOrganizations, type Organization } from "@/hooks/use-organizations";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Search, Building2, Users, Zap, ArrowRight, LogOut, Loader2 } from "lucide-react";
 import logoExudus from "@/assets/logo-exudus-new.jpeg";
+import { destinationFrom } from "@/lib/return-to";
+import { toast } from "@/hooks/use-toast";
 
 export default function SuperAdminSelector() {
-  const { user, signOut, switchOrganization } = useAuth();
+  const { user, session, isLoading: authLoading, signOut, switchOrganization } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = destinationFrom(location.search, location.state);
   const { data: organizations = [], isLoading } = useAllOrganizations();
   const [search, setSearch] = useState("");
 
@@ -22,15 +26,25 @@ export default function SuperAdminSelector() {
     );
   }, [organizations, search]);
 
-  const handleSelect = (org: Organization) => {
-    switchOrganization(org.id);
-    navigate("/dashboard");
+  const [switching, setSwitching] = useState(false);
+  const handleSelect = async (org: Organization) => {
+    setSwitching(true);
+    try {
+      await switchOrganization(org.id);
+      navigate(returnTo, { replace: true });
+    } catch (error) {
+      toast({ title: "Não foi possível selecionar a organização", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally { setSwitching(false); }
   };
 
   const handleLogout = async () => {
     await signOut();
     navigate("/auth");
   };
+
+  if (authLoading) return <div className="min-h-screen bg-background flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+  if (!session) return <Navigate to={`/auth?returnTo=${encodeURIComponent(returnTo)}`} replace />;
+  if (user?.role !== "super_admin") return <Navigate to={returnTo} replace />;
 
   return (
     <div className="relative flex min-h-screen bg-black overflow-hidden">
@@ -92,6 +106,7 @@ export default function SuperAdminSelector() {
               {filtered.map((org) => (
                 <button
                   key={org.id}
+                  disabled={switching}
                   onClick={() => handleSelect(org)}
                   className="w-full group rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.06] hover:border-red-500/20 p-5 text-left transition-all duration-200 backdrop-blur-sm"
                 >

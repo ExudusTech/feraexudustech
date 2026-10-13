@@ -23,12 +23,16 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!session) {
-    return <Navigate to="/auth" state={{ returnTo: `${location.pathname}${location.search}` }} replace />;
+    const returnTo = `${location.pathname}${location.search}`;
+    return <Navigate to={`/auth?returnTo=${encodeURIComponent(returnTo)}`} state={{ returnTo }} replace />;
   }
+
+  if (!user) return null;
 
   // Super admin must select an org first (unless going to admin pages or selector)
   if (isSuperAdmin && !user?.organization_id && location.pathname !== "/admin/organizacoes") {
-    return <Navigate to="/admin/selecionar-organizacao" replace />;
+    const returnTo = `${location.pathname}${location.search}`;
+    return <Navigate to={`/admin/selecionar-organizacao?returnTo=${encodeURIComponent(returnTo)}`} state={{ returnTo }} replace />;
   }
 
   if (!canAccessRoute(location.pathname)) {
