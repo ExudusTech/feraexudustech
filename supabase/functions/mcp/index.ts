@@ -569,29 +569,54 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
  * Para obter próximas datas disponíveis use consultar_rota_consultor.
  */
 async function verificarCoberturaRegiao(params: Record<string, unknown>): Promise<McpResponse> {
-  const { cidade, cep } = params as { cidade?: string; cep?: string };
-
-  if (!cidade && !cep) {
-    return fail("Forneça cidade ou CEP", "Pergunte ao cliente em qual cidade/bairro está localizado");
+  for (const key of ["cidade", "cep", "regiao", "estado"]) {
+    if (params[key] != null && (typeof params[key] !== "string" || (params[key] as string).length > 200)) {
+      return fail(`Parâmetro ${key} inválido`);
+    }
   }
-
-  const supabase = getClient();
-
-  let query = supabase
+  const { cidade, cep, regiao, estado } = params as { cidade?: string; cep?: string; regiao?: string; estado?: string };
+  if (cep && !validCep(cep)) return fail("CEP inválido. Informe 8 dígitos.");
+  if (!cidade && !cep && !regiao && !estado) {
+    return fail("Forneça cidade, CEP, região ou estado", "Pergunte ao cliente em qual cidade e estado está localizado");
+  }
+  const normalizeLocation = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const matchesCity = (areaCity: string | null) => {
+    const requested = normalizeLocation(cidade ?? "");
+    const candidate = normalizeLocation(areaCity ?? "");
+    return !!requested && !!candidate && (requested.includes(candidate) || candidate.includes(requested));
+  };
+  const { data, error } = await getClient()
     .from("ekkoa_coverage_areas")
     .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true);
-
-  if (cidade) query = query.ilike("city", `%${cidade}%`);
-
-  const { data: areas } = await query;
-
-  if (!areas || areas.length === 0) {
+  if (error) return fail(`Erro ao consultar cobertura: ${error.message}`);
+  const allAreas: CoverageRegion[] = data ?? [];
+  const postalMatch = cep ? narrowestCoverage(allAreas, cep) : null;
+  const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
+    : cep ? (postalMatch ? [postalMatch] : []) : allAreas.filter(area => matchesCity(area.city));
+  if (areas.length === 0) {
+    const state = normalizeLocation(estado ?? "");
+    const postal = validCep(cep);
+    const knownRjCities = "Rio de Janeiro|Niterói|São Gonçalo|Duque de Caxias|Nova Iguaçu|Belford Roxo|São João de Meriti|Mesquita|Nilópolis|Queimados|Itaboraí|Maricá|Magé|Guapimirim|Petrópolis|Teresópolis|Nova Friburgo|Cachoeiras de Macacu|Rio Bonito|Tanguá|Silva Jardim|Casimiro de Abreu|Rio das Ostras|Macaé|Campos dos Goytacazes|São João da Barra|São Francisco de Itabapoana|Quissamã|Carapebus|Conceição de Macabu|Araruama|Iguaba Grande|São Pedro da Aldeia|Arraial do Cabo|Cabo Frio|Armação dos Búzios|Búzios|Saquarema|Angra dos Reis|Paraty|Mangaratiba|Itaguaí|Seropédica|Volta Redonda|Barra Mansa|Resende|Itatiaia|Porto Real|Quatis|Barra do Piraí|Piraí|Pinheiral|Rio Claro|Valença|Vassouras|Miguel Pereira|Paty do Alferes|Paraíba do Sul|Três Rios|Areal|Comendador Levy Gasparian|Sapucaia|Sumidouro|Carmo|Cantagalo|Cordeiro|Duas Barras|Bom Jardim|Santa Maria Madalena|São Sebastião do Alto|Trajano de Moraes|São Fidélis|Itaocara|Aperibé|Santo Antônio de Pádua|Miracema|Laje do Muriaé|Itaperuna|Bom Jesus do Itabapoana|Natividade|Porciúncula|Varre-Sai|Cambuci|Cardoso Moreira|São José de Ubá|São José do Vale do Rio Preto|Engenheiro Paulo de Frontin|Mendes|Paracambi|Japeri|Rio das Flores|Comendador Levy Gasparian";
+    const inferredRj = !!postal && postal >= "20000000" && postal <= "28999999" ||
+      knownRjCities.split("|").some(city => normalizeLocation(city) === normalizeLocation(cidade ?? "")) ||
+      allAreas.some(area => matchesCity(area.city));
+    const isRj = state ? ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state) : inferredRj;
+    if (!state && !isRj) {
+      const mensagem = "Você pode me confirmar o estado ou o CEP do estabelecimento?";
+      return ok({ coberto: false, vinculo: null, precisa_confirmar: true, cidade: cidade ?? null,
+        mensagem_para_lead: mensagem }, mensagem, "Pergunte o estado ou CEP antes de definir o vínculo; não registre fora de cobertura ainda");
+    }
+    const vinculo = isRj ? "MATRIZ" : "SEM_COBERTURA";
+    const mensagem = isRj
+      ? "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento."
+      : "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
     return ok(
-      { coberto: false, cidade: cidade ?? cep },
-      `${cidade ?? cep} não está na área de cobertura atual`,
-      "Use registrar_fora_cobertura para não perder este lead"
+      { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem }, mensagem,
+      isRj ? "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura"
+        : "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente"
     );
   }
 
@@ -608,7 +633,8 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   });
 
   return ok(
-    { coberto: true, cobertura },
+    { coberto: true, vinculo: "DISTRIBUIDORA", cobertura,
+      mensagem_para_lead: "Sua região é atendida pela NitsClean Distribuidora. Vamos combinar a visita do consultor?" },
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
     "Use consultar_rota_consultor para obter as próximas datas e propor agendamento de visita técnica"
   );
@@ -1725,45 +1751,56 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
 }
 
 async function registrarForaCobertura(params: Record<string, unknown>): Promise<McpResponse> {
-  const { nome, telefone, instagram_handle, cidade, interaction_id, canal, produto_interesse } = params as {
+  const { nome, telefone, instagram_handle, cidade, interaction_id, canal, produto_interesse, estado, chat_id } = params as {
     nome?: string; telefone?: string; instagram_handle?: string; cidade: string;
-    interaction_id?: string; canal?: string; produto_interesse?: string;
+    interaction_id?: string; canal?: string; produto_interesse?: string; estado?: string; chat_id?: string;
   };
 
-  if (!cidade) return fail("Cidade é obrigatória para registrar fora da cobertura");
+  for (const key of ["nome", "telefone", "instagram_handle", "cidade", "interaction_id", "canal", "produto_interesse", "estado", "chat_id"]) {
+    if (params[key] != null && (typeof params[key] !== "string" || (params[key] as string).length > 500)) {
+      return fail(`Parâmetro ${key} inválido`);
+    }
+  }
+  if (!cidade?.trim()) return fail("Cidade é obrigatória para registrar fora da cobertura");
 
   const supabase = getClient();
-
-  const { data: lead, error } = await supabase
-    .from("leads")
-    .upsert(
-      {
+  let existingId: string | undefined;
+  if (interaction_id || chat_id) {
+    let lookup = supabase.from("leads").select("id").eq("organization_id", NITSCLEAN_ORG_ID);
+    if (chat_id) lookup = lookup.eq("gptmaker_chat_id", chat_id)
+      .gte("created_at", new Date(Date.now() - 86400000).toISOString());
+    else lookup = lookup.eq("interaction_id", interaction_id);
+    const { data, error } = await lookup.order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) return fail(`Erro ao consultar lead: ${error.message}`);
+    existingId = data?.id;
+  }
+  const values = {
         organization_id:  NITSCLEAN_ORG_ID,
         contact_name:     nome ?? "Contato Anônimo",
         contact_phone:    telefone          ?? null,
         instagram_handle: instagram_handle  ?? null,
         title:            `Fora de cobertura — ${cidade}`,
-        stage:            "perdido",
+        stage:            "fechado_perdido",
         source:           canal?.toLowerCase() ?? "whatsapp",
         canal_origem:     (canal ?? "WHATSAPP") as string,
         interaction_id:   interaction_id   ?? null,
+        gptmaker_chat_id:  chat_id ?? null,
         fora_cobertura:   true,
         vinculo:          "SEM_COBERTURA",
         category:         produto_interesse ?? null,
-        description:      `Lead fora da área de cobertura. Cidade: ${cidade}`,
+        description:      `Lead fora da área de cobertura. Cidade: ${cidade}${estado ? ` — ${estado}` : ""}`,
         created_by_flora: true,
-      },
-      { onConflict: "interaction_id" }
-    )
-    .select("id")
-    .single();
-
-  if (error && !error.message.includes("duplicate")) {
+      };
+  const write = existingId
+    ? supabase.from("leads").update(values).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", existingId)
+    : supabase.from("leads").insert(values);
+  const { data: lead, error } = await write.select("id").single();
+  if (error) {
     return fail(`Erro ao registrar: ${error.message}`);
   }
 
   return ok(
-    { registrado: true, cidade },
+    { registrado: true, cidade, lead_id: lead?.id, vinculo: "SEM_COBERTURA" },
     `Lead em ${cidade} registrado — fora da cobertura atual`,
     "Informe ao cliente: 'No momento não atendemos sua região, mas registramos seu interesse. Quando expandirmos, entraremos em contato!'"
   );
@@ -1950,12 +1987,14 @@ const TOOLS_MANIFEST = [
   },
   {
     name: "verificar_cobertura_regiao",
-    description: "Verifica se cidade do cliente está na área de cobertura. Retorna coberto y/n e dias de visita. Para datas concretas use consultar_rota_consultor.",
+    description: "Define vinculo DISTRIBUIDORA (área ativa), MATRIZ (RJ sem área) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
     parameters: {
       type: "object",
       properties: {
         cidade: { type: "string" },
         cep:    { type: "string" },
+        estado: { type: "string", description: "UF ou nome do estado; RJ descoberto encaminha à MATRIZ" },
+        regiao: { type: "string", description: "Nome exato de uma área ativa; prioridade sobre CEP e cidade" },
       },
     },
   },
@@ -2203,7 +2242,7 @@ const TOOLS_MANIFEST = [
   },
   {
     name: "registrar_fora_cobertura",
-    description: "Registra lead de cidade não coberta. Sempre registrar — tem valor de analytics para expansão.",
+    description: "Registra interesse de lead SEM_COBERTURA (fora do RJ). Não usar para vínculo MATRIZ. Não dispara notificação da equipe.",
     parameters: {
       type: "object",
       required: ["cidade"],
@@ -2212,6 +2251,8 @@ const TOOLS_MANIFEST = [
         telefone:          { type: "string" },
         instagram_handle:  { type: "string" },
         cidade:            { type: "string" },
+        estado:            { type: "string" },
+        chat_id:           { type: "string", description: "Chat GPT Maker; preserva canal e identificador do contato" },
         interaction_id:    { type: "string" },
         canal:             { type: "string" },
         produto_interesse: { type: "string" },
