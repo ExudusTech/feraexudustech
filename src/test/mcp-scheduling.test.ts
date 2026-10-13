@@ -62,6 +62,19 @@ const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Empresa",
   cidade: "Cabo Frio", data_visita: "2026-10-12", horario: "13:30", interaction_id: "test" };
 
 describe("MCP visit scheduling", () => {
+  it.each(["agendar_visita_tecnica", "agendar_visita"])("%s records Flora origin and selected consultant", async method => {
+    const h = harness("Diversey", [
+      { dia_semana: "6ª feira", horario_inicio: "08:00", horario_fim: "18:00", consultant_user_id: "wrong" },
+      { dia_semana: "2ª feira", horario_inicio: "13:30", horario_fim: "16:30", consultant_user_id: "consultant" },
+    ] as any);
+    expect((await h.route(visit, method)).success).toBe(true);
+    expect(h.writes.find(w => w.table === "schedules")?.value).toMatchObject({ source: "flora", assigned_to: "consultant" });
+  });
+  it("leaves an area without consultant unassigned", async () => {
+    const h = harness();
+    await h.route(visit);
+    expect(h.writes.find(w => w.table === "schedules")?.value).toMatchObject({ source: "flora", assigned_to: null });
+  });
   it.each(["agendar_visita_tecnica", "agendar_visita"])("%s resolves lead product", async (method) => {
     const h = harness();
     const result = await h.route(visit, method);
