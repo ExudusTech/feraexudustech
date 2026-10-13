@@ -1,4 +1,6 @@
 # Tasks
+- [ ] Fix outside-coverage registration without unsupported ON CONFLICT and verify real-shaped WhatsApp inputs.
+- [ ] Return explicit coverage bindings and optional region/CEP matching; add regressions and deploy mcp.
 - [x] Fix organization-wide Agenda visibility, Flora origin and coverage consultant assignment; RLS checked, supplied visit backfilled, 147 tests passed and mcp deployed.
 - [x] Preserve notification destinations through login/reload and successful organization selection; signed-out browser and mocked authenticated navigation verified.
 - [x] Request latest frontend publication to https://fera.exudustech.com.br (scheduled).
