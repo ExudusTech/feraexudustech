@@ -257,7 +257,7 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
   const lines: string[] = [];
   if (event === "agendamento") {
     lines.push("📅 Nova visita agendada pela Flora", `Cliente: ${client}`);
-    const street = (text(params.endereco) || text(lead?.endereco)).split(/\s[-–]\s/)[0].split(",").slice(0, 2).join(",");
+    const street = (text(params.endereco) || text(lead?.endereco)).split(/\s[-–]\s/)[0].split(",").slice(0, 2).map(part => part.trim()).join(", ");
     const neighborhood = text(params.bairro) || text(lead?.bairro);
     const region = text(params.regiao) || text(lead?.regiao) || city;
     const where = [street, neighborhood].filter(Boolean).join(",");
