@@ -4,7 +4,7 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
-const allEvents = ["agendamento", "transferencia", "lead_matriz", "fora_cobertura"];
+const allEvents = ["agendamento", "transferencia", "lead_matriz"];
 function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[] } = {}) {
   const recipients = options.recipients ?? [
     { id: "all", nome: "PH", whatsapp: "5521995367752", organization_id: org, ativo: true, eventos: allEvents },
@@ -68,9 +68,13 @@ describe("MCP team WhatsApp notifications", () => {
     expect(log.event_type).toBe(/matriz/i.test(motivo) ? "lead_matriz" : "transferencia");
     expect(log.payload.message).toContain(motivo); expect(log.payload.message).toContain("/leads?lead=lead");
   });
-  it("notifies outside coverage using the created lead", async () => {
+  it("registers outside coverage without any team notification", async () => {
     const h = harness(); expect((await h.route("registrar_fora_cobertura", { nome: "Contato", cidade: "Cidade fora" })).success).toBe(true); await h.flush();
-    expect(h.writes.find(w => w.table === "notification_logs").value.event_type).toBe("fora_cobertura");
+    expect(h.writes.some(w => w.table === "leads")).toBe(true);
+    expect(h.tasks).toHaveLength(0);
+    expect(h.fetchMock).not.toHaveBeenCalled();
+    expect(h.reads.some(r => r.table === "notification_recipients")).toBe(false);
+    expect(h.writes.some(w => w.table === "notification_logs")).toBe(false);
   });
   it("does not dispatch rejected bookings", async () => {
     const h = harness(); expect((await h.route("agendar_visita_tecnica", { ...visit, horario: "10:00" })).success).toBe(false);

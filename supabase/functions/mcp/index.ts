@@ -242,7 +242,7 @@ async function logInteraction(
 
 // ─── Team notifications: isolated background work, tenant/event subscriptions ───
 
-type TeamEvent = "agendamento" | "transferencia" | "lead_matriz" | "fora_cobertura";
+type TeamEvent = "agendamento" | "transferencia" | "lead_matriz";
 const FERA_NOTIFICATION_URL = "https://fera.exudustech.com.br";
 
 function notificationText(event: TeamEvent, params: Record<string, unknown>, lead: Record<string, unknown> | null,
@@ -271,10 +271,9 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
     const product = text(params.produto_interesse) || text(lead?.category);
     if (product) lines.push(`Produto: ${product}`);
   } else {
-    const heading = event === "lead_matriz" ? "🏢 Lead recebido da Matriz" : event === "fora_cobertura"
-      ? "📍 Lead fora de cobertura" : "👤 Atendimento transferido pela Flora";
+    const heading = event === "lead_matriz" ? "🏢 Lead recebido da Matriz" : "👤 Atendimento transferido pela Flora";
     lines.push(heading, `Cliente: ${client}`);
-    const reason = text(params.motivo) || (event === "fora_cobertura" ? "Região sem atendimento atual" : "Atendimento humano solicitado");
+    const reason = text(params.motivo) || "Atendimento humano solicitado";
     lines.push(`Motivo: ${reason}`);
     if (city) lines.push(`Cidade: ${city}`);
     const phone = text(params.telefone) || text(lead?.contact_phone);
@@ -1749,8 +1748,6 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
   if (error && !error.message.includes("duplicate")) {
     return fail(`Erro ao registrar: ${error.message}`);
   }
-
-  queueTeamNotification(supabase, "fora_cobertura", params, lead?.id);
 
   return ok(
     { registrado: true, cidade },
