@@ -1,4 +1,5 @@
 # Tasks
+- [x] Remove outside-coverage team event from subscriptions, UI and dispatch; 129 tests passed and mcp deployed, reusing existing GPTMAKER_API_TOKEN without requesting or changing secrets.
 - [x] Extend existing team recipients with papel/eventos and admin/gestor RLS; seed PH (teste) and add settings management.
 - [x] Add guarded background WhatsApp dispatch and direct lead/schedule links; 129 tests passed and mcp deployed.
 - [ ] Verify authenticated settings save/read and accessible-item links live (blocked: no requesting-user auth session; user must sign in to preview).

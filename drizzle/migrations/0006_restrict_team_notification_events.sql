@@ -1,0 +1,3 @@
+ALTER TABLE public.notification_recipients DROP CONSTRAINT team_recipient_events_valid;
+ALTER TABLE public.notification_recipients ADD CONSTRAINT team_recipient_events_valid CHECK (eventos <@ ARRAY['agendamento','transferencia','lead_matriz']::text[]);
+COMMENT ON COLUMN public.notification_recipients.eventos IS 'Valid team notification subscriptions: agendamento, transferencia, lead_matriz. Outside coverage never triggers team delivery.';

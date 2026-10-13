@@ -11,6 +11,15 @@ vi.mock("@/hooks/use-team-notifications", async importOriginal => {
 });
 afterEach(() => { cleanup(); mocks.save.mockClear(); mocks.mutate.mockClear(); mocks.role = "gestor"; });
 describe("Team recipient management", () => {
+  it("offers only the three supported events", () => {
+    render(<TeamNotifications />);
+    fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
+    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
+    expect(screen.getByLabelText("Agendamento")).toBeInTheDocument();
+    expect(screen.getByLabelText("Transferência")).toBeInTheDocument();
+    expect(screen.getByLabelText("Lead da Matriz")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Fora de cobertura")).not.toBeInTheDocument();
+  });
   it("gestor creates a recipient with event subscriptions", async () => {
     render(<TeamNotifications />);
     fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
