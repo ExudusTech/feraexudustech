@@ -1,6 +1,8 @@
 # Tasks
-- [ ] Fix organization-wide Agenda visibility, Flora origin and coverage consultant assignment; verify RLS and regressions.
-- [ ] Preserve notification destinations through login and organization selection; verify live authenticated flows and publish latest frontend.
+- [x] Fix organization-wide Agenda visibility, Flora origin and coverage consultant assignment; RLS checked, supplied visit backfilled, 147 tests passed and mcp deployed.
+- [x] Preserve notification destinations through login/reload and successful organization selection; signed-out browser and mocked authenticated navigation verified.
+- [ ] Publish latest frontend and confirm custom-domain update.
+- [ ] Verify real PH authenticated Agenda/coverage save and post-login item opening (blocked: self session unavailable; explicit PH session approval unavailable, requires preview sign-in).
 - [x] Remove outside-coverage team event from subscriptions, UI and dispatch; 129 tests passed and mcp deployed, reusing existing GPTMAKER_API_TOKEN without requesting or changing secrets.
 - [x] Extend existing team recipients with papel/eventos and admin/gestor RLS; seed PH (teste) and add settings management.
 - [x] Add guarded background WhatsApp dispatch and direct lead/schedule links; 129 tests passed and mcp deployed.
