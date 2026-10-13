@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,13 @@ import { useToast } from "@/hooks/use-toast";
 import { Lock, Mail, User, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logoExudus from "@/assets/logo-exudus-new.jpeg";
+import { destinationFrom } from "@/lib/return-to";
 
 export default function Auth() {
-  const { signIn, signUp, session } = useAuth();
+  const { signIn, signUp, session, user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const requestedPath = location.state?.returnTo;
-  const returnTo = typeof requestedPath === "string" && /^\/(agenda|leads)(\?|$)/.test(requestedPath) ? requestedPath : "/dashboard";
+  const returnTo = destinationFrom(location.search, location.state);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -28,10 +28,9 @@ export default function Auth() {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
-  if (session) {
-    navigate(returnTo);
-    return null;
-  }
+  useEffect(() => {
+    if (session && user && !authLoading) navigate(returnTo, { replace: true });
+  }, [session, user, authLoading, navigate, returnTo]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +45,6 @@ export default function Auth() {
         setIsLoading(false);
         return;
       }
-      navigate(returnTo);
     } catch (error: any) {
       toast({
         title: "Erro ao entrar",

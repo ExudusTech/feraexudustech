@@ -803,6 +803,7 @@ export type Database = {
       ekkoa_coverage_areas: {
         Row: {
           city: string | null
+          consultant_user_id: string | null
           created_at: string
           created_by: string
           description: string | null
@@ -823,6 +824,7 @@ export type Database = {
         }
         Insert: {
           city?: string | null
+          consultant_user_id?: string | null
           created_at?: string
           created_by: string
           description?: string | null
@@ -843,6 +845,7 @@ export type Database = {
         }
         Update: {
           city?: string | null
+          consultant_user_id?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
@@ -3071,6 +3074,7 @@ export type Database = {
           schedule_subtype: string | null
           schedule_type: string
           scheduled_date: string
+          source: string
           start_time: string | null
           status: string
           title: string
@@ -3092,6 +3096,7 @@ export type Database = {
           schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date: string
+          source?: string
           start_time?: string | null
           status?: string
           title: string
@@ -3113,6 +3118,7 @@ export type Database = {
           schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date?: string
+          source?: string
           start_time?: string | null
           status?: string
           title?: string

@@ -18,6 +18,7 @@ export interface EkkoaCoverageArea {
   dia_semana: string | null;
   horario_inicio: string | null;
   horario_fim: string | null;
+  consultant_user_id: string | null;
   is_active: boolean;
   created_by: string;
   created_at: string;
@@ -47,6 +48,8 @@ export function useCreateEkkoaCoverageArea() {
         name: input.name, description: input.description, city: input.city, state: input.state,
         zip_code_start: input.zip_code_start, zip_code_end: input.zip_code_end,
         radius_km: input.radius_km, latitude: input.latitude, longitude: input.longitude,
+        dia_semana: input.dia_semana, horario_inicio: input.horario_inicio, horario_fim: input.horario_fim,
+        consultant_user_id: input.consultant_user_id ?? null,
         is_active: input.is_active ?? true,
         organization_id: user.organization_id, created_by: user.id,
       } as any).select().single();

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface AuthUser {
   id: string;
@@ -21,12 +22,13 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Super admin: switch to another organization */
-  switchOrganization: (orgId: string) => void;
+  switchOrganization: (orgId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,19 +94,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         setSession(session);
         if (session?.user) {
-          setTimeout(() => fetchUserProfile(session.user), 0);
+          setIsLoading(true);
+          setTimeout(async () => {
+            await fetchUserProfile(session.user);
+            setIsLoading(false);
+          }, 0);
         } else {
           setUser(null);
           sessionStorage.removeItem("super_admin_org_id");
+          setIsLoading(false);
         }
-        setIsLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        fetchUserProfile(session.user);
+        await fetchUserProfile(session.user);
       }
       setIsLoading(false);
     });
@@ -137,12 +143,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const switchOrganization = async (orgId: string) => {
     if (!user || user.role !== "super_admin") return;
-    sessionStorage.setItem("super_admin_org_id", orgId);
     // Update profile in DB so RLS policies reflect the new org
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({ organization_id: orgId })
       .eq("user_id", user.id);
+    if (error) throw error;
+    sessionStorage.setItem("super_admin_org_id", orgId);
+    queryClient.clear();
     setUser(prev => prev ? { ...prev, organization_id: orgId } : null);
   };
 
