@@ -1,0 +1,13 @@
+ALTER TABLE public.notification_recipients ADD COLUMN papel text NOT NULL DEFAULT 'gestor', ADD COLUMN eventos text[] NOT NULL DEFAULT '{}';
+COMMENT ON COLUMN public.notification_recipients.roles IS 'DEPRECATED: team notification delivery now uses papel and eventos; retained for backward compatibility';
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.notification_recipients TO authenticated;
+GRANT ALL ON public.notification_recipients TO service_role;
+ALTER TABLE public.notification_recipients ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS notif_recipients_org_access ON public.notification_recipients;
+CREATE POLICY team_recipients_read ON public.notification_recipients FOR SELECT TO authenticated USING (organization_id = public.get_user_organization_id(auth.uid()));
+CREATE POLICY team_recipients_insert ON public.notification_recipients FOR INSERT TO authenticated WITH CHECK (organization_id = public.get_user_organization_id(auth.uid()) AND (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'gestor') OR public.has_role(auth.uid(), 'super_admin')));
+CREATE POLICY team_recipients_update ON public.notification_recipients FOR UPDATE TO authenticated USING (organization_id = public.get_user_organization_id(auth.uid()) AND (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'gestor') OR public.has_role(auth.uid(), 'super_admin'))) WITH CHECK (organization_id = public.get_user_organization_id(auth.uid()) AND (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'gestor') OR public.has_role(auth.uid(), 'super_admin')));
+CREATE POLICY team_recipients_delete ON public.notification_recipients FOR DELETE TO authenticated USING (organization_id = public.get_user_organization_id(auth.uid()) AND (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'gestor') OR public.has_role(auth.uid(), 'super_admin')));
+ALTER TABLE public.notification_recipients ADD CONSTRAINT team_recipient_events_valid CHECK (eventos <@ ARRAY['agendamento','transferencia','lead_matriz','fora_cobertura']::text[]);
+CREATE INDEX team_recipients_active_org ON public.notification_recipients (organization_id) WHERE ativo;
+CREATE INDEX team_recipients_events ON public.notification_recipients USING gin(eventos);

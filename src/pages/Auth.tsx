@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,9 @@ import logoExudus from "@/assets/logo-exudus-new.jpeg";
 export default function Auth() {
   const { signIn, signUp, session } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedPath = location.state?.returnTo;
+  const returnTo = typeof requestedPath === "string" && /^\/(agenda|leads)(\?|$)/.test(requestedPath) ? requestedPath : "/dashboard";
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -26,7 +29,7 @@ export default function Auth() {
   const [forgotLoading, setForgotLoading] = useState(false);
 
   if (session) {
-    navigate("/dashboard");
+    navigate(returnTo);
     return null;
   }
 
@@ -43,7 +46,7 @@ export default function Auth() {
         setIsLoading(false);
         return;
       }
-      navigate("/");
+      navigate(returnTo);
     } catch (error: any) {
       toast({
         title: "Erro ao entrar",

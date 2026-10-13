@@ -9,3 +9,5 @@
 - Select MCP coverage centrally by exact region, narrowest matching CEP interval, then legacy city lookup so consultation and booking agree without broadening explicit selectors.
 - Keep establishment provider requests server-side, bounded, sequential and cached with graceful fallbacks so Google failures cannot interrupt Flora conversations; persist CEP in the existing lead zip_code column to avoid duplicate address fields.
 - Keep establishment name matching and short-address confirmation local to the lookup tool, and separate biased/unbiased cache entries, so shared parameter normalization and other tools remain unchanged.
+- Team notifications use organization/event subscriptions and guarded EdgeRuntime background delivery; notification failures never change MCP responses, and provider response bodies are never logged.
+- Notification links open only records returned under existing access policies and preserve the requested item through login; this avoids exposing other tenants or losing the notification destination.

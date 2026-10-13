@@ -1,4 +1,8 @@
 # Tasks
+- [x] Extend existing team recipients with papel/eventos and admin/gestor RLS; seed PH (teste) and add settings management.
+- [x] Add guarded background WhatsApp dispatch and direct lead/schedule links; 129 tests passed and mcp deployed.
+- [ ] Verify authenticated settings save/read and accessible-item links live (blocked: no requesting-user auth session; user must sign in to preview).
+- [ ] Verify real WhatsApp delivery (blocked: no live event executed; only mocked provider dispatch verified).
 - [x] Adjust only establishment lookup: optional city with Lagos bias, unique name match and gentle short-address messages; 111 MCP tests passed and mcp deployment confirmed.
 - [x] Add localizar_estabelecimento with bounded Google/ViaCEP lookup and precise coverage selection.
 - [x] Persist optional lead location fields, test regressions (101 passing) and deploy mcp (confirmed).

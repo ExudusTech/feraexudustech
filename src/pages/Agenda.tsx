@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,16 @@ export default function Agenda() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const [searchParams] = useSearchParams();
+  const linkedId = searchParams.get("agendamento");
+  const openedId = useRef<string | null>(null);
+  useEffect(() => {
+    const schedule = schedules.find(item => item.id === linkedId);
+    if (!schedule || openedId.current === linkedId) return;
+    openedId.current = linkedId;
+    setEditItem(schedule); setCurrentDate(parseISO(schedule.scheduled_date)); setDialogOpen(true);
+  }, [schedules, linkedId]);
 
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -265,6 +276,7 @@ export default function Agenda() {
   return (
     <AppLayout>
       <div className="space-y-6">
+        {linkedId && !isLoading && !schedules.some(item => item.id === linkedId) && <p role="alert" className="text-muted-foreground">Agendamento não encontrado ou sem permissão de acesso.</p>}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Agenda</h1>

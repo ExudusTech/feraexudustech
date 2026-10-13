@@ -39,7 +39,7 @@ const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID") ?? "7fd8333b-578a-4db8
 
 // GPT Maker — notificações via Florazap (WhatsApp)
 const GPTMAKER_API_TOKEN          = Deno.env.get("GPTMAKER_API_TOKEN") ?? "";
-const GPTMAKER_FLORAZAP_CHANNEL_ID = Deno.env.get("GPTMAKER_FLORAZAP_CHANNEL_ID") ?? "3DF9D839DDCF463A3A350ADF91C40B89";
+const GPTMAKER_WHATSAPP_CHANNEL_ID = Deno.env.get("GPTMAKER_WHATSAPP_CHANNEL_ID") ?? "";
 
 // CORS headers
 const CORS_HEADERS = {
@@ -240,88 +240,102 @@ async function logInteraction(
   });
 }
 
-// ─── notificar_equipe — sistema de notificações interno ──────────────────────
-//
-// Função interna: NÃO exposta como tool MCP à Flora.
-// Chamada pelos handlers de tools que precisam notificar a equipe.
-//
-// roles: quais papéis devem receber (ex: ["admin", "consultor"])
-// event_type: código do evento (ex: "visita_agendada")
-// mensagem: texto final da notificação (já formatado)
-//
-// Fluxo:
-//   1. Busca notification_recipients ativos com os roles solicitados
-//   2. Para cada recipient com whatsapp, chama GPT Maker API (Florazap)
-//   3. Loga o resultado em notification_logs
-//   4. Erros são silenciosos — nunca falham o fluxo principal
+// ─── Team notifications: isolated background work, tenant/event subscriptions ───
 
-async function notificarEquipe(
-  supabase: ReturnType<typeof getClient>,
-  roles: string[],
-  event_type: string,
-  mensagem: string,
-  payload?: Record<string, unknown>
-): Promise<void> {
-  if (!GPTMAKER_API_TOKEN) {
-    console.warn("[notificar_equipe] GPTMAKER_API_TOKEN não configurado — pulando notificações");
-    return;
+type TeamEvent = "agendamento" | "transferencia" | "lead_matriz" | "fora_cobertura";
+const FERA_NOTIFICATION_URL = "https://fera.exudustech.com.br";
+
+function notificationText(event: TeamEvent, params: Record<string, unknown>, lead: Record<string, unknown> | null,
+  leadId?: string, scheduleId?: string): string {
+  const text = (value: unknown) => typeof value === "string" ? value.replace(/[\r\n]+/g, " ").trim().slice(0, 240) : "";
+  const company = text(params.empresa) || text(lead?.empresa_nome) || text(lead?.company);
+  const contact = text(params.nome_contato) || text(params.nome) || text(lead?.contact_name);
+  const client = [company, contact].filter(Boolean).join(" — ") || "Não informado";
+  const city = text(params.cidade) || text(lead?.regiao);
+  const link = scheduleId ? `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(scheduleId)}`
+    : leadId ? `${FERA_NOTIFICATION_URL}/leads?lead=${encodeURIComponent(leadId)}` : `${FERA_NOTIFICATION_URL}/leads`;
+  const lines: string[] = [];
+  if (event === "agendamento") {
+    lines.push("📅 Nova visita agendada pela Flora", `Cliente: ${client}`);
+    const street = (text(params.endereco) || text(lead?.endereco)).split(/\s[-–]\s/)[0].split(",").slice(0, 2).map(part => part.trim()).join(", ");
+    const neighborhood = text(params.bairro) || text(lead?.bairro);
+    const region = text(params.regiao) || text(lead?.regiao) || city;
+    const where = [street, neighborhood].filter(Boolean).join(", ");
+    if (where || region) lines.push(`Onde: ${where}${region ? `${where ? " " : ""}(${region})` : ""}`);
+    const dateString = text(params.data_visita);
+    const date = new Date(`${dateString}T12:00:00Z`);
+    const dateLabel = Number.isFinite(date.getTime()) ? date.toLocaleDateString("pt-BR", {
+      timeZone: "UTC", weekday: "long", day: "2-digit", month: "2-digit",
+    }) : dateString;
+    lines.push(`Quando: ${dateLabel} às ${text(params.horario).slice(0, 5)}`);
+    const product = text(params.produto_interesse) || text(lead?.category);
+    if (product) lines.push(`Produto: ${product}`);
+  } else {
+    const heading = event === "lead_matriz" ? "🏢 Lead recebido da Matriz" : event === "fora_cobertura"
+      ? "📍 Lead fora de cobertura" : "👤 Atendimento transferido pela Flora";
+    lines.push(heading, `Cliente: ${client}`);
+    const reason = text(params.motivo) || (event === "fora_cobertura" ? "Região sem atendimento atual" : "Atendimento humano solicitado");
+    lines.push(`Motivo: ${reason}`);
+    if (city) lines.push(`Cidade: ${city}`);
+    const phone = text(params.telefone) || text(lead?.contact_phone);
+    if (phone) lines.push(`Telefone: ${phone}`);
   }
+  return [...lines, `Ver no Fera: ${link}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
+}
 
-  // 1. Buscar destinatários ativos com qualquer um dos roles solicitados
-  const { data: recipients, error } = await supabase
-    .from("notification_recipients")
-    .select("id, nome, whatsapp, email, roles")
-    .eq("organization_id", NITSCLEAN_ORG_ID)
-    .eq("ativo", true)
-    .overlaps("roles", roles);   // role array overlap
-
-  if (error || !recipients?.length) {
-    console.warn(`[notificar_equipe] Nenhum destinatário encontrado para roles: ${roles.join(", ")}`);
-    return;
+async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string): Promise<void> {
+  const { data: recipients, error } = await supabase.from("notification_recipients")
+    .select("id, nome, whatsapp").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
+    .contains("eventos", [event]);
+  if (error) throw new Error("Recipient lookup failed");
+  if (!recipients?.length) return;
+  let lead: Record<string, unknown> | null = null;
+  if (leadId || params.interaction_id) {
+    let query = supabase.from("leads").select("id, empresa_nome, company, contact_name, contact_phone, endereco, bairro, regiao, category")
+      .eq("organization_id", NITSCLEAN_ORG_ID);
+    query = leadId ? query.eq("id", leadId) : query.eq("interaction_id", params.interaction_id);
+    const result = await query.maybeSingle();
+    if (!result.error && result.data) { lead = result.data; leadId = result.data.id; }
   }
-
-  // 2. Enviar para cada destinatário
-  for (const r of recipients) {
-    if (!r.whatsapp) continue;
-
-    let status: "SENT" | "FAILED" = "SENT";
-    let errorMsg: string | null = null;
-
+  const message = notificationText(event, params, lead, leadId, scheduleId);
+  for (const recipient of recipients) {
+    let status = "FAILED";
+    let errorMessage: string | null = null;
     try {
-      const res = await fetch(
-        `https://app.gptmaker.ai/v2/channel/${GPTMAKER_FLORAZAP_CHANNEL_ID}/start-conversation`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${GPTMAKER_API_TOKEN}`,
-          },
-          body: JSON.stringify({ phone: r.whatsapp, message: mensagem }),
-        }
-      );
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`HTTP ${res.status}: ${body}`);
-      }
-    } catch (err) {
-      status   = "FAILED";
-      errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[notificar_equipe] Falha ao notificar ${r.nome} (${r.whatsapp}):`, errorMsg);
+      if (!GPTMAKER_API_TOKEN || !GPTMAKER_WHATSAPP_CHANNEL_ID) throw new Error("CONFIG_MISSING");
+      if (!/^\d{8,15}$/.test(recipient.whatsapp ?? "")) throw new Error("INVALID_PHONE");
+      const response = await fetch(`https://api.gptmaker.ai/v2/channel/${GPTMAKER_WHATSAPP_CHANNEL_ID}/start-conversation`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${GPTMAKER_API_TOKEN}` },
+        body: JSON.stringify({ phone: recipient.whatsapp, message }), signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) errorMessage = `HTTP ${response.status}`;
+      else status = "SENT";
+      // Never store provider response bodies: they can echo credentials or contact data.
+      await response.body?.cancel();
+    } catch (error) {
+      errorMessage = error instanceof Error && ["CONFIG_MISSING", "INVALID_PHONE"].includes(error.message)
+        ? error.message : "DELIVERY_FAILED";
     }
-
-    // 3. Logar resultado
-    await supabase.from("notification_logs").insert({
-      organization_id: NITSCLEAN_ORG_ID,
-      event_type,
-      recipient_id:   r.id,
-      recipient_name: r.nome,
-      channel:        "WHATSAPP",
-      destination:    r.whatsapp,
-      payload:        payload ?? null,
-      status,
-      error_message:  errorMsg,
-    });
+    try {
+      const { error: logError } = await supabase.from("notification_logs").insert({
+        organization_id: NITSCLEAN_ORG_ID, event_type: event, recipient_id: recipient.id, recipient_name: recipient.nome,
+        channel: "WHATSAPP", destination: recipient.whatsapp, payload: { lead_id: leadId ?? null, schedule_id: scheduleId ?? null, message },
+        status, error_message: errorMessage,
+      });
+      if (logError) console.error("[team_notifications] Delivery log failed");
+    } catch { console.error("[team_notifications] Delivery log failed"); }
   }
+}
+
+function queueTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string): void {
+  try {
+    const task = Promise.resolve().then(() => dispatchTeamNotification(supabase, event, params, leadId, scheduleId))
+      .catch(() => { console.error("[team_notifications] Background delivery failed"); });
+    const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (task: Promise<void>) => void } }).EdgeRuntime;
+    runtime?.waitUntil(task);
+  } catch { console.error("[team_notifications] Could not schedule delivery"); }
 }
 
 // ─── Utility: SHA-256 hash ────────────────────────────────────────────────────
@@ -1437,27 +1451,8 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
 
-  // ── Notificar equipe (admin + consultor) de forma assíncrona ──
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
-  const notifMsg =
-    `📅 *Nova visita técnica agendada!*\n\n` +
-    `👤 Lead: ${nome_contato}${empresa ? ` — ${empresa}` : ""}\n` +
-    `📍 Cidade: ${cidade}\n` +
-    `🗓️ Data: ${dataFmt} às ${horario}h\n` +
-    (product ? `🔬 Produto: ${product}\n` : "") +
-    (telefone ? `📞 Tel: ${telefone}\n` : "") +
-    `\n_Agendado pela Flora via ${["Instagram","WhatsApp","WebChat","Messenger"].find(c => interaction_id?.includes(c)) ?? "canal digital"}_`;
-
-  notificarEquipe(supabase, ["admin", "consultor"], "visita_agendada", notifMsg, {
-    schedule_id: schedule?.id,
-    lead_id: leadId,
-    nome_contato,
-    empresa,
-    cidade,
-    data_visita,
-    horario,
-    produto_interesse: product,
-  }).catch(err => console.error("[notificar_equipe] Erro não tratado:", err));
+  queueTeamNotification(supabase, "agendamento", { ...params, produto_interesse: product }, leadId, schedule?.id);
 
   const mensagemParaLead =
     `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
@@ -1708,6 +1703,8 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
 
   await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true }), leadId, undefined, interaction_id);
 
+  queueTeamNotification(supabase, typeof motivo === "string" && /MATRIZ/i.test(motivo) ? "lead_matriz" : "transferencia", params, leadId);
+
   return ok(
     { solicitado: true, urgencia: urgencia ?? "media" },
     "Atendimento humano solicitado — Arilson será notificado",
@@ -1752,6 +1749,8 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
   if (error && !error.message.includes("duplicate")) {
     return fail(`Erro ao registrar: ${error.message}`);
   }
+
+  queueTeamNotification(supabase, "fora_cobertura", params, lead?.id);
 
   return ok(
     { registrado: true, cidade },

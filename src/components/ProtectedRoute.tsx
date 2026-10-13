@@ -23,7 +23,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!session) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" state={{ returnTo: `${location.pathname}${location.search}` }} replace />;
   }
 
   // Super admin must select an org first (unless going to admin pages or selector)

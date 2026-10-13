@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Building2, Palette, Globe, Save } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import TeamNotifications from "@/components/settings/TeamNotifications";
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter",
@@ -18,7 +20,7 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 export default function Configuracoes() {
-  const { isAdmin } = usePermissions();
+  const { isAdmin, role } = usePermissions();
   const { data: org, isLoading } = useOrganization();
   const updateOrg = useUpdateOrganization();
 
@@ -87,7 +89,10 @@ export default function Configuracoes() {
         ) : undefined
       }
     >
-      <div className="space-y-6 max-w-4xl">
+      <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl">
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger></TabsList>
+        <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>
+        <TabsContent value="empresa"><div className="space-y-6">
         {/* Plan info */}
         <Card>
           <CardHeader>
@@ -214,7 +219,7 @@ export default function Configuracoes() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </div></TabsContent></Tabs>
     </AppLayout>
   );
 }
