@@ -8,3 +8,4 @@
 - Capture booking email with a tenant-scoped conditional update after successful schedule creation so existing contact email is never overwritten.
 - Select MCP coverage centrally by exact region, narrowest matching CEP interval, then legacy city lookup so consultation and booking agree without broadening explicit selectors.
 - Keep establishment provider requests server-side, bounded, sequential and cached with graceful fallbacks so Google failures cannot interrupt Flora conversations; persist CEP in the existing lead zip_code column to avoid duplicate address fields.
+- Keep establishment name matching and short-address confirmation local to the lookup tool, and separate biased/unbiased cache entries, so shared parameter normalization and other tools remain unchanged.

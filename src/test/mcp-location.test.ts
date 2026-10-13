@@ -64,7 +64,7 @@ describe("MCP establishment location", () => {
     const result = await h.route("localizar_estabelecimento", input);
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ encontrado: true, precisa_confirmar: true, candidatos: [{ regiao, cep, nome: "Restaurante Teste", bairro: "Centro", latitude: -22.88, longitude: -42.02, place_id: "place-1" }] });
-    expect(result.data.mensagem_para_lead).toContain("É o Restaurante Teste");
+    expect(result.data.mensagem_para_lead).toBe("Só pra confirmar: é o Restaurante Teste da Rua Teste, 20, no bairro Centro?");
     expect(h.requests).toHaveLength(1);
     expect(JSON.parse(h.requests[0].init.body)).toMatchObject({ languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 });
     expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
@@ -72,7 +72,7 @@ describe("MCP establishment location", () => {
   it.each([{ places: [] }, { googleStatus: 403 }, { googleStatus: 429 }, { noKey: true }])("returns controlled fallback for %j", async options => {
     const result = await harness(options).route("localizar_estabelecimento", input);
     expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({ encontrado: false, candidatos: [], precisa_confirmar: true, mensagem_para_lead: "Não encontrei pelo nome. Pode me passar o CEP ou o bairro do estabelecimento?" });
+    expect(result.data).toMatchObject({ encontrado: false, candidatos: [], precisa_confirmar: true, mensagem_para_lead: "Me passa o bairro ou o CEP do estabelecimento? Assim já vejo o melhor dia para o consultor passar aí." });
   });
   it("CEP uses only ViaCEP even without a Google key", async () => {
     const h = harness({ noKey: true });
@@ -97,23 +97,60 @@ describe("MCP establishment location", () => {
   it("numbers two candidates for confirmation", async () => {
     const h = harness({ places: [place("28900-100"), place("28926-100")] });
     const result = await h.route("localizar_estabelecimento", input);
-    expect(result.data.mensagem_para_lead).toContain("1."); expect(result.data.mensagem_para_lead).toContain("2.");
+    expect(result.data.correspondencia_exata).toBe(false);
+    expect(result.data.mensagem_para_lead).toBe("Encontrei mais de um com esse nome por aqui 😊 Qual é o seu?\n1. Restaurante Teste — Rua Teste, 20, Centro\n2. Restaurante Teste — Rua Teste, 20, Centro");
   });
   it("caches repeated Google searches", async () => {
     const h = harness(); await h.route("localizar_estabelecimento", input); await h.route("localizar_estabelecimento", input);
     expect(h.requests).toHaveLength(1);
   });
-  it.each([{ nome: null }, { cidade: null }, { cep: "invalid" }, { nome: {} }])("validates input %j before requests", async invalid => {
+  it.each([{ nome: null }, { cidade: {} }, { cidade: "x".repeat(121) }, { cep: "invalid" }, { nome: {} }])("validates input %j before requests", async invalid => {
     const h = harness(); expect((await h.route("localizar_estabelecimento", { ...input, ...invalid })).success).toBe(false);
     expect(h.requests).toHaveLength(0);
   });
   it("exposes the new tool and optional selectors", () => {
     const manifest = harness().manifest();
-    expect(manifest.find((t: any) => t.name === "localizar_estabelecimento").parameters.required).toEqual(["nome", "cidade"]);
+    expect(manifest.find((t: any) => t.name === "localizar_estabelecimento").parameters.required).toEqual(["nome"]);
     for (const name of ["consultar_rota_consultor", "agendar_visita_tecnica"]) {
       expect(manifest.find((t: any) => t.name === name).parameters.properties).toHaveProperty("regiao");
       expect(manifest.find((t: any) => t.name === name).parameters.properties).toHaveProperty("cep");
     }
+  });
+  it("keeps only Cabo Frio Shopping among three malls", async () => {
+    const malls = ["Shopping Park Lagos", "Cabo Frio Shopping", "Shopping UnaPark"].map(name => ({ ...place("28900-100"), displayName: { text: name } }));
+    const result = await harness({ places: malls }).route("localizar_estabelecimento", { nome: "Cabo Frio Shopping", cidade: "Cabo Frio" });
+    expect(result.data.correspondencia_exata).toBe(true);
+    expect(result.data.candidatos).toHaveLength(1);
+    expect(result.data.candidatos[0].nome).toBe("Cabo Frio Shopping");
+  });
+  it.each([undefined, null])("searches without city using Lagos circle bias (%s)", async cidade => {
+    const h = harness();
+    const result = await h.route("localizar_estabelecimento", { nome: "Restaurante Teste", bairro: "Centro", cidade });
+    expect(result.success).toBe(true);
+    expect(result.data.candidatos[0].cidade).toBe("Cabo Frio");
+    expect(JSON.parse(h.requests[0].init.body)).toMatchObject({ textQuery: "Restaurante Teste Centro RJ", locationBias: { circle: { center: { latitude: -22.88, longitude: -42.02 }, radius: 50000 } } });
+  });
+  it("keeps city query unchanged and omits bias", async () => {
+    const h = harness(); await h.route("localizar_estabelecimento", input);
+    const body = JSON.parse(h.requests[0].init.body);
+    expect(body.textQuery).toBe("Restaurante Teste Cabo Frio RJ");
+    expect(body).not.toHaveProperty("locationBias");
+  });
+  it.each(["A LOJA Cábo-Frio Shopping!", "Cabo Frio Shopping Centro", "Shopping"])('normalizes or contains the name "%s"', async nome => {
+    const malls = ["Cabo Frio Shopping", "Mercado Centro", "Galeria Lagos"].map(name => ({ ...place("28900-100"), displayName: { text: name } }));
+    const result = await harness({ places: malls }).route("localizar_estabelecimento", { nome });
+    expect(result.data.correspondencia_exata).toBe(true);
+    expect(result.data.candidatos).toHaveLength(1);
+  });
+  it("does not match an empty generic name against every candidate", async () => {
+    const result = await harness({ places: [place("28900-100"), place("28926-100")] }).route("localizar_estabelecimento", { nome: "O Restaurante" });
+    expect(result.data.correspondencia_exata).toBe(false);
+    expect(result.data.candidatos).toHaveLength(2);
+  });
+  it("uses Google street components without locality or CEP in the message", async () => {
+    const p = { ...place("28900-100"), formattedAddress: "Rua Teste, Centro, Cabo Frio - RJ, 28900-100", addressComponents: [...place("28900-100").addressComponents, { types: ["route"], longText: "Rua Teste" }, { types: ["street_number"], longText: "40" }] };
+    const result = await harness({ places: [p] }).route("localizar_estabelecimento", input);
+    expect(result.data.mensagem_para_lead).toBe("Só pra confirmar: é o Restaurante Teste da Rua Teste, 40, no bairro Centro?");
   });
 });
 
