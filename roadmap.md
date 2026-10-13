@@ -1,4 +1,5 @@
 # Tasks
+- [ ] Adjust only establishment lookup: optional city, unique name match and gentle short-address messages; test and deploy mcp.
 - [x] Add localizar_estabelecimento with bounded Google/ViaCEP lookup and precise coverage selection.
 - [x] Persist optional lead location fields, test regressions (101 passing) and deploy mcp (confirmed).
 - [ ] Verify Google Places key live (blocked: agent environment does not support live Maps API verification).
