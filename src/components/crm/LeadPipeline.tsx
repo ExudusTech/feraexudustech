@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useLeads, useUpdateLead,
   MACRO_PIPELINE, MACRO_STAGES, STAGE_CONFIG,
@@ -18,6 +19,16 @@ export default function LeadPipeline() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [defaultStage, setDefaultStage] = useState<LeadStage>("novo");
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
+
+  const [searchParams] = useSearchParams();
+  const linkedId = searchParams.get("lead");
+  const openedId = useRef<string | null>(null);
+  useEffect(() => {
+    const lead = leads.find(item => item.id === linkedId);
+    if (!lead || openedId.current === linkedId) return;
+    openedId.current = linkedId;
+    setSelectedLead(lead); setDialogOpen(true);
+  }, [leads, linkedId]);
 
   // Group leads by macro stage
   const grouped = useMemo(() => {
@@ -51,6 +62,7 @@ export default function LeadPipeline() {
 
   return (
     <>
+      {linkedId && !leads.some(item => item.id === linkedId) && <p role="alert" className="mb-4 text-muted-foreground">Lead não encontrado ou sem permissão de acesso.</p>}
       <ScrollArea className="w-full">
         <div className="flex gap-4 pb-4 min-w-max">
           {MACRO_STAGES.map((macro) => {
