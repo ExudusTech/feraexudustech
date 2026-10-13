@@ -35,7 +35,7 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
     return chain;
   } };
   const context = vm.createContext({ createClient: () => client, Deno: { env: { get: (name: string) => options.configured === false ? undefined : name === "GPTMAKER_API_TOKEN" ? "mock-private-token" : name === "GPTMAKER_WHATSAPP_CHANNEL_ID" ? "channel" : undefined }, serve: () => {} },
-    EdgeRuntime: { waitUntil: (task: Promise<void>) => tasks.push(task) }, fetch: fetchMock, AbortSignal, console: { warn: vi.fn(), error: vi.fn() }, Response, Request, URL, performance, TextEncoder, crypto, Date });
+    EdgeRuntime: { waitUntil: (task: Promise<void>) => tasks.push(task) }, fetch: fetchMock, AbortSignal: { timeout: () => undefined }, console: { warn: vi.fn(), error: vi.fn() }, Response, Request, URL, performance, TextEncoder, crypto, Date });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
   return { writes, reads, tasks, fetchMock,
     route: (method: string, params: any) => { context.method = method; context.params = params; return vm.runInContext("routeTool(method, params)", context); },
