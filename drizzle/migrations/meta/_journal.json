@@ -43,6 +43,13 @@
       "when": 1791896589551,
       "tag": "0005_team_notification_event_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791916818188,
+      "tag": "0006_restrict_team_notification_events",
+      "breakpoints": true
     }
   ]
 }
