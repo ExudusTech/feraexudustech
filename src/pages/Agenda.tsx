@@ -175,10 +175,10 @@ export default function Agenda() {
                 <div className="text-xs font-medium mb-1">{format(day, "d")}</div>
                 <div className="space-y-0.5">
                   {daySchedules.slice(0, 2).map((s) => (
-                    <div key={s.id} className="text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 truncate cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
-                      {s.start_time && <span className="font-medium">{s.start_time.slice(0, 5)} </span>}
-                      {s.title}
-                      {s.source === "flora" && <Badge variant="outline" className="ml-1 px-1 text-[9px]">Flora</Badge>}
+                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                      {s.start_time && <span className="font-medium shrink-0">{s.start_time.slice(0, 5)}</span>}
+                      <span className="min-w-0 truncate">{s.title}</span>
+                      {s.source === "flora" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Flora</Badge>}
                     </div>
                   ))}
                   {daySchedules.length > 2 && (
