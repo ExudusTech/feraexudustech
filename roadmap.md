@@ -1,4 +1,6 @@
 # Tasks
+- [ ] Add event-based team recipients and admin/gestor notification settings.
+- [ ] Add safe background WhatsApp dispatch and direct lead/schedule links, test and deploy.
 - [x] Adjust only establishment lookup: optional city with Lagos bias, unique name match and gentle short-address messages; 111 MCP tests passed and mcp deployment confirmed.
 - [x] Add localizar_estabelecimento with bounded Google/ViaCEP lookup and precise coverage selection.
 - [x] Persist optional lead location fields, test regressions (101 passing) and deploy mcp (confirmed).
