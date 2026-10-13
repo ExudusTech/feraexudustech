@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import EkkoaCoverageAreaFormDialog from "@/components/ekkoa/EkkoaCoverageAreaFormDialog";
 import { useEkkoaCoverageAreas, useDeleteEkkoaCoverageArea, type EkkoaCoverageArea } from "@/hooks/use-ekkoa-coverage-areas";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, MapPin } from "lucide-react";
+import { useOrganizationUsers } from "@/hooks/use-users";
 
 function formatTime(t: string | null) {
   if (!t) return "";
@@ -18,6 +19,7 @@ function formatTime(t: string | null) {
 export default function AreasCobertura() {
   const { data: areas = [], isLoading } = useEkkoaCoverageAreas();
   const deleteArea = useDeleteEkkoaCoverageArea();
+  const { data: users = [] } = useOrganizationUsers();
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<EkkoaCoverageArea | null>(null);
@@ -56,6 +58,7 @@ export default function AreasCobertura() {
                   <TableHead>Cidade</TableHead>
                   <TableHead>Dia da Semana</TableHead>
                   <TableHead>Horário</TableHead>
+                  <TableHead>Consultor responsável</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>CEP</TableHead>
                   <TableHead>Status</TableHead>
@@ -72,6 +75,7 @@ export default function AreasCobertura() {
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell>{a.dia_semana || "—"}</TableCell>
                       <TableCell>{horario}</TableCell>
+                      <TableCell>{users.find(u => u.user_id === a.consultant_user_id)?.name || "Sem responsável"}</TableCell>
                       <TableCell>{a.state || "—"}</TableCell>
                       <TableCell>{a.zip_code_start ? `${a.zip_code_start}${a.zip_code_end ? ` - ${a.zip_code_end}` : ""}` : "—"}</TableCell>
                       <TableCell>

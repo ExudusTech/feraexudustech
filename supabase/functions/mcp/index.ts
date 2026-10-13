@@ -618,6 +618,7 @@ interface CoverageRegion {
   id?: string; name: string; city: string | null; dia_semana: string | null;
   horario_inicio: string | null; horario_fim: string | null;
   zip_code_start: string | null; zip_code_end: string | null;
+  consultant_user_id?: string | null;
 }
 
 function validCep(value: unknown): string | null {
@@ -639,7 +640,7 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
   const region = typeof params.regiao === "string" ? params.regiao.trim() : null;
   const city = typeof params.cidade === "string" ? params.cidade.trim() : null;
   let query = supabase.from("ekkoa_coverage_areas")
-    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
+    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end, consultant_user_id")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
   if (region) query = query.eq("name", region);
   else if (!params.cep && city) query = query.ilike("city", exactCity ? city : `%${city}%`);
@@ -650,6 +651,15 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
     return match ? [match] : [];
   }
   return data ?? [];
+}
+
+// Use the same selected region and weekday/window as the booking, never another area's consultant.
+function bookingArea(areas: CoverageRegion[], date: string, time: string): CoverageRegion | undefined {
+  const dow = new Date(date + "T12:00:00").getDay();
+  const minutes = timeMinutes(time);
+  return areas.find(area => parseDiaSemana(area.dia_semana ?? "").includes(dow) &&
+    (!area.horario_inicio || !area.horario_fim ||
+      (minutes >= timeMinutes(area.horario_inicio) && minutes <= timeMinutes(area.horario_fim))));
 }
 
 type AddressComponent = { types?: string[]; longText?: string; long_name?: string };
@@ -1272,6 +1282,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
 
   const product = await resolveVisitProduct(supabase, leadId, produto_interesse);
   const title = `Visita NitsClean — ${empresa || nome_contato}${product ? ` [${product}]` : ""}`;
+  const area = bookingArea(await selectCoverage(supabase, params, true), data_visita, horario);
   const startTime = `${horario}:00`;
   const endHour   = parseInt(horario.split(":")[0], 10) + 1;
   const endTime   = `${String(endHour).padStart(2, "0")}:00:00`;
@@ -1280,6 +1291,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     .from("schedules")
     .insert({
       organization_id: NITSCLEAN_ORG_ID, title,
+      source: "flora", assigned_to: area?.consultant_user_id ?? null,
       scheduled_date:  data_visita, start_time: startTime, end_time: endTime,
       schedule_type:   "visita_comercial", status: "agendado", location: cidade ?? null,
       notes: [
@@ -1425,6 +1437,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       organization_id: NITSCLEAN_ORG_ID,
       title, scheduled_date: data_visita, start_time: startTime, end_time: endTime,
       schedule_type: "visita_tecnica", schedule_subtype: "PROSPECCAO",
+      source: "flora", assigned_to: bookingArea(areas, data_visita, horario)?.consultant_user_id ?? null,
       status: "agendado",
       location: cidade, notes: notesArr,
       client_id: clientId ?? null,

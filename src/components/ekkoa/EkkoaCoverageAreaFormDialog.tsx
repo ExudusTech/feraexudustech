@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCreateEkkoaCoverageArea, useUpdateEkkoaCoverageArea, type EkkoaCoverageArea } from "@/hooks/use-ekkoa-coverage-areas";
+import { useOrganizationUsers } from "@/hooks/use-users";
 
 interface Props {
   open: boolean;
@@ -24,6 +25,7 @@ const empty = {
   zip_code_start: "", zip_code_end: "",
   radius_km: "", latitude: "", longitude: "",
   dia_semana: "", horario_inicio: "", horario_fim: "",
+  consultant_user_id: "",
   is_active: true,
 };
 
@@ -31,6 +33,7 @@ export default function EkkoaCoverageAreaFormDialog({ open, onOpenChange, area }
   const [form, setForm] = useState(empty);
   const create = useCreateEkkoaCoverageArea();
   const update = useUpdateEkkoaCoverageArea();
+  const { data: users = [] } = useOrganizationUsers();
   const isEdit = !!area;
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export default function EkkoaCoverageAreaFormDialog({ open, onOpenChange, area }
         radius_km: area.radius_km?.toString() || "", latitude: area.latitude?.toString() || "",
         longitude: area.longitude?.toString() || "", is_active: area.is_active,
         dia_semana: area.dia_semana || "", horario_inicio: area.horario_inicio || "", horario_fim: area.horario_fim || "",
+        consultant_user_id: area.consultant_user_id || "",
       });
     } else {
       setForm(empty);
@@ -61,10 +65,11 @@ export default function EkkoaCoverageAreaFormDialog({ open, onOpenChange, area }
       dia_semana: form.dia_semana || null,
       horario_inicio: form.horario_inicio || null,
       horario_fim: form.horario_fim || null,
+      consultant_user_id: form.consultant_user_id || null,
       is_active: form.is_active,
     };
-    if (isEdit) {
-      await update.mutateAsync({ id: area!.id, ...payload });
+    if (area) {
+      await update.mutateAsync({ id: area.id, ...payload });
     } else {
       await create.mutateAsync(payload);
     }
@@ -125,6 +130,16 @@ export default function EkkoaCoverageAreaFormDialog({ open, onOpenChange, area }
             <div className="flex items-center gap-2 pt-6">
               <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
               <Label>Ativo</Label>
+            </div>
+            <div className="col-span-2">
+              <Label htmlFor="coverage-consultant">Consultor responsável</Label>
+              <Select value={form.consultant_user_id || "none"} onValueChange={(v) => set("consultant_user_id", v === "none" ? "" : v)}>
+                <SelectTrigger id="coverage-consultant"><SelectValue placeholder="Sem responsável" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem responsável</SelectItem>
+                  {users.filter(u => u.is_active).map(u => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="col-span-2">
               <Label>Descrição</Label>
