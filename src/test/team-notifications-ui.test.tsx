@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import TeamNotifications from "@/components/settings/TeamNotifications";
+vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 const mocks = vi.hoisted(() => ({ save: vi.fn(async () => {}), mutate: vi.fn(), role: "gestor" }));
 vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ role: mocks.role, isAdmin: false }) }));
 vi.mock("@/hooks/use-team-notifications", async importOriginal => {

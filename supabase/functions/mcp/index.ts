@@ -260,7 +260,7 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
     const street = (text(params.endereco) || text(lead?.endereco)).split(/\s[-–]\s/)[0].split(",").slice(0, 2).map(part => part.trim()).join(", ");
     const neighborhood = text(params.bairro) || text(lead?.bairro);
     const region = text(params.regiao) || text(lead?.regiao) || city;
-    const where = [street, neighborhood].filter(Boolean).join(",");
+    const where = [street, neighborhood].filter(Boolean).join(", ");
     if (where || region) lines.push(`Onde: ${where}${region ? `${where ? " " : ""}(${region})` : ""}`);
     const dateString = text(params.data_visita);
     const date = new Date(`${dateString}T12:00:00Z`);
