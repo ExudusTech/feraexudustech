@@ -1,4 +1,5 @@
 # Tasks
+- [x] Adjust only establishment lookup: optional city with Lagos bias, unique name match and gentle short-address messages; 111 MCP tests passed and mcp deployment confirmed.
 - [x] Add localizar_estabelecimento with bounded Google/ViaCEP lookup and precise coverage selection.
 - [x] Persist optional lead location fields, test regressions (101 passing) and deploy mcp (confirmed).
 - [ ] Verify Google Places key live (blocked: agent environment does not support live Maps API verification).

@@ -675,11 +675,26 @@ async function locationRequest(url: string, init: RequestInit, cacheKey: string)
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
-  if (!nome || !cidade) return fail("nome e cidade são obrigatórios (até 200 e 120 caracteres)");
+  if (!nome) return fail("nome é obrigatório (até 200 caracteres)");
+  if (params.cidade != null && !cidade) return fail("cidade inválida (até 120 caracteres)");
   if (params.bairro != null && !bairro) return fail("bairro inválido");
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
   const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
-    mensagem_para_lead: "Não encontrei pelo nome. Pode me passar o CEP ou o bairro do estabelecimento?" });
+    mensagem_para_lead: "Me passa o bairro ou o CEP do estabelecimento? Assim já vejo o melhor dia para o consultor passar aí." });
+  // Tool-local name comparison; do not change the shared parameter normalizer.
+  const normalizedName = (value: string) => value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(word => word && !["restaurante", "loja", "o", "a"].includes(word)).join(" ");
+  const shortAddress = (place: any): string | null => {
+    const street = addressPart(place.addressComponents, "route");
+    const number = addressPart(place.addressComponents, "street_number");
+    if (street) return [street, number].filter(Boolean).join(", ");
+    // Formatted Google addresses put locality/state/CEP after the street section.
+    const sections = typeof place.formattedAddress === "string" ? place.formattedAddress.split(",").map((part: string) => part.trim()) : [];
+    const first = sections[0]?.split(/\s+-\s+/)[0];
+    if (!first) return null;
+    const nextNumber = sections[1]?.match(/^\d+[\w/]*\b/)?.[0];
+    return [first, nextNumber].filter(Boolean).join(", ");
+  };
   try {
     const areas = await selectCoverage(getClient(), {});
     const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
@@ -692,6 +707,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       if (address.erro) return fallback();
       places = [{ displayName: { text: nome }, formattedAddress: [address.logradouro, address.bairro, address.localidade, address.uf, address.cep].filter(Boolean).join(", "),
         addressComponents: [
+          { types: ["route"], longText: address.logradouro },
           { types: ["sublocality_level_1"], longText: address.bairro },
           { types: ["administrative_area_level_2"], longText: address.localidade },
           { types: ["postal_code"], longText: address.cep ?? cep },
@@ -702,11 +718,20 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
           "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
-        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 }),
-      }, `places:${textQuery}`);
+        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3,
+          ...(!cidade ? { locationBias: { circle: { center: { latitude: -22.88, longitude: -42.02 }, radius: 50000 } } } : {}) }),
+      }, `places:${cidade ? "city" : "lagos-bias"}:${textQuery}`);
       places = Array.isArray(result.places) ? result.places.slice(0, 3) : [];
     }
+    const requestedName = normalizedName(nome);
+    const matches = !params.cep && requestedName ? places.filter(place => {
+      const candidateName = normalizedName(place.displayName?.text ?? "");
+      return candidateName && (` ${candidateName} `.includes(` ${requestedName} `) || ` ${requestedName} `.includes(` ${candidateName} `));
+    }) : [];
+    const correspondenciaExata = matches.length === 1;
+    if (correspondenciaExata) places = matches;
     const candidatos = [];
+    const addresses: (string | null)[] = [];
     // Sequential, capped at three reverse lookups; no retries on Google errors.
     for (const place of places) {
       let cep = addressPart(place.addressComponents, "postal_code");
@@ -725,6 +750,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
         } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
       }
       const region = narrowestCoverage(areas, cep);
+      addresses.push(shortAddress(place));
       candidatos.push({ nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
         bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"),
         cidade: addressPart(place.addressComponents, "administrative_area_level_2", "locality") ?? cidade,
@@ -736,9 +762,9 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
     if (!candidatos.length) return fallback();
     const first = candidatos[0];
     const mensagem = candidatos.length === 1
-      ? `É o ${first.nome} da ${first.endereco?.split(",").slice(0, 2).join(",") ?? "localização informada"}${first.bairro ? `, bairro ${first.bairro}` : ""}?`
-      : `Qual destes é o estabelecimento?\n${candidatos.map((candidate, i) => `${i + 1}. ${candidate.nome} — ${candidate.endereco ?? candidate.bairro ?? candidate.cidade}`).join("\n")}`;
-    return ok({ encontrado: true, candidatos, precisa_confirmar: true, mensagem_para_lead: mensagem });
+      ? `Só pra confirmar: é o ${first.nome}${addresses[0] ? ` da ${addresses[0]}` : ""}${first.bairro ? `, no bairro ${first.bairro}` : ""}?`
+      : `Encontrei mais de um com esse nome por aqui 😊 Qual é o seu?\n${candidatos.map((candidate, i) => `${i + 1}. ${candidate.nome}${addresses[i] || candidate.bairro ? ` — ${[addresses[i], candidate.bairro].filter(Boolean).join(", ")}` : ""}`).join("\n")}`;
+    return ok({ encontrado: true, candidatos, precisa_confirmar: true, correspondencia_exata: correspondenciaExata, mensagem_para_lead: mensagem });
   } catch { return fallback(); }
 }
 
@@ -1892,8 +1918,8 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 const TOOLS_MANIFEST = [
   {
     name: "localizar_estabelecimento",
-    description: "Localiza estabelecimento por nome e cidade ou pelo CEP via ViaCEP. Retorna até três candidatos, região de rota e dados de endereço; sempre confirme com o lead.",
-    parameters: { type: "object", required: ["nome", "cidade"], properties: {
+    description: "Localiza estabelecimento por nome, com cidade opcional, ou pelo CEP via ViaCEP. Sem cidade, prioriza a Região dos Lagos. Retorna somente a correspondência única de nome ou até três candidatos; sempre confirme com o lead.",
+    parameters: { type: "object", required: ["nome"], properties: {
       nome: { type: "string", maxLength: 200 }, cidade: { type: "string", maxLength: 120 },
       bairro: { type: "string", maxLength: 120 }, cep: { type: "string" },
     } },
