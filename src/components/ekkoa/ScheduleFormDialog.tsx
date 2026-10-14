@@ -6,11 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { useCreateSchedule, useUpdateSchedule, useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
 import { useLeads } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
-import { MapPin, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { MapPin, AlertTriangle, CheckCircle, Clock, ExternalLink, Sparkles } from "lucide-react";
 import { formatCEP } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel } from "@/lib/linha-produto";
@@ -25,6 +26,7 @@ const empty = { title: "", description: "", scheduled_date: "", start_time: "", 
 
 export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Props) {
   const [form, setForm] = useState(empty);
+  const [leadExplicitlyCleared, setLeadExplicitlyCleared] = useState(false);
   const create = useCreateSchedule();
   const update = useUpdateSchedule();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
@@ -40,11 +42,12 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
         scheduled_date: schedule.scheduled_date, start_time: schedule.start_time || "",
         end_time: schedule.end_time || "", status: schedule.status,
         location: schedule.location || "", notes: schedule.notes || "",
-        zip_code: "",
+        zip_code: schedule.zip_code || "",
         schedule_subtype: schedule.schedule_subtype || "",
         lead_id: schedule.lead_id || "",
       });
     } else setForm(empty);
+    setLeadExplicitlyCleared(false);
   }, [schedule, open]);
 
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
@@ -96,9 +99,9 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
     const payload: any = {
       title: form.title, description: form.description || null, scheduled_date: form.scheduled_date,
       start_time: form.start_time || null, end_time: form.end_time || null, status: form.status,
-      location: form.location || null, notes: form.notes || null,
+      location: form.location || null, zip_code: form.zip_code || null, notes: form.notes || null,
       schedule_subtype: form.schedule_subtype || null,
-      lead_id: form.lead_id || null,
+      lead_id: leadExplicitlyCleared ? null : (form.lead_id || schedule?.lead_id || null),
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -108,11 +111,21 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
   const isPending = create.isPending || update.isPending;
   const blockSubmit = (hasAreas && cepValid && !matchedArea) || overlapDetected;
   const showCepSection = hasAreas;
+  const selectedLead = leads.find((lead) => lead.id === form.lead_id);
+  const mapUrlFromNotes = form.notes.match(/Mapa:\s*(https:\/\/\S+)/i)?.[1]?.replace(/[|,.;]+$/, "");
+  const mapsUrl = selectedLead?.maps_url || mapUrlFromNotes || null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <DialogTitle>{isEdit ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
+            {schedule?.source === "flora" && (
+              <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" /> Agendado pela Flora</Badge>
+            )}
+          </div>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>
@@ -252,15 +265,30 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
             </div>
             <div>
               <Label>Lead vinculado</Label>
-              <Select value={form.lead_id || "none"} onValueChange={(v) => set("lead_id", v === "none" ? "" : v)}>
+              <Select value={form.lead_id || "none"} onValueChange={(v) => {
+                setLeadExplicitlyCleared(v === "none");
+                set("lead_id", v === "none" ? "" : v);
+              }}>
                 <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">—</SelectItem>
+                  {form.lead_id && !selectedLead && (
+                    <SelectItem value={form.lead_id}>Lead vinculado ({form.lead_id.slice(0, 8)})</SelectItem>
+                  )}
                   {leads.map((l) => <SelectItem key={l.id} value={l.id}>{l.title}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
+            {mapsUrl && (
+              <div className="col-span-2">
+                <Button type="button" variant="outline" asChild>
+                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-2" /> Abrir no Google Maps
+                  </a>
+                </Button>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

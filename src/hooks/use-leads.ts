@@ -43,6 +43,11 @@ export interface Lead {
   position: number;
   category: string | null;
   zip_code: string | null;
+  endereco?: string | null;
+  bairro?: string | null;
+  city?: string | null;
+  maps_url?: string | null;
+  empresa_nome?: string | null;
   created_at: string;
   updated_at: string | null;
 }

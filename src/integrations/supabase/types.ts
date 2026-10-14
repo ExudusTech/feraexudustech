@@ -328,6 +328,75 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261014b_schedules: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string | null
+          lead_id: string | null
+          location: string | null
+          notes: string | null
+          operation_id: string | null
+          organization_id: string | null
+          schedule_subtype: string | null
+          schedule_type: string | null
+          scheduled_date: string | null
+          source: string | null
+          start_time: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -3406,6 +3475,7 @@ export type Database = {
           status: string
           title: string
           updated_at: string | null
+          zip_code: string | null
         }
         Insert: {
           assigned_to?: string | null
@@ -3428,6 +3498,7 @@ export type Database = {
           status?: string
           title: string
           updated_at?: string | null
+          zip_code?: string | null
         }
         Update: {
           assigned_to?: string | null
@@ -3450,6 +3521,7 @@ export type Database = {
           status?: string
           title?: string
           updated_at?: string | null
+          zip_code?: string | null
         }
         Relationships: [
           {

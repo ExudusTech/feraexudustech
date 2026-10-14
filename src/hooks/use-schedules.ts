@@ -19,6 +19,7 @@ export interface Schedule {
   lead_id: string | null;
   assigned_to: string | null;
   location: string | null;
+  zip_code: string | null;
   notes: string | null;
   created_by: string | null;
   source: string;
@@ -50,7 +51,7 @@ export function useCreateSchedule() {
       const { data, error } = await (supabase as any).from("schedules").insert({
         title: input.title, description: input.description, scheduled_date: input.scheduled_date,
         start_time: input.start_time, end_time: input.end_time, status: input.status || "agendado",
-        client_id: input.client_id, location: input.location, notes: input.notes,
+        client_id: input.client_id, location: input.location, zip_code: input.zip_code, notes: input.notes,
         operation_id: input.operation_id,
         schedule_subtype: input.schedule_subtype ?? null,
         lead_id: input.lead_id ?? null,
