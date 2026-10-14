@@ -8,7 +8,7 @@ const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const whatsapp = "3DF9D839DDCF463A3A350ADF91C40B89-5521979047667";
 type Query = { table: string; operation: string; value?: any; filters: any[] };
 
-function harness(options: { existing?: any; phoneMatch?: boolean; channelMatch?: boolean; chatError?: boolean } = {}) {
+function harness(options: { person?: any; openLeads?: any[]; phoneMatch?: boolean; channelMatch?: boolean; personError?: boolean } = {}) {
   const queries: Query[] = [];
   const tasks: Promise<void>[] = [];
   let handler: (req: Request) => Promise<Response> = async () => new Response();
@@ -17,21 +17,23 @@ function harness(options: { existing?: any; phoneMatch?: boolean; channelMatch?:
     const query: Query = { table, operation: "read", filters: [] };
     const result = () => {
       queries.push(query);
-      if (query.operation !== "read") return { error: null, data: { id: "new-lead", ...query.value } };
+      if (query.operation !== "read") return { error: null, data: { id: table === "pessoas" ? "person" : "new-lead", ...query.value } };
+      if (table === "pessoas") return { error: options.personError ? { message: "lookup failed" } : null, data: options.person ?? null };
       if (table === "client_contacts") return { error: null, data:
         (options.phoneMatch && query.filters.some(f => f[0] === "in")) || options.channelMatch ? [contact] : [] };
-      const isChat = query.filters.some(f => f[1] === "gptmaker_chat_id");
-      return { data: isChat ? options.existing ?? null : null,
-        error: isChat && options.chatError ? { message: "lookup failed" } : null };
+      const isPersonLeads = table === "leads" && query.filters.some(f => f[1] === "pessoa_id");
+      return { data: isPersonLeads ? options.openLeads ?? [] : null, error: null };
     };
     const chain: any = {
       select: () => chain,
       eq: (...args: any[]) => { query.filters.push(["eq", ...args]); return chain; },
       in: (...args: any[]) => { query.filters.push(["in", ...args]); return chain; },
+      ilike: (...args: any[]) => { query.filters.push(["ilike", ...args]); return chain; },
       gte: (...args: any[]) => { query.filters.push(["gte", ...args]); return chain; },
       order: (...args: any[]) => { query.filters.push(["order", ...args]); return chain; },
       limit: (...args: any[]) => { query.filters.push(["limit", ...args]); return chain; },
       insert: (value: any) => { query.operation = "insert"; query.value = value; return chain; },
+      update: (value: any) => { query.operation = "update"; query.value = value; return chain; },
       upsert: (value: any) => { query.operation = "upsert"; query.value = value; return chain; },
       single: async () => result(), maybeSingle: async () => result(),
       then: (resolve: any) => Promise.resolve(result()).then(resolve),
@@ -91,8 +93,9 @@ describe("trusted GPT Maker chat channel", () => {
     const h = harness({ phoneMatch: true });
     const result = await h.route("buscar_contato", { chat_id: whatsapp, canal_tipo: "WIDGET" });
     expect(result.data.encontrado).toBe(true);
-    expect(h.queries[0].filters).toContainEqual(["eq", "whatsapp_id", "5521979047667"]);
-    expect(h.queries[1].filters).toContainEqual(["in", "phone", ["5521979047667", "+5521979047667"]]);
+    const contactQueries = h.queries.filter(q => q.table === "client_contacts");
+    expect(contactQueries[0].filters).toContainEqual(["eq", "whatsapp_id", "5521979047667"]);
+    expect(contactQueries[1].filters).toContainEqual(["in", "phone", ["5521979047667", "+5521979047667"]]);
     for (const query of h.queries) expect(query.filters).toContainEqual(["eq", "organization_id", org]);
   });
   it.each(["3E08E0CA2B9116C7F54E966EEA33054D-site", "public-api-test"])
@@ -113,28 +116,26 @@ describe("trusted GPT Maker chat channel", () => {
   it("preserves an explicitly supplied phone", async () => {
     const h = harness();
     await h.route("criar_lead", { nome: "PH", telefone: "21999999999", chat_id: whatsapp });
-    expect(h.queries.find(q => q.operation === "insert")?.value.contact_phone).toBe("21999999999");
+    expect(h.queries.find(q => q.table === "leads" && q.operation === "insert")?.value.contact_phone).toBe("21999999999");
   });
-  it("reuses a same-tenant recent chat lead without writes", async () => {
-    const existing = { id: "recent", contact_name: "PH", stage: "novo" };
-    const h = harness({ existing });
-    const before = Date.now();
-    const result = await h.route("criar_lead", { nome: "PH", chat_id: whatsapp, interaction_id: "different" });
-    expect(result.data).toEqual({ lead: existing, criado: false });
-    expect(h.queries).toHaveLength(1);
-    expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
-    expect(h.queries[0].filters).toContainEqual(["eq", "gptmaker_chat_id", whatsapp]);
-    const cutoff = h.queries[0].filters.find(f => f[0] === "gte");
-    expect(cutoff?.[1]).toBe("created_at");
-    expect(Math.abs(Date.parse(cutoff?.[2]) - (before - 86400000))).toBeLessThan(1000);
+  it("reuses an open lead only for the same person and place", async () => {
+    const person = { id: "person", nome: "PH", whatsapp: "5521979047667", chat_ids: [whatsapp] };
+    const existing = { id: "recent", contact_name: "PH", stage: "novo", place_id: "place-1" };
+    const h = harness({ person, openLeads: [existing] });
+    const result = await h.route("criar_lead", { nome: "PH", empresa_nome: "Hotel A", cidade: "Cabo Frio", place_id: "place-1", chat_id: whatsapp, interaction_id: "different" });
+    expect(result.data.criado).toBe(false);
+    expect(result.data.lead.id).toBe("recent");
+    expect(h.queries.some(q => q.table === "leads" && q.operation === "insert")).toBe(false);
   });
-  it("creates when no lead meets the 24-hour query", async () => {
-    const h = harness();
-    expect((await h.route("criar_lead", { nome: "PH", chat_id: whatsapp })).data.criado).toBe(true);
-    expect(h.queries.some(q => q.operation === "insert" && q.table === "leads")).toBe(true);
+  it("creates two leads for the same person at different establishments", async () => {
+    const person = { id: "person", nome: "PH", whatsapp: "5521979047667", chat_ids: [whatsapp] };
+    const h = harness({ person, openLeads: [{ id: "hotel-a", stage: "novo", place_id: "place-a" }] });
+    const result = await h.route("criar_lead", { nome: "PH", empresa_nome: "Hotel B", cidade: "Búzios", place_id: "place-b", chat_id: whatsapp });
+    expect(result.data.criado).toBe(true);
+    expect(h.queries.find(q => q.table === "leads" && q.operation === "insert")?.value.pessoa_id).toBe("person");
   });
-  it("does not create a duplicate if chat lookup fails", async () => {
-    const h = harness({ chatError: true });
+  it("does not create a lead if person lookup fails", async () => {
+    const h = harness({ personError: true });
     expect((await h.route("criar_lead", { nome: "PH", chat_id: whatsapp })).success).toBe(false);
     expect(h.queries.every(q => q.operation === "read")).toBe(true);
   });
@@ -142,12 +143,28 @@ describe("trusted GPT Maker chat channel", () => {
     const h = harness();
     await h.route("criar_lead", { nome: "PH", canal: "INSTAGRAM", interaction_id: "legacy" });
     expect(h.queries.some(q => q.filters.some(f => f[1] === "gptmaker_chat_id"))).toBe(false);
-    expect(h.queries.find(q => q.operation === "insert")?.value).toMatchObject({ canal_origem: "INSTAGRAM", gptmaker_chat_id: null });
+    expect(h.queries.find(q => q.table === "leads" && q.operation === "insert")?.value).toMatchObject({ canal_origem: "INSTAGRAM", gptmaker_chat_id: null });
   });
   it("unknown chat ID is saved but does not override legacy channel", async () => {
     const h = harness();
     await h.route("criar_lead", { nome: "PH", chat_id: "unknown-123", canal: "MESSENGER" });
-    expect(h.queries.find(q => q.operation === "insert")?.value).toMatchObject({ canal_origem: "MESSENGER", gptmaker_chat_id: "unknown-123" });
+    expect(h.queries.find(q => q.table === "leads" && q.operation === "insert")?.value).toMatchObject({ canal_origem: "MESSENGER", gptmaker_chat_id: "unknown-123" });
+  });
+  it("links WhatsApp and Instagram conversations to the same person through email", async () => {
+    const person = { id: "person", nome: "PH", email: "ph@example.com", whatsapp: "5521979047667", chat_ids: [whatsapp] };
+    const h = harness({ person });
+    await h.route("criar_lead", { nome: "PH", email: "PH@example.com", empresa_nome: "Hotel", cidade: "Búzios",
+      chat_id: "3E081F8C517E26FF46107A02E12740D2-instagram-1" });
+    const personQueries = h.queries.filter(q => q.table === "pessoas" && q.operation === "read");
+    expect(personQueries.some(q => q.filters.some(f => f[0] === "ilike" && f[1] === "email"))).toBe(true);
+    expect(h.queries.find(q => q.table === "leads" && q.operation === "insert")?.value.pessoa_id).toBe("person");
+  });
+  it("buscar_contato returns the person and up to five linked leads", async () => {
+    const person = { id: "person", nome: "PH", whatsapp: "5521979047667", chat_ids: [whatsapp] };
+    const leads = [{ id: "lead-1", empresa_nome: "Hotel A", city: "Búzios", stage: "novo", category: "Higiene" }];
+    const result = await harness({ person, openLeads: leads }).route("buscar_contato", { chat_id: whatsapp });
+    expect(result.data.pessoa).toEqual({ id: "person", nome: "PH" });
+    expect(result.data.leads_da_pessoa).toEqual([{ id: "lead-1", empresa: "Hotel A", cidade: "Búzios", estagio: "novo", produto: "Higiene" }]);
   });
   it("audits original wrong channel while the tool receives trusted channel", async () => {
     const h = harness();

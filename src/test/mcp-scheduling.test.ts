@@ -86,7 +86,7 @@ describe("MCP visit scheduling", () => {
     const h = harness();
     const result = await h.route({ ...visit, produto_interesse: "Outro produto" });
     expect(result.data.mensagem_para_lead).toContain("Outro produto");
-    expect(h.reads.some(r => r.table === "leads")).toBe(false);
+    expect(h.reads.filter(r => r.table === "leads")).toHaveLength(1);
   });
   it.each([null, "não informado", "{{produto}}"])("missing category %s stays product-neutral", async (category) => {
     const h = harness(category);
