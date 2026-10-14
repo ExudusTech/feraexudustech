@@ -236,6 +236,13 @@ async function pessoaWithLeads(supabase: ReturnType<typeof getClient>, pessoa: P
   return {
     encontrado: true,
     pessoa: { id: pessoa.id, nome: pessoa.nome },
+    contato: {
+      contato_id: pessoa.id,
+      nome: pessoa.nome,
+      telefone: pessoa.telefone ?? pessoa.whatsapp ?? null,
+      email: pessoa.email ?? null,
+      instagram_handle: pessoa.instagram_handle ?? null,
+    },
     leads_da_pessoa: (data ?? []).map((lead: Record<string, unknown>) => ({
       id: lead.id,
       empresa: lead.empresa_nome ?? lead.company ?? lead.title ?? null,
@@ -2117,6 +2124,7 @@ const TOOLS_MANIFEST = [
         canal_tipo: { type: "string", enum: ["WHATSAPP", "INSTAGRAM", "INSTAGRAM_UID", "MESSENGER", "TELEGRAM", "WIDGET"] },
         nome:       { type: "string", description: "Nome do contato — Modo 2, busca fuzzy primeiro+último token" },
         telefone:   { type: "string", description: "Telefone com DDD — Modo 2, busca nos últimos 8 dígitos" },
+        email:      { type: "string", description: "E-mail da pessoa; pode unir conversas de canais diferentes" },
         vincular_canal_id_se_encontrado: { type: "boolean", description: "Se true e Modo 2 encontrou, vincula canal_id+canal_tipo ao contato encontrado" },
       },
     },
