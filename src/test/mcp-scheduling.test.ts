@@ -19,7 +19,11 @@ function harness(category: string | null = "Diversey", areas = [
       if (operation === "read") reads.push({ table, filters });
       else if (!(table === "leads" && value?.contact_email && existingEmail)) writes.push({ table, operation, value });
       return { error: table === "holidays" && holidayError ? { message: "unavailable" } : null, data: table === "holidays" ? holidays : table === "ekkoa_coverage_areas" ? areas
-        : table === "leads" ? { id: "lead", category, client_id: null }
+        : table === "leads" ? { id: "lead", category, client_id: null, pessoa_id: null,
+          empresa_nome: "Clínica Longevidade", endereco: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ",
+          bairro: "Vila Nova", zip_code: "28907350", city: "Cabo Frio", maps_url: "https://maps.google.com/example",
+          contact_name: "Contato do lead", contact_phone: "5521999999999", contact_email: "lead@example.com",
+          pessoa: { nome: "Pessoa do lead", email: "pessoa@example.com", telefone: null, whatsapp: "5521888888888" } }
         : table === "schedules" ? { id: "schedule", ...value } : null };
     };
     const chain: any = {
@@ -81,6 +85,15 @@ describe("MCP visit scheduling", () => {
     expect(result.success).toBe(true);
     expect(h.writes.find(w => w.table === "schedules")?.value.title).toContain("[Diversey]");
     expect(JSON.stringify(result)).not.toContain("Ekkoa");
+  });
+  it.each(["agendar_visita_tecnica", "agendar_visita"])("%s copies lead location, CEP and contact details", async (method) => {
+    const h = harness();
+    expect((await h.route(visit, method)).success).toBe(true);
+    const schedule = h.writes.find(w => w.table === "schedules")?.value;
+    expect(schedule).toMatchObject({
+      lead_id: "lead", location: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", zip_code: "28907350",
+    });
+    expect(schedule.notes).toBe("Empresa: Clínica Longevidade | Contato: Pessoa do lead | Telefone: 5521999999999 | E-mail: lead@example.com | Produto: Diversey | Mapa: https://maps.google.com/example");
   });
   it("explicit product takes precedence without category lookup", async () => {
     const h = harness();
@@ -180,7 +193,7 @@ describe("MCP holidays and booking email", () => {
     const h = harness();
     expect((await h.route({ ...visit, email })).success).toBe(true);
     expect(h.writes.some(w => w.value?.contact_email)).toBe(false);
-    expect(h.writes.find(w => w.table === "schedules")?.value.notes).not.toContain("E-mail:");
+    expect(h.writes.find(w => w.table === "schedules")?.value.notes).toContain("E-mail: lead@example.com");
   });
   it("calendar read failure cannot create a booking", async () => {
     const h = harness("Diversey", undefined, [], null, true);

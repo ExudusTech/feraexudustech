@@ -22,7 +22,7 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
       if (table === "notification_recipients") data = recipients.filter(r => filters.every(([op, key, val]) => op === "contains" ? val.every((v: string) => r[key].includes(v)) : r[key] === val));
       if (table === "holidays") data = [];
       if (table === "ekkoa_coverage_areas") data = [{ dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
-      if (table === "leads") data = { id: "lead", contact_name: "Contato", empresa_nome: "Empresa", contact_phone: "5521988888888", endereco: "Rua A, 10 - Cabo Frio - RJ", bairro: "Centro", regiao: "Cabo Frio", category: "Produto" };
+      if (table === "leads") data = { id: "lead", contact_name: "Contato", empresa_nome: "Empresa", contact_phone: "5521988888888", endereco: "Rua A, 10", bairro: "Centro", city: "Cabo Frio", zip_code: "28900000", regiao: "Cabo Frio", maps_url: "https://maps.google.com/example", category: "Produto", pessoa: null };
       if (table === "schedules") data = { id: "schedule", ...value };
       return { data, error: options.logFailure && table === "notification_logs" ? { message: "failed" } : null };
     };
@@ -57,7 +57,8 @@ describe("MCP team WhatsApp notifications", () => {
     expect(url).toBe("https://api.gptmaker.ai/v2/channel/channel/start-conversation");
     expect(request.method).toBe("POST"); expect(request.headers.Authorization).toBe("Bearer mock-private-token");
     const body = JSON.parse(request.body); expect(body.phone).toBe("5521995367752");
-    expect(body.message).toContain("Rua A, 10, Centro (Cabo Frio)"); expect(body.message).toContain("sexta-feira, 16/10 às 13:30");
+    expect(body.message).toContain("Onde: Rua A, 10, Centro, Cabo Frio"); expect(body.message).toContain("sexta-feira, 16/10 às 13:30");
+    expect(body.message).toContain("Mapa: https://maps.google.com/example");
     expect(body.message).toContain("https://fera.exudustech.com.br/agenda?agendamento=schedule");
     expect(JSON.stringify(h.writes)).not.toContain("mock-private-token");
   });
