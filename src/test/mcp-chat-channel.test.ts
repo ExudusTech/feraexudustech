@@ -17,8 +17,15 @@ function harness(options: { person?: any; openLeads?: any[]; phoneMatch?: boolea
     const query: Query = { table, operation: "read", filters: [] };
     const result = () => {
       queries.push(query);
-      if (query.operation !== "read") return { error: null, data: { id: table === "pessoas" ? "person" : "new-lead", ...query.value } };
-      if (table === "pessoas") return { error: options.personError ? { message: "lookup failed" } : null, data: options.person ?? null };
+      if (query.operation !== "read") return { error: null, data: table === "pessoas"
+        ? { ...(options.person ?? {}), id: options.person?.id ?? "person", ...query.value }
+        : { id: "new-lead", ...query.value } };
+      if (table === "pessoas") {
+        const matches = options.person && query.filters.some(f =>
+          (f[0] === "eq" && options.person[f[1]] === f[2]) ||
+          (f[0] === "ilike" && f[1] === "email" && options.person.email?.toLowerCase() === String(f[2]).toLowerCase()));
+        return { error: options.personError ? { message: "lookup failed" } : null, data: matches ? options.person : null };
+      }
       if (table === "client_contacts") return { error: null, data:
         (options.phoneMatch && query.filters.some(f => f[0] === "in")) || options.channelMatch ? [contact] : [] };
       const isPersonLeads = table === "leads" && query.filters.some(f => f[1] === "pessoa_id");
