@@ -858,6 +858,13 @@ function bookingNotes(lead: BookingLead | null, params: Record<string, unknown>,
     .filter(Boolean).join(" | ");
 }
 
+function bookingProduct(lead: BookingLead | null, supplied: unknown): string | null {
+  const explicit = normalizeParamValue(supplied);
+  if (typeof explicit === "string") return explicit.trim();
+  const category = normalizeParamValue(lead?.category);
+  return typeof category === "string" ? category.trim() : null;
+}
+
 async function fillBookingEmail(supabase: ReturnType<typeof getClient>, lead: BookingLead | null, email: string | null): Promise<void> {
   if (!lead || !email) return;
   const { error: leadError } = await supabase.from("leads").update({ contact_email: email })
@@ -1495,7 +1502,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     leadId = bookingLead?.id;
   }
 
-  const product = produto_interesse || bookingLead?.category || null;
+  const product = bookingProduct(bookingLead, produto_interesse);
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim() : null;
   const title = `Visita NitsClean — ${empresa || nome_contato}${product ? ` [${product}]` : ""}`;
   const area = bookingArea(await selectCoverage(supabase, params, true), data_visita, horario);
@@ -1630,7 +1637,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     leadId = bookingLead?.id;
   }
 
-  const product = produto_interesse || bookingLead?.category || null;
+  const product = bookingProduct(bookingLead, produto_interesse);
   const empresaLabel = bookingLead?.empresa_nome || bookingLead?.company || empresa || "empresa";
   const title        = `Visita Técnica — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
   const startTime    = `${horario}:00`;
