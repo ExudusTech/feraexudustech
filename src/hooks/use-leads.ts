@@ -19,8 +19,8 @@ export interface Lead {
   id: string;
   organization_id: string;
   client_id: string | null;
-  pessoa_id: string | null;
-  pessoa: {
+  pessoa_id?: string | null;
+  pessoa?: {
     id: string;
     nome: string;
     whatsapp: string | null;
