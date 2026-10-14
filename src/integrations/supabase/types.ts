@@ -1989,6 +1989,7 @@ export type Database = {
           maps_url: string | null
           organization_id: string
           origem_especifica: string | null
+          pessoa_id: string | null
           place_id: string | null
           position: number
           post_id: string | null
@@ -2033,6 +2034,7 @@ export type Database = {
           maps_url?: string | null
           organization_id: string
           origem_especifica?: string | null
+          pessoa_id?: string | null
           place_id?: string | null
           position?: number
           post_id?: string | null
@@ -2077,6 +2079,7 @@ export type Database = {
           maps_url?: string | null
           organization_id?: string
           origem_especifica?: string | null
+          pessoa_id?: string | null
           place_id?: string | null
           position?: number
           post_id?: string | null
@@ -2111,6 +2114,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
             referencedColumns: ["id"]
           },
         ]
@@ -2856,6 +2866,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "payment_methods_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pessoas: {
+        Row: {
+          chat_ids: string[]
+          created_at: string
+          email: string | null
+          id: string
+          instagram_handle: string | null
+          instagram_user_id: string | null
+          messenger_id: string | null
+          nome: string
+          organization_id: string
+          telefone: string | null
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          chat_ids?: string[]
+          created_at?: string
+          email?: string | null
+          id?: string
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome: string
+          organization_id: string
+          telefone?: string | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          chat_ids?: string[]
+          created_at?: string
+          email?: string | null
+          id?: string
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome?: string
+          organization_id?: string
+          telefone?: string | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pessoas_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"

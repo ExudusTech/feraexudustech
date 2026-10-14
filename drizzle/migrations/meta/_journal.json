@@ -57,6 +57,13 @@
       "when": 1791920873752,
       "tag": "0007_agenda_flora_source_coverage_consultant",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791988126555,
+      "tag": "0008_create_pessoas_and_link_leads",
+      "breakpoints": true
     }
   ]
 }
