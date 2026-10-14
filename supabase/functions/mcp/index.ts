@@ -633,10 +633,9 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   });
 
   return ok(
-    { coberto: true, vinculo: "DISTRIBUIDORA", cobertura,
-      mensagem_para_lead: "Sua região é atendida pela NitsClean Distribuidora. Vamos combinar a visita do consultor?" },
+    { coberto: true, vinculo: "DISTRIBUIDORA", cobertura },
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
-    "Use consultar_rota_consultor para obter as próximas datas e propor agendamento de visita técnica"
+    "Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres."
   );
 }
 
@@ -896,7 +895,7 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
       proximas_datas:  proximasFormatadas,
     },
     `Consultor visita ${regiao ?? cidade ?? cep} às ${diasSemana}. Próximas: ${proximasFormatadas.map((p) => p.data_ptbr).join(", ")}`,
-    `Proponha ao lead: "Nossa equipe visita ${regiao ?? cidade ?? cep} às ${diasSemana}. Quer agendar para ${proximasFormatadas[0]?.data_ptbr ?? "em breve"}?"`
+    "Antes de responder, consulte os horários livres na agenda para estas datas e ofereça 3 opções prontas (dia + horário livre dentro da faixa). Não peça ao lead para sugerir horário."
   );
 }
 

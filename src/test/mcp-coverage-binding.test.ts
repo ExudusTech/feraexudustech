@@ -54,8 +54,8 @@ describe("coverage bindings", () => {
     const h = harness();
     const result = await h.route("verificar_cobertura_regiao", params);
     expect(result).toMatchObject({ success: true, data: { coberto: true, vinculo: "DISTRIBUIDORA", cobertura: [{ regiao: "Búzios" }] } });
-    expect(result.data.mensagem_para_lead).toContain("Distribuidora");
-    expect(result.next_action_hint).toContain("consultar_rota_consultor");
+    expect(result.data.mensagem_para_lead).toBeUndefined();
+    expect(result.next_action_hint).toBe("Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres.");
     expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
     expect(h.queries[0].filters).toContainEqual(["eq", "is_active", true]);
   });

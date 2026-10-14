@@ -137,6 +137,7 @@ describe("MCP holidays and booking email", () => {
     const result = await h.route({ cidade: "Cabo Frio", proximas_datas_count: 3 }, "consultar_rota_consultor");
     expect(result.data.proximas_datas.map((d: any) => d.data)).toEqual(["2026-10-16", "2026-10-19", "2026-10-23"]);
     expect(h.reads.find(r => r.table === "holidays")?.filters).toContainEqual(["or", "organization_id.is.null,organization_id.eq.7fd8333b-578a-4db8-b1be-fdcb8339d4e8"]);
+    expect(result.next_action_hint).toBe("Antes de responder, consulte os horários livres na agenda para estas datas e ofereça 3 opções prontas (dia + horário livre dentro da faixa). Não peça ao lead para sugerir horário.");
   });
   it.each(["Cabo Frio", "Arraial do Cabo"])("municipal holiday applies only to its city (%s)", async (cidade) => {
     const h = harness("Diversey", undefined, [{ ...holiday, city: " cabo FRIO " }]);
