@@ -71,6 +71,13 @@
       "when": 1791988230135,
       "tag": "0009_add_lead_city_for_establishment_matching",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791993091619,
+      "tag": "0010_add_schedule_zip_and_backfill_flora_details",
+      "breakpoints": true
     }
   ]
 }
