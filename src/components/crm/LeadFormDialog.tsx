@@ -18,7 +18,7 @@ import { useEkkoaInstallations, useUpdateEkkoaInstallation } from "@/hooks/use-e
 import { useSchedules, useUpdateSchedule } from "@/hooks/use-schedules";
 import { useViaCep } from "@/hooks/use-viacep";
 import { useOrganizationUsers } from "@/hooks/use-users";
-import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock, X } from "lucide-react";
+import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock, X, MessageCircle, Instagram } from "lucide-react";
 import { formatCEP, formatPhone, validateEmail, validatePhone } from "@/lib/validations";
 import { useCoverageValidation } from "@/hooks/use-coverage-validation";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
@@ -672,6 +672,19 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               )}
               {lead.contact_name && (
                 <div><span className="text-muted-foreground text-xs">Contato:</span> <span>{lead.contact_name}</span></div>
+              )}
+              {lead.pessoa && (
+                <div className="col-span-2 space-y-1 rounded-md border p-2">
+                  <div><span className="text-muted-foreground text-xs">Pessoa:</span> <span>{lead.pessoa.nome}</span></div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {(lead.pessoa.whatsapp || lead.pessoa.telefone) && (
+                      <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{lead.pessoa.whatsapp || lead.pessoa.telefone}</span>
+                    )}
+                    {(lead.pessoa.instagram_handle || lead.pessoa.instagram_user_id) && (
+                      <span className="flex items-center gap-1"><Instagram className="h-3 w-3" />{lead.pessoa.instagram_handle ? `@${lead.pessoa.instagram_handle.replace(/^@/, "")}` : lead.pessoa.instagram_user_id}</span>
+                    )}
+                  </div>
+                </div>
               )}
               {lead.contact_phone && (
                 <div><span className="text-muted-foreground text-xs">Telefone:</span> <span>{lead.contact_phone}</span></div>
