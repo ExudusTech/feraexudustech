@@ -1,7 +1,7 @@
 import { Lead, STAGE_CONFIG, getMacroStage } from "@/hooks/use-leads";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GripVertical, Calendar, User } from "lucide-react";
+import { GripVertical, Calendar, User, MessageCircle, Instagram } from "lucide-react";
 
 interface Props {
   lead: Lead;
@@ -38,10 +38,22 @@ export default function LeadCard({ lead, onClick, draggable, onDragStart }: Prop
               </Badge>
             )}
           </div>
-          {lead.contact_name && (
+          {(lead.pessoa?.nome || lead.contact_name) && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <User className="h-3 w-3" />
-              <span className="truncate">{lead.contact_name}</span>
+              <span className="truncate">{lead.pessoa?.nome || lead.contact_name}</span>
+            </div>
+          )}
+          {(lead.pessoa?.whatsapp || lead.pessoa?.telefone) && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground" aria-label="WhatsApp da pessoa">
+              <MessageCircle className="h-3 w-3" />
+              <span className="truncate">{lead.pessoa.whatsapp || lead.pessoa.telefone}</span>
+            </div>
+          )}
+          {(lead.pessoa?.instagram_handle || lead.pessoa?.instagram_user_id) && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground" aria-label="Instagram da pessoa">
+              <Instagram className="h-3 w-3" />
+              <span className="truncate">{lead.pessoa.instagram_handle ? `@${lead.pessoa.instagram_handle.replace(/^@/, "")}` : lead.pessoa.instagram_user_id}</span>
             </div>
           )}
           {lead.expected_close_date && (

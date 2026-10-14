@@ -19,6 +19,16 @@ export interface Lead {
   id: string;
   organization_id: string;
   client_id: string | null;
+  pessoa_id: string | null;
+  pessoa: {
+    id: string;
+    nome: string;
+    whatsapp: string | null;
+    instagram_user_id: string | null;
+    instagram_handle: string | null;
+    email: string | null;
+    telefone: string | null;
+  } | null;
   title: string;
   description: string | null;
   stage: LeadStage;
@@ -113,7 +123,7 @@ export function useLeads() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("leads")
-        .select("*")
+        .select("*, pessoa:pessoas(id, nome, whatsapp, instagram_user_id, instagram_handle, email, telefone)")
         .order("position", { ascending: true });
       if (error) throw error;
       return data as Lead[];
@@ -142,6 +152,7 @@ export function useCreateLead() {
           contact_phone: input.contact_phone,
           expected_close_date: input.expected_close_date,
           category: input.category || null,
+          pessoa_id: input.pessoa_id || null,
           zip_code: (input as any).zip_code || null,
           organization_id: user.organization_id,
           created_by: user.id,

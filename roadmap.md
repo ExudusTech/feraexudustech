@@ -1,4 +1,5 @@
 # Tasks
+- [ ] Separate people from establishment leads, backfill existing chat leads, update MCP/UI, test and deploy.
 - [x] Adjust only coverage texts: no lead message for DISTRIBUIDORA and agenda-first hints; 157 MCP tests passed, mcp deployed and two live calls confirmed.
 - [x] Fix outside-coverage registration using tenant-scoped select/insert/update and valid fechado_perdido stage; exact audited WhatsApp input verified with mocked persistence, without modifying the real lead.
 - [x] Return explicit coverage bindings with normalized city/region/CEP matching; 176 tests passed (29 new), mcp deployed and five authenticated live coverage checks passed, including Armação dos Búzios as DISTRIBUIDORA.
