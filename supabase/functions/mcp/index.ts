@@ -818,6 +818,58 @@ function bookingArea(areas: CoverageRegion[], date: string, time: string): Cover
       (minutes >= timeMinutes(area.horario_inicio) && minutes <= timeMinutes(area.horario_fim))));
 }
 
+type BookingLead = {
+  id: string; client_id?: string | null; pessoa_id?: string | null;
+  endereco?: string | null; bairro?: string | null; zip_code?: string | null;
+  city?: string | null; regiao?: string | null; maps_url?: string | null;
+  contact_phone?: string | null; contact_email?: string | null; category?: string | null;
+  empresa_nome?: string | null; company?: string | null; title?: string | null;
+  contact_name?: string | null;
+  pessoa?: { nome?: string | null; email?: string | null; telefone?: string | null; whatsapp?: string | null } | null;
+};
+
+const BOOKING_LEAD_SELECT = "id, client_id, pessoa_id, endereco, bairro, zip_code, city, regiao, maps_url, contact_phone, contact_email, category, empresa_nome, company, title, contact_name, pessoa:pessoas(nome, email, telefone, whatsapp)";
+
+async function loadBookingLead(supabase: ReturnType<typeof getClient>, leadId?: string, interactionId?: string): Promise<BookingLead | null> {
+  if (!leadId && !interactionId) return null;
+  let query = supabase.from("leads").select(BOOKING_LEAD_SELECT).eq("organization_id", NITSCLEAN_ORG_ID);
+  query = leadId ? query.eq("id", leadId) : query.eq("interaction_id", interactionId);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw new Error(`Erro ao consultar dados do lead: ${error.message}`);
+  return data as BookingLead | null;
+}
+
+function bookingLocation(lead: BookingLead | null, fallbackCity?: string): string | null {
+  const address = lead?.endereco?.trim();
+  if (address) return address;
+  return [lead?.bairro, lead?.city || fallbackCity].filter(Boolean).join(", ") || fallbackCity || null;
+}
+
+function bookingNotes(lead: BookingLead | null, params: Record<string, unknown>, product: string | null): string {
+  const value = (candidate: unknown) => typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
+  const company = value(lead?.empresa_nome) || value(lead?.company) || value(params.empresa) || value(lead?.title);
+  const contact = value(lead?.pessoa?.nome) || value(lead?.contact_name) || value(params.nome_contato);
+  const phone = value(lead?.contact_phone) || value(lead?.pessoa?.whatsapp) || value(lead?.pessoa?.telefone) || value(params.telefone);
+  const email = value(params.email) || value(lead?.contact_email) || value(lead?.pessoa?.email);
+  const mapsUrl = value(lead?.maps_url) || value(params.maps_url);
+  return [company ? `Empresa: ${company}` : null, contact ? `Contato: ${contact}` : null,
+    phone ? `Telefone: ${phone}` : null, email ? `E-mail: ${email}` : null,
+    product ? `Produto: ${product}` : null, mapsUrl ? `Mapa: ${mapsUrl}` : null]
+    .filter(Boolean).join(" | ");
+}
+
+async function fillBookingEmail(supabase: ReturnType<typeof getClient>, lead: BookingLead | null, email: string | null): Promise<void> {
+  if (!lead || !email) return;
+  const { error: leadError } = await supabase.from("leads").update({ contact_email: email })
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id).or("contact_email.is.null,contact_email.eq.");
+  if (leadError) throw new Error(`Erro ao atualizar e-mail do lead: ${leadError.message}`);
+  if (lead.pessoa_id) {
+    const { error: pessoaError } = await supabase.from("pessoas").update({ email })
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.pessoa_id).or("email.is.null,email.eq.");
+    if (pessoaError) throw new Error(`Erro ao atualizar e-mail da pessoa: ${pessoaError.message}`);
+  }
+}
+
 type AddressComponent = { types?: string[]; longText?: string; long_name?: string };
 function addressPart(parts: AddressComponent[] | undefined, ...types: string[]): string | null {
   for (const type of types) {
@@ -1424,11 +1476,11 @@ async function listarHorariosDisponiveis(params: Record<string, unknown>): Promi
 async function agendarVisita(params: Record<string, unknown>): Promise<McpResponse> {
   const {
     lead_id, interaction_id, nome_contato, empresa, telefone,
-    data_visita, horario, cidade, produto_interesse, notas,
+    data_visita, horario, cidade, produto_interesse, email,
   } = params as {
     lead_id?: string; interaction_id?: string; nome_contato: string;
     empresa?: string; telefone?: string; data_visita: string; horario: string;
-    cidade?: string; produto_interesse?: string; notas?: string;
+    cidade?: string; produto_interesse?: string; email?: string;
   };
 
   if (!data_visita || !horario) return fail("data_visita e horario são obrigatórios");
@@ -1438,15 +1490,13 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
   if (holidayRejection) return holidayRejection;
   let leadId = lead_id;
-  let clientId: string | null = null;
+  let bookingLead = await loadBookingLead(supabase, leadId, interaction_id);
   if (!leadId && interaction_id) {
-    const { data } = await supabase
-      .from("leads").select("id, client_id").eq("interaction_id", interaction_id).single();
-    leadId   = data?.id;
-    clientId = data?.client_id;
+    leadId = bookingLead?.id;
   }
 
-  const product = await resolveVisitProduct(supabase, leadId, produto_interesse);
+  const product = produto_interesse || bookingLead?.category || null;
+  const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim() : null;
   const title = `Visita NitsClean — ${empresa || nome_contato}${product ? ` [${product}]` : ""}`;
   const area = bookingArea(await selectCoverage(supabase, params, true), data_visita, horario);
   const startTime = `${horario}:00`;
@@ -1459,14 +1509,9 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
       organization_id: NITSCLEAN_ORG_ID, title,
       source: "flora", assigned_to: area?.consultant_user_id ?? null,
       scheduled_date:  data_visita, start_time: startTime, end_time: endTime,
-      schedule_type:   "visita_comercial", status: "agendado", location: cidade ?? null,
-      notes: [
-        notas,
-        telefone          ? `Tel: ${telefone}`          : null,
-        product           ? `Produto: ${product}`      : null,
-        interaction_id    ? `Flora: ${interaction_id}`  : null,
-      ].filter(Boolean).join(" | "),
-      client_id: clientId ?? null,
+      schedule_type: "visita_comercial", status: "agendado", location: bookingLocation(bookingLead, cidade),
+      zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: bookingNotes(bookingLead, params, product),
+      client_id: bookingLead?.client_id ?? null, lead_id: leadId ?? null,
     })
     .select("id, title, scheduled_date, start_time, status")
     .single();
@@ -1478,6 +1523,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
       .update({ stage: "agendado", updated_at: new Date().toISOString() })
       .eq("id", leadId);
   }
+  await fillBookingEmail(supabase, bookingLead, validEmail);
 
   await logInteraction(supabase, "agendar_visita", params, ok(schedule), leadId, undefined, interaction_id);
 
@@ -1520,13 +1566,11 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (!cidade) return fail("cidade é obrigatória para validar a rota do consultor");
 
   const supabase = getClient();
-  let validatedLead: { id: string; client_id?: string | null } | null = null;
+  let validatedLead: BookingLead | null = null;
   if (lead_id) {
-    const { data, error } = await supabase.from("leads").select("id, client_id")
-      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead_id).maybeSingle();
-    if (error) return fail(`Erro ao validar lead: ${error.message}`);
-    if (!data) return fail("lead_id não encontrado nesta organização");
-    validatedLead = data;
+    try { validatedLead = await loadBookingLead(supabase, lead_id); }
+    catch (error) { return fail(error instanceof Error ? error.message : "Erro ao validar lead"); }
+    if (!validatedLead) return fail("lead_id não encontrado nesta organização");
   }
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
   if (holidayRejection) return holidayRejection;
@@ -1580,30 +1624,20 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   // Resolver lead
   let leadId = lead_id;
-  let clientId: string | null = validatedLead?.client_id ?? null;
+  let bookingLead = validatedLead;
   if (!leadId && interaction_id) {
-    const { data } = await supabase
-      .from("leads").select("id, client_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("interaction_id", interaction_id).single();
-    leadId   = data?.id;
-    clientId = data?.client_id ?? null;
+    bookingLead = await loadBookingLead(supabase, undefined, interaction_id);
+    leadId = bookingLead?.id;
   }
 
-  const product = await resolveVisitProduct(supabase, leadId, produto_interesse);
-  const empresaLabel = empresa ?? "empresa";
+  const product = produto_interesse || bookingLead?.category || null;
+  const empresaLabel = bookingLead?.empresa_nome || bookingLead?.company || empresa || "empresa";
   const title        = `Visita Técnica — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
   const startTime    = `${horario}:00`;
   const endHour      = parseInt(horario.split(":")[0], 10) + 1;
   const endTime      = `${String(endHour).padStart(2, "0")}:00:00`;
 
-  const notesArr = [
-    `Contato: ${nome_contato}${cargo ? ` (${cargo})` : ""}`,
-    telefone          ? `Tel: ${telefone}`               : null,
-    validEmail        ? `E-mail: ${validEmail}`          : null,
-    product           ? `Produto: ${product}`           : null,
-    contato_id        ? `contato_id: ${contato_id}`      : null,
-    interaction_id    ? `Flora: ${interaction_id}`       : null,
-    notas             ? notas                            : null,
-  ].filter(Boolean).join(" | ");
+  const notesArr = bookingNotes(bookingLead, { ...params, email: validEmail }, product);
 
   const { data: schedule, error } = await supabase
     .from("schedules")
@@ -1613,8 +1647,8 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       schedule_type: "visita_tecnica", schedule_subtype: "PROSPECCAO",
       source: "flora", assigned_to: bookingArea(areas, data_visita, horario)?.consultant_user_id ?? null,
       status: "agendado",
-      location: cidade, notes: notesArr,
-      client_id: clientId ?? null,
+      location: bookingLocation(bookingLead, cidade), zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: notesArr,
+      client_id: bookingLead?.client_id ?? null,
       lead_id: leadId ?? null,
     })
     .select("id, title, scheduled_date, start_time, status")
@@ -1626,19 +1660,15 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     await supabase.from("leads")
       .update({ stage: "agendado", updated_at: new Date().toISOString() })
       .eq("id", leadId);
-    if (validEmail) {
-      const { error: emailError } = await supabase.from("leads")
-        .update({ contact_email: validEmail })
-        .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId)
-        .or("contact_email.is.null,contact_email.eq.");
-      if (emailError) throw new Error(`Erro ao atualizar e-mail do lead: ${emailError.message}`);
-    }
   }
+  await fillBookingEmail(supabase, bookingLead, validEmail);
 
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
 
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
-  queueTeamNotification(supabase, "agendamento", { ...params, produto_interesse: product }, leadId, schedule?.id);
+  queueTeamNotification(supabase, "agendamento", { ...params, produto_interesse: product,
+    endereco: bookingLead?.endereco, bairro: bookingLead?.bairro, cidade: bookingLead?.city || cidade,
+    maps_url: bookingLead?.maps_url }, leadId, schedule?.id);
 
   const mensagemParaLead =
     `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
@@ -2186,6 +2216,7 @@ const TOOLS_MANIFEST = [
       properties: {
         nome:              { type: "string" },
         telefone:          { type: "string" },
+        email:             { type: "string", description: "E-mail opcional; preenche lead e pessoa apenas se vazios" },
         email:             { type: "string" },
         empresa_nome:      { type: "string", description: "Nome da empresa (B2B)" },
         cargo_contato:     { type: "string", description: "Cargo/função do contato na empresa" },
@@ -2271,7 +2302,7 @@ const TOOLS_MANIFEST = [
         nome_contato:      { type: "string" }, empresa: { type: "string" }, telefone: { type: "string" },
         data_visita:       { type: "string", description: "YYYY-MM-DD" },
         horario:           { type: "string", description: "HH:MM" },
-        cidade:            { type: "string" }, produto_interesse: { type: "string" }, notas: { type: "string" },
+        cidade:            { type: "string" }, cep: { type: "string" }, produto_interesse: { type: "string" }, notas: { type: "string" },
       },
     },
   },
