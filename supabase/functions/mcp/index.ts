@@ -133,6 +133,119 @@ function applyChatChannel(method: string, params: Record<string, unknown>): Reco
   return enriched;
 }
 
+type PessoaRecord = {
+  id: string;
+  nome: string;
+  email?: string | null;
+  telefone?: string | null;
+  whatsapp?: string | null;
+  instagram_user_id?: string | null;
+  instagram_handle?: string | null;
+  messenger_id?: string | null;
+  chat_ids?: string[] | null;
+};
+
+function digits(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\D/g, "");
+  return normalized || null;
+}
+
+function normalizedEstablishment(value: unknown): string {
+  return typeof value === "string"
+    ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
+    : "";
+}
+
+function pessoaChannelFields(params: Record<string, unknown>): Partial<PessoaRecord> {
+  const resolved = resolveChannelFromChatId(params.chat_id);
+  const fields: Partial<PessoaRecord> = {};
+  const email = typeof params.email === "string" ? params.email.trim().toLowerCase() : "";
+  const phone = digits(params.telefone);
+  if (email) fields.email = email;
+  if (phone) fields.telefone = phone;
+  if (typeof params.instagram_handle === "string" && params.instagram_handle.trim()) {
+    fields.instagram_handle = params.instagram_handle.trim().replace(/^@/, "");
+  }
+  if (resolved?.canal === "WHATSAPP") fields.whatsapp = resolved.identificador;
+  if (resolved?.canal === "INSTAGRAM") fields.instagram_user_id = resolved.identificador;
+  if (resolved?.canal === "MESSENGER") fields.messenger_id = resolved.identificador;
+  return fields;
+}
+
+async function resolvePessoa(
+  supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, createIfMissing: boolean,
+): Promise<{ pessoa: PessoaRecord | null; error?: string }> {
+  const channelFields = pessoaChannelFields(params);
+  const lookups: [keyof PessoaRecord, string][] = [];
+  for (const key of ["whatsapp", "instagram_user_id", "messenger_id"] as const) {
+    const value = channelFields[key];
+    if (typeof value === "string" && value) lookups.push([key, value]);
+  }
+  if (channelFields.email) lookups.push(["email", channelFields.email]);
+
+  let pessoa: PessoaRecord | null = null;
+  for (const [field, value] of lookups) {
+    const query = supabase.from("pessoas")
+      .select("id, nome, email, telefone, whatsapp, instagram_user_id, instagram_handle, messenger_id, chat_ids")
+      .eq("organization_id", NITSCLEAN_ORG_ID);
+    const { data, error } = field === "email"
+      ? await query.ilike("email", value).limit(1).maybeSingle()
+      : await query.eq(field, value).limit(1).maybeSingle();
+    if (error) return { pessoa: null, error: error.message };
+    if (data) { pessoa = data as PessoaRecord; break; }
+  }
+
+  const chatId = typeof params.chat_id === "string" && params.chat_id.trim() ? params.chat_id.trim() : null;
+  const nome = typeof params.nome === "string" && params.nome.trim() ? params.nome.trim() : "Contato";
+  if (!pessoa && createIfMissing) {
+    const { data, error } = await supabase.from("pessoas").insert({
+      organization_id: NITSCLEAN_ORG_ID,
+      nome,
+      ...channelFields,
+      chat_ids: chatId ? [chatId] : [],
+    }).select("id, nome, email, telefone, whatsapp, instagram_user_id, instagram_handle, messenger_id, chat_ids").single();
+    if (error) return { pessoa: null, error: error.message };
+    pessoa = data as PessoaRecord;
+  }
+
+  if (!pessoa) return { pessoa: null };
+  const updates: Record<string, unknown> = {};
+  if ((!pessoa.nome || pessoa.nome === "Contato") && nome !== "Contato") updates.nome = nome;
+  for (const [key, value] of Object.entries(channelFields)) {
+    if (value && !pessoa[key as keyof PessoaRecord]) updates[key] = value;
+  }
+  const chatIds = Array.isArray(pessoa.chat_ids) ? pessoa.chat_ids : [];
+  if (chatId && !chatIds.includes(chatId)) updates.chat_ids = [...chatIds, chatId];
+  if (Object.keys(updates).length > 0) {
+    const { data, error } = await supabase.from("pessoas").update(updates).eq("id", pessoa.id)
+      .eq("organization_id", NITSCLEAN_ORG_ID)
+      .select("id, nome, email, telefone, whatsapp, instagram_user_id, instagram_handle, messenger_id, chat_ids").single();
+    if (error) return { pessoa: null, error: error.message };
+    pessoa = data as PessoaRecord;
+  }
+  return { pessoa };
+}
+
+async function pessoaWithLeads(supabase: ReturnType<typeof getClient>, pessoa: PessoaRecord): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.from("leads")
+    .select("id, empresa_nome, company, title, city, stage, category")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id)
+    .order("created_at", { ascending: false }).limit(5);
+  if (error) throw new Error(`Erro ao consultar leads da pessoa: ${error.message}`);
+  return {
+    encontrado: true,
+    pessoa: { id: pessoa.id, nome: pessoa.nome },
+    leads_da_pessoa: (data ?? []).map((lead: Record<string, unknown>) => ({
+      id: lead.id,
+      empresa: lead.empresa_nome ?? lead.company ?? lead.title ?? null,
+      cidade: lead.city ?? null,
+      estagio: lead.stage,
+      produto: lead.category ?? null,
+    })),
+  };
+}
+
 async function resolveVisitProduct(
   supabase: ReturnType<typeof getClient>, leadId: string | undefined, product: string | undefined
 ): Promise<string | null> {
@@ -422,6 +535,12 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
 
   const supabase = getClient();
   const notFound = ok({ encontrado: false });
+  const personResult = await resolvePessoa(supabase, params, false);
+  if (personResult.error) return fail(`Erro ao consultar pessoa: ${personResult.error}`);
+  if (personResult.pessoa) {
+    const personData = await pessoaWithLeads(supabase, personResult.pessoa);
+    return ok(personData, undefined, "Confirme se é para um estabelecimento anterior ou para uma nova empresa");
+  }
 
   // ── Modo 1: busca por canal_id ──────────────────────────────────────────────
   if (canal_id && canal_tipo) {
@@ -1038,25 +1157,6 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 
   const supabase = getClient();
 
-  const chatId = typeof params.chat_id === "string" && params.chat_id.trim()
-    ? params.chat_id.trim() : null;
-  if (chatId) {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: chatLead, error: chatError } = await supabase.from("leads")
-      .select("id, contact_name, stage")
-      .eq("organization_id", NITSCLEAN_ORG_ID)
-      .eq("gptmaker_chat_id", chatId)
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(1).maybeSingle();
-    if (chatError) return fail(`Erro ao consultar lead do chat: ${chatError.message}`);
-    if (chatLead) return ok(
-      { lead: chatLead, criado: false },
-      `Lead já existe: ${chatLead.contact_name}`,
-      "Lead já registrado — use atualizar_lead ou agendar_visita_tecnica"
-    );
-  }
-
   // Idempotência
   const { data: existing } = await supabase
     .from("leads")
@@ -1074,6 +1174,33 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   }
 
   const empresaFinal = empresa_nome ?? empresa ?? null;
+  const chatId = typeof params.chat_id === "string" && params.chat_id.trim()
+    ? params.chat_id.trim() : null;
+  const personResult = await resolvePessoa(supabase, params, true);
+  if (personResult.error || !personResult.pessoa) {
+    return fail(`Erro ao resolver pessoa: ${personResult.error ?? "pessoa não identificada"}`);
+  }
+
+  const { data: openLeads, error: openLeadError } = await supabase.from("leads")
+    .select("id, contact_name, stage, place_id, empresa_nome, company, city")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", personResult.pessoa.id)
+    .order("created_at", { ascending: false }).limit(20);
+  if (openLeadError) return fail(`Erro ao consultar leads da pessoa: ${openLeadError.message}`);
+  const requestedPlaceId = typeof params.place_id === "string" ? params.place_id.trim() : "";
+  const companyKey = normalizedEstablishment(empresaFinal);
+  const cityKey = normalizedEstablishment(cidade);
+  const matchingLead = (openLeads ?? []).find((lead: Record<string, unknown>) => {
+    if (["fechado_ganho", "fechado_perdido"].includes(String(lead.stage))) return false;
+    if (requestedPlaceId) return lead.place_id === requestedPlaceId;
+    if (!companyKey || !cityKey || lead.place_id) return false;
+    return normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
+      && normalizedEstablishment(lead.city) === cityKey;
+  });
+  if (matchingLead) return ok(
+    { lead: matchingLead, criado: false, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
+    `Lead já existe para ${empresaFinal}`,
+    "Lead aberto do mesmo estabelecimento — use atualizar_lead ou agendar_visita_tecnica"
+  );
 
   const { data: lead, error } = await supabase
     .from("leads")
@@ -1085,6 +1212,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       title:             empresaFinal ? `${nome} — ${empresaFinal}` : nome,
       company:           empresaFinal,
       empresa_nome:      empresaFinal,
+      city:              cidade ?? null,
       cargo_contato:     cargo_contato ?? null,
       stage:             "novo",
       source:            canalFinal.toLowerCase(),
@@ -1099,6 +1227,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       post_id:           post_id    && post_id.trim()    !== "" ? post_id    : null,
       post_titulo:       post_titulo && post_titulo.trim() !== "" ? post_titulo : null,
       vinculo:           vinculo     ?? null,
+      pessoa_id:         personResult.pessoa.id,
       client_contact_id: client_contact_id ?? null,
       position:          0,
       created_by_flora:  true,
@@ -1113,7 +1242,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
 
   return ok(
-    { lead, criado: true },
+    { lead, criado: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
     `Lead criado: ${nome}`,
     "Use consultar_rota_consultor para verificar cobertura e propor visita técnica"
   );
@@ -1379,6 +1508,14 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (!cidade) return fail("cidade é obrigatória para validar a rota do consultor");
 
   const supabase = getClient();
+  let validatedLead: { id: string; client_id?: string | null } | null = null;
+  if (lead_id) {
+    const { data, error } = await supabase.from("leads").select("id, client_id")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead_id).maybeSingle();
+    if (error) return fail(`Erro ao validar lead: ${error.message}`);
+    if (!data) return fail("lead_id não encontrado nesta organização");
+    validatedLead = data;
+  }
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
   if (holidayRejection) return holidayRejection;
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
@@ -1431,7 +1568,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   // Resolver lead
   let leadId = lead_id;
-  let clientId: string | null = null;
+  let clientId: string | null = validatedLead?.client_id ?? null;
   if (!leadId && interaction_id) {
     const { data } = await supabase
       .from("leads").select("id, client_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("interaction_id", interaction_id).single();
@@ -1972,7 +2109,7 @@ const TOOLS_MANIFEST = [
   // ── Block 1: Identification ──────────────────────────────────────────────
   {
     name: "buscar_contato",
-    description: "Busca cliente B2B existente por canal_id (WhatsApp/Instagram) ou por nome+telefone. Resposta LGPD-safe binária. Modo 1: canal_id + canal_tipo. Modo 2: telefone + nome.",
+    description: "Busca uma pessoa B2B por canal ou e-mail e retorna até cinco estabelecimentos já ligados a ela. Mantém compatibilidade com contatos de clientes existentes.",
     parameters: {
       type: "object",
       properties: {
@@ -2029,7 +2166,7 @@ const TOOLS_MANIFEST = [
   // ── Block 2: Lead Capture ─────────────────────────────────────────────────
   {
     name: "criar_lead",
-    description: "Registra novo lead no CRM do Fera. Reutiliza lead do mesmo chat_id na organização nas últimas 24h; também idempotente via interaction_id. Suporta campos B2B e rastreamento de post IG.",
+    description: "Registra uma oportunidade por estabelecimento. Reutiliza somente lead aberto da mesma pessoa e do mesmo local; mantém idempotência por interaction_id.",
     parameters: {
       type: "object",
       required: ["nome", "canal", "interaction_id"],
