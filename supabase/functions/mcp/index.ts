@@ -377,11 +377,16 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
   const lines: string[] = [];
   if (event === "agendamento") {
     lines.push("📅 Nova visita agendada pela Flora", `Cliente: ${client}`);
-    const street = (text(params.endereco) || text(lead?.endereco)).split(/\s[-–]\s/)[0].split(",").slice(0, 2).map(part => part.trim()).join(", ");
+    const street = text(params.endereco) || text(lead?.endereco);
     const neighborhood = text(params.bairro) || text(lead?.bairro);
-    const region = text(params.regiao) || text(lead?.regiao) || city;
-    const where = [street, neighborhood].filter(Boolean).join(", ");
-    if (where || region) lines.push(`Onde: ${where}${region ? `${where ? " " : ""}(${region})` : ""}`);
+    const leadCity = text(lead?.city) || city;
+    const whereParts = [street];
+    if (neighborhood && !street.toLowerCase().includes(neighborhood.toLowerCase())) whereParts.push(neighborhood);
+    if (leadCity && !street.toLowerCase().includes(leadCity.toLowerCase())) whereParts.push(leadCity);
+    const where = whereParts.filter(Boolean).join(", ");
+    if (where) lines.push(`Onde: ${where}`);
+    const mapsUrl = text(params.maps_url) || text(lead?.maps_url);
+    if (mapsUrl) lines.push(`Mapa: ${mapsUrl}`);
     const dateString = text(params.data_visita);
     const date = new Date(`${dateString}T12:00:00Z`);
     const dateLabel = Number.isFinite(date.getTime()) ? date.toLocaleDateString("pt-BR", {
@@ -411,7 +416,7 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
   if (!recipients?.length) return;
   let lead: Record<string, unknown> | null = null;
   if (leadId || params.interaction_id) {
-    let query = supabase.from("leads").select("id, empresa_nome, company, contact_name, contact_phone, endereco, bairro, regiao, category")
+    let query = supabase.from("leads").select("id, empresa_nome, company, contact_name, contact_phone, endereco, bairro, city, regiao, maps_url, category")
       .eq("organization_id", NITSCLEAN_ORG_ID);
     query = leadId ? query.eq("id", leadId) : query.eq("interaction_id", params.interaction_id);
     const result = await query.maybeSingle();
