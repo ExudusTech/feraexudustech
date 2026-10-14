@@ -64,6 +64,13 @@
       "when": 1791988126555,
       "tag": "0008_create_pessoas_and_link_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791988230135,
+      "tag": "0009_add_lead_city_for_establishment_matching",
+      "breakpoints": true
     }
   ]
 }

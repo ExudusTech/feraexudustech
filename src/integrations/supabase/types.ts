@@ -1965,6 +1965,7 @@ export type Database = {
           canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato: string | null
           category: string | null
+          city: string | null
           client_contact_id: string | null
           client_id: string | null
           company: string | null
@@ -2010,6 +2011,7 @@ export type Database = {
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato?: string | null
           category?: string | null
+          city?: string | null
           client_contact_id?: string | null
           client_id?: string | null
           company?: string | null
@@ -2055,6 +2057,7 @@ export type Database = {
           canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
           cargo_contato?: string | null
           category?: string | null
+          city?: string | null
           client_contact_id?: string | null
           client_id?: string | null
           company?: string | null
