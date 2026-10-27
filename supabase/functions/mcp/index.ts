@@ -918,6 +918,19 @@ async function locationRequest(url: string, init: RequestInit, cacheKey: string)
   return data;
 }
 
+function isPlaceInRj(place: { addressComponents?: { types?: string[]; longText?: string; shortText?: string }[] }): boolean {
+  const comps = Array.isArray(place.addressComponents) ? place.addressComponents : [];
+  const state = comps.find(c => c.types?.includes("administrative_area_level_1"));
+  if (state) {
+    const values = [state.shortText, state.longText].filter(Boolean).map(v => String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim());
+    return values.some(v => v === "rj" || v === "rio de janeiro" || v === "state of rio de janeiro" || v === "estado do rio de janeiro");
+  }
+  const postal = comps.find(c => c.types?.includes("postal_code"));
+  const cep = (postal?.longText ?? postal?.shortText ?? "").replace(/\D/g, "");
+  if (cep.length === 8) { const n = Number(cep); return n >= 20000000 && n <= 28999999; }
+  return true;
+}
+
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
