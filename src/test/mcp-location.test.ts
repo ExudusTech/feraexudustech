@@ -69,6 +69,14 @@ describe("MCP establishment location", () => {
     expect(JSON.parse(h.requests[0].init.body)).toMatchObject({ languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 });
     expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
   });
+  it("drops candidates outside RJ", async () => {
+    const es = { ...place(), id: "es", displayName: { text: "Rd Clean" }, addressComponents: [{ types: ["administrative_area_level_2"], longText: "Cariacica" }, { types: ["administrative_area_level_1"], longText: "Espírito Santo", shortText: "ES" }, { types: ["postal_code"], longText: "29140-000" }] };
+    const rj = { ...place("28950-000"), id: "rj", displayName: { text: "Rd Clean Búzios" }, addressComponents: [...place("28950-000").addressComponents, { types: ["administrative_area_level_1"], longText: "Rio de Janeiro", shortText: "RJ" }] };
+    const result = await harness({ places: [es, rj] }).route("localizar_estabelecimento", { ...input, nome: "Rd Clean" });
+    expect(result.data.candidatos.map((c: any) => c.place_id)).toEqual(["rj"]);
+    const none = await harness({ places: [es] }).route("localizar_estabelecimento", { ...input, nome: "Rd Clean" });
+    expect(none.data.encontrado).toBe(false);
+  });
   it.each([{ places: [] }, { googleStatus: 403 }, { googleStatus: 429 }, { noKey: true }])("returns controlled fallback for %j", async options => {
     const result = await harness(options).route("localizar_estabelecimento", input);
     expect(result.success).toBe(true);

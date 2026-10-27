@@ -396,13 +396,21 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
     const product = text(params.produto_interesse) || text(lead?.category);
     if (product) lines.push(`Produto: ${product}`);
   } else {
-    const heading = event === "lead_matriz" ? "🏢 Lead recebido da Matriz" : "👤 Atendimento transferido pela Flora";
+    const heading = text(params.titulo)
+      || (event === "lead_matriz" ? "🏢 Lead recebido da Matriz" : "👤 Atendimento transferido pela Flora");
     lines.push(heading, `Cliente: ${client}`);
-    const reason = text(params.motivo) || "Atendimento humano solicitado";
-    lines.push(`Motivo: ${reason}`);
+    const whatsapp = digits(params.whatsapp_cliente);
+    if (whatsapp) lines.push(`WhatsApp: https://wa.me/${whatsapp}`);
+    const instagram = text(params.instagram_cliente).replace(/^@/, "");
+    if (instagram) lines.push(`Instagram: @${instagram}`);
     if (city) lines.push(`Cidade: ${city}`);
-    const phone = text(params.telefone) || text(lead?.contact_phone);
-    if (phone) lines.push(`Telefone: ${phone}`);
+    const product = text(params.produto_interesse) || text(lead?.category);
+    if (product) lines.push(`Produto: ${product}`);
+    const summary = text(params.resumo);
+    if (summary) lines.push(`O que o cliente pediu: ${summary}`);
+    lines.push(`Motivo: ${text(params.motivo) || "Atendimento humano solicitado"}`);
+    const urgency = text(params.urgencia);
+    if (urgency) lines.push(`Urgência: ${urgency}`);
   }
   return [...lines, `Ver no Fera: ${link}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
@@ -910,6 +918,19 @@ async function locationRequest(url: string, init: RequestInit, cacheKey: string)
   return data;
 }
 
+function isPlaceInRj(place: { addressComponents?: { types?: string[]; longText?: string; shortText?: string }[] }): boolean {
+  const comps = Array.isArray(place.addressComponents) ? place.addressComponents : [];
+  const state = comps.find(c => c.types?.includes("administrative_area_level_1"));
+  if (state) {
+    const values = [state.shortText, state.longText].filter(Boolean).map(v => String(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim());
+    return values.some(v => v === "rj" || v === "rio de janeiro" || v === "state of rio de janeiro" || v === "estado do rio de janeiro");
+  }
+  const postal = comps.find(c => c.types?.includes("postal_code"));
+  const cep = (postal?.longText ?? postal?.shortText ?? "").replace(/\D/g, "");
+  if (cep.length === 8) { const n = Number(cep); return n >= 20000000 && n <= 28999999; }
+  return true;
+}
+
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
@@ -961,6 +982,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       }, `places:${cidade ? "city" : "lagos-bias"}:${textQuery}`);
       places = Array.isArray(result.places) ? result.places.slice(0, 3) : [];
     }
+    places = places.filter(isPlaceInRj);
     const requestedName = normalizedName(nome);
     const matches = !params.cep && requestedName ? places.filter(place => {
       const candidateName = normalizedName(place.displayName?.text ?? "");
@@ -1903,36 +1925,120 @@ async function adicionarTag(params: Record<string, unknown>): Promise<McpRespons
 // BLOCK 5 — ROUTING / EXCEPTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const TRANSFER_DEDUP_MS = 30 * 60 * 1000;
+
+function transferNote(now: Date, motivo: string | null, urgencia: string, resumo: string | null): string {
+  const stamp = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit",
+    year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+  const parts = [`Motivo: ${motivo ?? "Atendimento humano solicitado"}`, `Urgência: ${urgencia}`];
+  if (resumo) parts.push(`Resumo: ${resumo}`);
+  return `[${stamp}] Transferência — ${parts.join(" | ")}`;
+}
+
 async function solicitarAtendimentoHumano(params: Record<string, unknown>): Promise<McpResponse> {
-  const { lead_id, contato_id, interaction_id, motivo, urgencia } = params as {
-    lead_id?: string; contato_id?: string; interaction_id?: string; motivo?: string; urgencia?: string;
+  const str = (key: string, max = 500): string | null | false => {
+    const value = params[key];
+    if (value == null) return null;
+    if (typeof value !== "string" || value.length > max) return false;
+    return value.trim() || null;
   };
-
+  const fields: Record<string, string | null> = {};
+  for (const [key, max] of [["lead_id", 100], ["interaction_id", 200], ["chat_id", 300], ["nome_contato", 500],
+    ["empresa", 500], ["cidade", 500], ["produto_interesse", 500], ["resumo", 1000], ["motivo", 500], ["urgencia", 20]] as const) {
+    const value = str(key, max);
+    if (value === false) return fail(`${key} inválido`);
+    fields[key] = value;
+  }
+  const urgencia = ["baixa", "media", "alta"].includes(fields.urgencia ?? "") ? fields.urgencia! : "media";
   const supabase = getClient();
-  // Tratar string vazia como não fornecido
-  let leadId = lead_id && lead_id.trim() !== "" ? lead_id : undefined;
-  if (!leadId && interaction_id) {
-    const { data } = await supabase.from("leads").select("id").eq("interaction_id", interaction_id).single();
-    leadId = data?.id;
+  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id";
+
+  // Pessoa via chat_id (same resolver as buscar_contato/criar_lead)
+  const channel = resolveChannelFromChatId(fields.chat_id);
+  let pessoa: PessoaRecord | null = null;
+  if (channel) {
+    const resolved = await resolvePessoa(supabase, { ...params, nome: fields.nome_contato ?? undefined,
+      telefone: channel.canal === "WHATSAPP" ? channel.identificador : params.telefone }, true);
+    if (resolved.error) console.error("[solicitar_atendimento_humano] pessoa lookup failed");
+    pessoa = resolved.pessoa;
   }
 
-  if (leadId) {
-    await supabase.from("leads").update({
-      precisa_humano: true,
-      description:    motivo ? `⚠️ HUMANO: ${motivo}` : "⚠️ Solicitou atendimento humano",
-      updated_at:     new Date().toISOString(),
-    }).eq("id", leadId);
+  // Lead: lead_id → interaction_id → chat_id → pessoa
+  let lead: Record<string, unknown> | null = null;
+  const findOne = async (column: string, value: string) => {
+    const { data } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq(column, value).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    return data as Record<string, unknown> | null;
+  };
+  if (fields.lead_id) lead = await findOne("id", fields.lead_id);
+  if (!lead && fields.interaction_id) lead = await findOne("interaction_id", fields.interaction_id);
+  if (!lead && fields.chat_id) lead = await findOne("gptmaker_chat_id", fields.chat_id);
+  if (!lead && pessoa) lead = await findOne("pessoa_id", pessoa.id);
+
+  let leadCriado = false;
+  if (!lead) {
+    const canal = channel?.canal ?? "WHATSAPP";
+    const nome = fields.nome_contato ?? (pessoa?.nome && pessoa.nome !== "Contato" ? pessoa.nome : null) ?? "Contato";
+    const phone = channel?.canal === "WHATSAPP" ? channel.identificador : (pessoa?.whatsapp ?? pessoa?.telefone ?? null);
+    const { data, error } = await supabase.from("leads").insert({
+      organization_id: NITSCLEAN_ORG_ID,
+      contact_name: nome,
+      contact_phone: phone,
+      title: fields.empresa ? `${nome} — ${fields.empresa}` : nome,
+      company: fields.empresa, empresa_nome: fields.empresa,
+      city: fields.cidade, category: fields.produto_interesse,
+      stage: "novo", source: canal.toLowerCase(), canal_origem: canal,
+      interaction_id: fields.interaction_id ?? String(Date.now()),
+      gptmaker_chat_id: fields.chat_id,
+      instagram_handle: pessoa?.instagram_handle ?? null,
+      pessoa_id: pessoa?.id ?? null,
+      position: 0, created_by_flora: true,
+    }).select(leadSelect).single();
+    if (error || !data) return fail(`Erro ao registrar lead da transferência: ${error?.message ?? "sem retorno"}`);
+    lead = data as Record<string, unknown>;
+    leadCriado = true;
+  }
+  const leadId = String(lead.id);
+
+  const note = transferNote(new Date(), fields.motivo, urgencia, fields.resumo);
+  const previous = typeof lead.description === "string" && lead.description.trim() ? lead.description : "";
+  await supabase.from("leads").update({
+    precisa_humano: true,
+    description: previous ? `${previous}\n${note}` : note,
+    updated_at: new Date().toISOString(),
+  }).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
+
+  const event: TeamEvent = fields.motivo && /MATRIZ/i.test(fields.motivo) ? "lead_matriz" : "transferencia";
+  let recent = false;
+  try {
+    const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+      .in("event_type", ["transferencia", "lead_matriz"]).contains("payload", { lead_id: leadId })
+      .gte("created_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
+    recent = (data ?? []).length > 0;
+  } catch { console.error("[solicitar_atendimento_humano] dedup lookup failed"); }
+  const notificado = !recent || urgencia === "alta";
+
+  const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
+    : (!channel && lead.canal_origem === "WHATSAPP" ? digits(lead.contact_phone) : null);
+  const instagram = (channel?.canal === "INSTAGRAM" || (!channel && lead.canal_origem === "INSTAGRAM"))
+    ? (pessoa?.instagram_handle ?? (typeof lead.instagram_handle === "string" ? lead.instagram_handle : null)) : null;
+
+  await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true, lead_id: leadId }),
+    leadId, channel?.canal, fields.interaction_id ?? undefined);
+
+  if (notificado) {
+    queueTeamNotification(supabase, event, {
+      empresa: fields.empresa ?? lead.empresa_nome ?? lead.company ?? null,
+      nome_contato: fields.nome_contato ?? lead.contact_name ?? pessoa?.nome ?? null,
+      cidade: fields.cidade ?? lead.city ?? null,
+      produto_interesse: fields.produto_interesse ?? lead.category ?? null,
+      resumo: fields.resumo, motivo: fields.motivo, urgencia,
+      whatsapp_cliente: whatsapp, instagram_cliente: instagram,
+      titulo: recent ? "⏰ Cliente cobrando retorno" : null,
+    }, leadId);
   }
 
-  await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true }), leadId, undefined, interaction_id);
-
-  queueTeamNotification(supabase, typeof motivo === "string" && /MATRIZ/i.test(motivo) ? "lead_matriz" : "transferencia", params, leadId);
-
-  return ok(
-    { solicitado: true, urgencia: urgencia ?? "media" },
-    "Atendimento humano solicitado — Arilson será notificado",
-    "Informe ao cliente: 'Vou chamar um especialista da NitsClean para te atender. Ele entrará em contato em breve!'"
-  );
+  return ok({ solicitado: true, lead_id: leadId, lead_criado: leadCriado, notificado, urgencia });
 }
 
 async function registrarForaCobertura(params: Record<string, unknown>): Promise<McpResponse> {
@@ -2416,14 +2522,20 @@ const TOOLS_MANIFEST = [
   // ── Block 5: Routing / Exceptions ─────────────────────────────────────────
   {
     name: "solicitar_atendimento_humano",
-    description: "Sinaliza que o lead precisa de atendimento humano e notifica Arilson",
+    description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta).",
     parameters: {
       type: "object",
       properties: {
-        lead_id:        { type: "string" },
-        interaction_id: { type: "string" },
-        motivo:         { type: "string" },
-        urgencia:       { type: "string", enum: ["baixa", "media", "alta"] },
+        lead_id:           { type: "string", description: "ID do lead, se já conhecido" },
+        interaction_id:    { type: "string" },
+        chat_id:           { type: "string", description: "chat_id do GPT Maker; identifica pessoa e canal" },
+        nome_contato:      { type: "string", description: "Nome de quem está conversando" },
+        empresa:           { type: "string", description: "Empresa/estabelecimento do cliente" },
+        cidade:            { type: "string" },
+        produto_interesse: { type: "string" },
+        resumo:            { type: "string", description: "O que o cliente pediu, em uma ou duas frases" },
+        motivo:            { type: "string", description: "Motivo da transferência; contenha MATRIZ para leads da Matriz" },
+        urgencia:          { type: "string", enum: ["baixa", "media", "alta"] },
       },
     },
   },
