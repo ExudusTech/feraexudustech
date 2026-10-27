@@ -14,3 +14,4 @@
 - Schedules persist their origin and inherit the selected coverage area's optional tenant-validated consultant at creation; manager-wide Agenda views remain explicitly scoped to the selected organization so unassigned Flora visits are visible without cross-tenant leakage.
 - Flora schedules copy tenant-scoped lead and person contact/location details at creation so Agenda history and background notifications remain useful even if the lead later changes.
 - Coverage binding inference stays local to verificar_cobertura_regiao, and outside-coverage registration uses tenant-scoped select plus insert/update without global interaction uniqueness, so other tools and tenants remain unaffected.
+- Human handoff always resolves or creates a tenant-scoped lead, appends notes instead of overwriting, and deduplicates team alerts per lead over 30 minutes (except high urgency) so every transfer is visible without spamming the team.
