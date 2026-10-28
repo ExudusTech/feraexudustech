@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isManager } from "../_shared/roles.ts";
 import { saveRoles } from "./set-roles.ts";
+import { normalizeWhatsapp } from "../_shared/whatsapp.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

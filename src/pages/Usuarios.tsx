@@ -18,6 +18,8 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import UserFormDialog from "@/components/usuarios/UserFormDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { normalizeWhatsapp } from "@/lib/whatsapp";
+import { Phone } from "lucide-react";
 
 export default function Usuarios() {
   const { user } = useAuth();
@@ -44,6 +46,32 @@ export default function Usuarios() {
     }
     updateRole.mutate({ userId: rolesDialog.userId, roles: rolesDialog.roles }, { onSuccess: () => setRolesDialog(null) });
   };
+
+  const [phoneDialog, setPhoneDialog] = useState<{ userId: string; name: string; value: string } | null>(null);
+  const handleSavePhone = async () => {
+    if (!phoneDialog) return;
+    const phone = normalizeWhatsapp(phoneDialog.value);
+    if (!phone) {
+      toast({ title: "WhatsApp inválido", description: "Use DDD + número, ex.: 22 99999-9999.", variant: "destructive" });
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await supabase.functions.invoke("manage-user", {
+        body: { action: "set_whatsapp", target_user_id: phoneDialog.userId, whatsapp: phone },
+      });
+      if (res.error || res.data?.error) throw new Error(res.data?.error || "Não foi possível salvar o WhatsApp");
+      toast({ title: "WhatsApp salvo" });
+      qc.invalidateQueries({ queryKey: ["org_users"] });
+      setPhoneDialog(null);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+  const canEditPhone = (u: { user_id: string; roles: string[] }) =>
+    u.user_id === user?.id || (isAdmin && (isSuperAdmin || !u.roles.includes("super_admin")));
 
   const handleResetPassword = async () => {
     if (!resetPasswordDialog || newPassword.length < 6) {
@@ -191,7 +219,20 @@ export default function Usuarios() {
                             <span className="font-medium">{u.name}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          <div className="space-y-1">
+                            <div>{u.email}</div>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {u.phone ? <span className="text-sm">{u.phone}</span> : <Badge variant="destructive">complete o WhatsApp</Badge>}
+                              {canEditPhone(u) && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar WhatsApp" aria-label={`Editar WhatsApp de ${u.name}`}
+                                  onClick={() => setPhoneDialog({ userId: u.user_id, name: u.name, value: u.phone ?? "" })}>
+                                  <Phone className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap items-center gap-1">
                             {u.roles.map(r => (
@@ -288,6 +329,24 @@ export default function Usuarios() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRolesDialog(null)}>Cancelar</Button>
             <Button onClick={handleSaveRoles} disabled={updateRole.isPending}>{updateRole.isPending ? "Salvando..." : "Salvar"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!phoneDialog} onOpenChange={(open) => { if (!open) setPhoneDialog(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>WhatsApp - {phoneDialog?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="user-whatsapp">WhatsApp *</Label>
+            <Input id="user-whatsapp" inputMode="tel" value={phoneDialog?.value ?? ""} placeholder="22 99999-9999"
+              onChange={(e) => phoneDialog && setPhoneDialog({ ...phoneDialog, value: e.target.value })} />
+            <p className="text-xs text-muted-foreground">DDD + número. As notificações da equipe usam este número.</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPhoneDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSavePhone} disabled={actionLoading}>{actionLoading ? "Salvando..." : "Salvar"}</Button>
           </div>
         </DialogContent>
       </Dialog>
