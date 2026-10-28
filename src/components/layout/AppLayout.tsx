@@ -1,6 +1,8 @@
 import { ReactNode } from "react";
 import AppSidebar from "./AppSidebar";
 import AppHeader from "./AppHeader";
+import MobileNav from "./MobileNav";
+import InstallHint from "./InstallHint";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -15,10 +17,12 @@ export default function AppLayout({ children, title, subtitle, actions }: AppLay
       <AppSidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         {title && <AppHeader title={title} subtitle={subtitle} actions={actions} />}
-        <main className="flex-1 overflow-y-auto p-6 bg-background">
+        <main className="flex-1 overflow-y-auto p-3 pb-24 md:p-6 md:pb-6 bg-background">
+          <InstallHint />
           {children}
         </main>
       </div>
+      <MobileNav />
     </div>
   );
 }

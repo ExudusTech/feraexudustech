@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useState, useEffect } from "react";
 import logoExudus from "@/assets/logo-exudus-new.jpeg";
 
-const mainNavItems = [
+export const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Target, label: "Leads", path: "/leads" },
@@ -34,7 +34,7 @@ const mainNavItems = [
   { icon: MapPin, label: "Áreas de Cobertura", path: "/areas-cobertura" },
 ];
 
-const bottomNavItems = [
+export const bottomNavItems = [
   { icon: Crown, label: "Organizações", path: "/admin/organizacoes", superAdminOnly: true },
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
