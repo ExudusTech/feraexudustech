@@ -128,7 +128,7 @@ export default function SuperAdminSelector() {
                           </span>
                           {org.has_ekkoa_access && (
                             <span className="flex items-center gap-1 text-red-400/50 text-[10px]">
-                              <Zap className="h-3 w-3" /> Ekkoa
+                              <Zap className="h-3 w-3" /> Comodato
                             </span>
                           )}
                         </div>

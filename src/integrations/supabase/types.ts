@@ -1273,6 +1273,1041 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261028c_coverage: {
+        Row: {
+          city: string | null
+          consultant_user_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dia_semana: string | null
+          horario_fim: string | null
+          horario_inicio: string | null
+          id: string | null
+          is_active: boolean | null
+          latitude: number | null
+          longitude: number | null
+          name: string | null
+          organization_id: string | null
+          radius_km: number | null
+          state: string | null
+          updated_at: string | null
+          zip_code_end: string | null
+          zip_code_start: string | null
+        }
+        Insert: {
+          city?: string | null
+          consultant_user_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          organization_id?: string | null
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Update: {
+          city?: string | null
+          consultant_user_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          organization_id?: string | null
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028c_leads: {
+        Row: {
+          assigned_to: string | null
+          bairro: string | null
+          canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato: string | null
+          category: string | null
+          city: string | null
+          client_contact_id: string | null
+          client_id: string | null
+          company: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string | null
+          created_by: string | null
+          created_by_flora: boolean | null
+          description: string | null
+          empresa_nome: string | null
+          endereco: string | null
+          expected_close_date: string | null
+          flora_tags: string[] | null
+          fora_cobertura: boolean | null
+          gptmaker_chat_id: string | null
+          id: string | null
+          instagram_handle: string | null
+          interaction_id: string | null
+          latitude: number | null
+          longitude: number | null
+          maps_url: string | null
+          organization_id: string | null
+          origem_especifica: string | null
+          pessoa_id: string | null
+          place_id: string | null
+          position: number | null
+          post_id: string | null
+          post_titulo: string | null
+          precisa_humano: boolean | null
+          regiao: string | null
+          source: string | null
+          stage: Database["public"]["Enums"]["lead_stage"] | null
+          title: string | null
+          updated_at: string | null
+          value: number | null
+          vinculo: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028c_organizations: {
+        Row: {
+          accent_color: string | null
+          address: string | null
+          city: string | null
+          cnpj: string | null
+          created_at: string | null
+          email: string | null
+          flora_default_lead_owner: string | null
+          has_ekkoa_access: boolean | null
+          heading_font: string | null
+          id: string | null
+          is_active: boolean | null
+          logo_url: string | null
+          max_users: number | null
+          name: string | null
+          phone: string | null
+          plan: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          state: string | null
+          support_color: string | null
+          trading_name: string | null
+          updated_at: string | null
+          website: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          accent_color?: string | null
+          address?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          accent_color?: string | null
+          address?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028c_pessoas: {
+        Row: {
+          chat_ids: string[] | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          instagram_handle: string | null
+          instagram_user_id: string | null
+          messenger_id: string | null
+          nome: string | null
+          organization_id: string | null
+          telefone: string | null
+          updated_at: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          chat_ids?: string[] | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome?: string | null
+          organization_id?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          chat_ids?: string[] | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome?: string | null
+          organization_id?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028c_schedules: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string | null
+          lead_id: string | null
+          location: string | null
+          notes: string | null
+          operation_id: string | null
+          organization_id: string | null
+          schedule_subtype: string | null
+          schedule_type: string | null
+          scheduled_date: string | null
+          source: string | null
+          start_time: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_auth_users: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string | null
+          raw_user_meta_data: Json | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          raw_user_meta_data?: Json | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          raw_user_meta_data?: Json | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_clients: {
+        Row: {
+          address: string | null
+          assigned_user_id: string | null
+          city: string | null
+          company: string | null
+          created_at: string | null
+          created_by: string | null
+          document: string | null
+          email: string | null
+          id: string | null
+          name: string | null
+          notes: string | null
+          organization_id: string | null
+          phone: string | null
+          produto_linhas: string[] | null
+          ramo_atuacao: string | null
+          state: string | null
+          status: string | null
+          updated_at: string | null
+          vinculo: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          assigned_user_id?: string | null
+          city?: string | null
+          company?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          produto_linhas?: string[] | null
+          ramo_atuacao?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          assigned_user_id?: string | null
+          city?: string | null
+          company?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          produto_linhas?: string[] | null
+          ramo_atuacao?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_ekkoa_clients: {
+        Row: {
+          address: string | null
+          city: string | null
+          client_type: string | null
+          company: string | null
+          created_at: string | null
+          created_by: string | null
+          document: string | null
+          email: string | null
+          id: string | null
+          name: string | null
+          notes: string | null
+          organization_id: string | null
+          phone: string | null
+          state: string | null
+          status: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          client_type?: string | null
+          company?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          client_type?: string | null
+          company?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          document?: string | null
+          email?: string | null
+          id?: string | null
+          name?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_ekkoa_installations: {
+        Row: {
+          address: string | null
+          assigned_to: string | null
+          city: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_date: string | null
+          id: string | null
+          installation_type: string | null
+          inverter_model: string | null
+          latitude: number | null
+          longitude: number | null
+          notes: string | null
+          organization_id: string | null
+          panels_count: number | null
+          power_kwp: number | null
+          start_date: string | null
+          state: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          address?: string | null
+          assigned_to?: string | null
+          city?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string | null
+          installation_type?: string | null
+          inverter_model?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          notes?: string | null
+          organization_id?: string | null
+          panels_count?: number | null
+          power_kwp?: number | null
+          start_date?: string | null
+          state?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          address?: string | null
+          assigned_to?: string | null
+          city?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string | null
+          installation_type?: string | null
+          inverter_model?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          notes?: string | null
+          organization_id?: string | null
+          panels_count?: number | null
+          power_kwp?: number | null
+          start_date?: string | null
+          state?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_inventory_items: {
+        Row: {
+          category: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dispenser_family_id: string | null
+          em_comodato: boolean | null
+          geolocation: string | null
+          id: string | null
+          installation_date: string | null
+          item_type: string | null
+          last_maintenance_date: string | null
+          linha_produto: string | null
+          localizacao_interna: string | null
+          location: string | null
+          min_quantity: number | null
+          name: string | null
+          organization_id: string | null
+          photo_url: string | null
+          proxima_manutencao: string | null
+          quantity: number | null
+          serial_number: string | null
+          sku: string | null
+          status: string | null
+          unit: string | null
+          unit_cost: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          em_comodato?: boolean | null
+          geolocation?: string | null
+          id?: string | null
+          installation_date?: string | null
+          item_type?: string | null
+          last_maintenance_date?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
+          location?: string | null
+          min_quantity?: number | null
+          name?: string | null
+          organization_id?: string | null
+          photo_url?: string | null
+          proxima_manutencao?: string | null
+          quantity?: number | null
+          serial_number?: string | null
+          sku?: string | null
+          status?: string | null
+          unit?: string | null
+          unit_cost?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          em_comodato?: boolean | null
+          geolocation?: string | null
+          id?: string | null
+          installation_date?: string | null
+          item_type?: string | null
+          last_maintenance_date?: string | null
+          linha_produto?: string | null
+          localizacao_interna?: string | null
+          location?: string | null
+          min_quantity?: number | null
+          name?: string | null
+          organization_id?: string | null
+          photo_url?: string | null
+          proxima_manutencao?: string | null
+          quantity?: number | null
+          serial_number?: string | null
+          sku?: string | null
+          status?: string | null
+          unit?: string | null
+          unit_cost?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_notification_recipients: {
+        Row: {
+          ativo: boolean | null
+          created_at: string | null
+          email: string | null
+          eventos: string[] | null
+          id: string | null
+          nome: string | null
+          notes: string | null
+          organization_id: string | null
+          papel: string | null
+          roles: string[] | null
+          updated_at: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          eventos?: string[] | null
+          id?: string | null
+          nome?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          papel?: string | null
+          roles?: string[] | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          created_at?: string | null
+          email?: string | null
+          eventos?: string[] | null
+          id?: string | null
+          nome?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          papel?: string | null
+          roles?: string[] | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_operations: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_date: string | null
+          id: string | null
+          location: string | null
+          notes: string | null
+          organization_id: string | null
+          priority: string | null
+          start_date: string | null
+          status: Database["public"]["Enums"]["operation_status"] | null
+          title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string | null
+          location?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          priority?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["operation_status"] | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_date?: string | null
+          id?: string | null
+          location?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          priority?: string | null
+          start_date?: string | null
+          status?: Database["public"]["Enums"]["operation_status"] | null
+          title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_organizations: {
+        Row: {
+          accent_color: string | null
+          address: string | null
+          city: string | null
+          cnpj: string | null
+          created_at: string | null
+          email: string | null
+          flora_default_lead_owner: string | null
+          has_ekkoa_access: boolean | null
+          heading_font: string | null
+          id: string | null
+          is_active: boolean | null
+          logo_url: string | null
+          max_users: number | null
+          name: string | null
+          phone: string | null
+          plan: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          state: string | null
+          support_color: string | null
+          trading_name: string | null
+          updated_at: string | null
+          website: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          accent_color?: string | null
+          address?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          accent_color?: string | null
+          address?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          is_active: boolean | null
+          is_email_verified: boolean | null
+          name: string | null
+          organization_id: string | null
+          phone: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          is_email_verified?: boolean | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          is_email_verified?: boolean | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_schedules: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string | null
+          lead_id: string | null
+          location: string | null
+          notes: string | null
+          operation_id: string | null
+          organization_id: string | null
+          schedule_subtype: string | null
+          schedule_type: string | null
+          scheduled_date: string | null
+          source: string | null
+          start_time: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028d_user_roles: {
+        Row: {
+          id: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+          user_id: string | null
+        }
+        Insert: {
+          id?: string | null
+          role?: Database["public"]["Enums"]["app_role"] | null
+          user_id?: string | null
+        }
+        Update: {
+          id?: string | null
+          role?: Database["public"]["Enums"]["app_role"] | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -1550,6 +2585,7 @@ export type Database = {
           dispenser_family_id: string | null
           endereco_instalacao: string | null
           estado: string | null
+          fabricante: string | null
           id: string
           inventory_item_id: string | null
           linha_produto: string | null
@@ -1578,6 +2614,7 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          fabricante?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -1606,6 +2643,7 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          fabricante?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -3085,17 +4123,20 @@ export type Database = {
           description: string | null
           end_time: string | null
           estimated_cost: number | null
+          fabricante: string | null
           id: string
           installation_id: string | null
           inventory_item_id: string | null
           linha_produto: string | null
           maintenance_type: string
+          motivo_retirada: string | null
           notes: string | null
           organization_id: string
           recurrence: string | null
           scheduled_date: string
           start_time: string | null
           status: string
+          tipo_os: string
           title: string
           updated_at: string | null
         }
@@ -3110,17 +4151,20 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
+          fabricante?: string | null
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_retirada?: string | null
           notes?: string | null
           organization_id: string
           recurrence?: string | null
           scheduled_date: string
           start_time?: string | null
           status?: string
+          tipo_os?: string
           title: string
           updated_at?: string | null
         }
@@ -3135,17 +4179,20 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
+          fabricante?: string | null
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_retirada?: string | null
           notes?: string | null
           organization_id?: string
           recurrence?: string | null
           scheduled_date?: string
           start_time?: string | null
           status?: string
+          tipo_os?: string
           title?: string
           updated_at?: string | null
         }
@@ -3334,7 +4381,9 @@ export type Database = {
           organization_id: string
           papel: string
           roles: string[]
+          tipo: string
           updated_at: string | null
+          user_id: string | null
           whatsapp: string | null
         }
         Insert: {
@@ -3348,7 +4397,9 @@ export type Database = {
           organization_id: string
           papel?: string
           roles?: string[]
+          tipo?: string
           updated_at?: string | null
+          user_id?: string | null
           whatsapp?: string | null
         }
         Update: {
@@ -3362,7 +4413,9 @@ export type Database = {
           organization_id?: string
           papel?: string
           roles?: string[]
+          tipo?: string
           updated_at?: string | null
+          user_id?: string | null
           whatsapp?: string | null
         }
         Relationships: [

@@ -15,12 +15,16 @@ import MaintenanceFormDialog from "@/components/financeiro/MaintenanceFormDialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { LINHA_PRODUTO_VALUES, linhaLabel, linhaBadgeClass } from "@/lib/linha-produto";
 import { cn } from "@/lib/utils";
+import { TIPOS_OS, type TipoOS } from "@/lib/fabricantes";
+import { usePermissions } from "@/hooks/use-permissions";
 
 export default function Manutencoes() {
   const { data: items = [], isLoading } = useMaintenanceSchedule();
   const { data: inventory = [] } = useInventory();
   const { data: comodatos = [] } = useComodatos();
   const del = useDeleteMaintenance();
+  const canEdit = usePermissions().canWriteRoute("/manutencoes");
+  const [tipoOs, setTipoOs] = useState("all");
 
   const [search, setSearch] = useState("");
   const [linha, setLinha] = useState("all");
@@ -35,15 +39,16 @@ export default function Manutencoes() {
   const filtered = useMemo(() => items.filter((m) => {
     if (linha !== "all" && (m.linha_produto ?? "") !== linha) return false;
     if (status !== "all" && m.status !== status) return false;
-    if (search && !m.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (tipoOs !== "all" && (m.tipo_os ?? "manutencao") !== tipoOs) return false;
+    if (search && !`${m.title} ${m.fabricante ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [items, linha, status, search]);
+  }), [items, linha, status, tipoOs, search]);
 
   return (
     <AppLayout
       title="Manutenções"
-      subtitle="Manutenções programadas para todas as linhas de produto"
-      actions={<Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Nova Manutenção</Button>}
+      subtitle="Ordens de serviço: instalação, teste, manutenção e retirada"
+      actions={canEdit && <Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Nova ordem de serviço</Button>}
     >
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative min-w-[240px]">
@@ -55,6 +60,13 @@ export default function Manutencoes() {
           <SelectContent>
             <SelectItem value="all">Todas as linhas</SelectItem>
             {LINHA_PRODUTO_VALUES.map((l) => <SelectItem key={l} value={l}>{linhaLabel(l)}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={tipoOs} onValueChange={setTipoOs}>
+          <SelectTrigger className="w-[170px]" aria-label="Tipo de ordem"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os tipos</SelectItem>
+            {Object.entries(TIPOS_OS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
@@ -91,7 +103,7 @@ export default function Manutencoes() {
             ) : filtered.map((m) => (
               <TableRow key={m.id}>
                 <TableCell className="font-medium">{m.title}</TableCell>
-                <TableCell>{m.maintenance_type}</TableCell>
+                <TableCell>{TIPOS_OS[(m.tipo_os ?? "manutencao") as TipoOS] ?? m.tipo_os}{m.fabricante ? <span className="block text-xs text-muted-foreground">{m.fabricante}</span> : null}{m.tipo_os === "retirada" && m.motivo_retirada ? <span className="block text-xs text-muted-foreground">Motivo: {m.motivo_retirada}</span> : null}</TableCell>
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", linhaBadgeClass(m.linha_produto))}>{linhaLabel(m.linha_produto)}</span></TableCell>
                 <TableCell>{m.inventory_item_id ? (invMap.get(m.inventory_item_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
@@ -105,13 +117,13 @@ export default function Manutencoes() {
                 <TableCell>{new Date(m.scheduled_date).toLocaleDateString("pt-BR")}</TableCell>
                 <TableCell><Badge variant="outline">{m.status}</Badge></TableCell>
                 <TableCell>
-                  <DropdownMenu>
+                  {canEdit && <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => { setEdit(m); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setDeleteId(m.id)} className="text-destructive"><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
                     </DropdownMenuContent>
-                  </DropdownMenu>
+                  </DropdownMenu>}
                 </TableCell>
               </TableRow>
             ))}

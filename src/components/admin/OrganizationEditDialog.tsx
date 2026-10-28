@@ -192,7 +192,7 @@ export default function OrganizationEditDialog({ org, open, onOpenChange, mode =
           {/* Toggles */}
           <div className="flex items-center gap-3 pt-2">
             <Switch checked={form.has_ekkoa_access} onCheckedChange={v => handleChange("has_ekkoa_access", v)} />
-            <Label>Acesso Ekkoa</Label>
+            <Label>Comodato e parque instalado</Label>
           </div>
           <div className="flex items-center gap-3 pt-2">
             <Switch checked={form.is_active} onCheckedChange={v => handleChange("is_active", v)} />

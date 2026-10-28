@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { CalendarDays, Target, Users, Menu, LogOut, Sun, Moon, UserCircle } from "lucide-react";
+import { CalendarDays, Target, Users, Handshake, Wrench, Menu, LogOut, Sun, Moon, UserCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,6 +12,8 @@ const PRIMARY = [
   { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: Target, label: "Leads", path: "/leads" },
   { icon: Users, label: "Clientes", path: "/clientes" },
+  { icon: Handshake, label: "Comodatos", path: "/comodatos" },
+  { icon: Wrench, label: "Manutenções", path: "/manutencoes" },
 ];
 
 /** Bottom navigation for phones; replaces the side menu below the md breakpoint. */
@@ -24,7 +26,7 @@ export default function MobileNav() {
   const [open, setOpen] = useState(false);
 
   const go = (path: string) => { setOpen(false); navigate(path); };
-  const primary = PRIMARY.filter((i) => canAccessRoute(i.path));
+  const primary = PRIMARY.filter((i) => canAccessRoute(i.path)).slice(0, 3);
   const more = [...mainNavItems, ...bottomNavItems]
     .filter((i) => canAccessRoute(i.path))
     .filter((i: any) => !i.superAdminOnly || isSuperAdmin)

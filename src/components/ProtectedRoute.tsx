@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { session, user, isLoading } = useAuth();
-  const { canAccessRoute, isSuperAdmin } = usePermissions();
+  const { canAccessRoute, isSuperAdmin, homeRoute } = usePermissions();
   const location = useLocation();
 
   if (isLoading) {
@@ -36,7 +36,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!canAccessRoute(location.pathname)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={homeRoute} replace />;
   }
 
   return <>{children}</>;

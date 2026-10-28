@@ -8,7 +8,7 @@ import { OrgBrandingProvider } from "@/hooks/use-org-branding";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "@/pages/Auth";
 import Dashboard from "@/pages/Dashboard";
-import Ekkoa from "@/pages/Ekkoa";
+import LegacyEkkoaRedirect from "@/pages/LegacyEkkoaRedirect";
 import Clientes from "@/pages/Clientes";
 import Leads from "@/pages/Leads";
 import Propostas from "@/pages/Propostas";
@@ -45,7 +45,7 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/ekkoa" element={<ProtectedRoute><Ekkoa /></ProtectedRoute>} />
+            <Route path="/ekkoa" element={<LegacyEkkoaRedirect />} />
             <Route path="/clientes" element={<ProtectedRoute><Clientes /></ProtectedRoute>} />
             <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
             <Route path="/propostas" element={<ProtectedRoute><Propostas /></ProtectedRoute>} />

@@ -11,6 +11,8 @@ import { useInventory } from "@/hooks/use-inventory";
 import { useProducts } from "@/hooks/use-products";
 import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { LINHA_PRODUTO_VALUES, linhaLabel } from "@/lib/linha-produto";
+import { FABRICANTES_SUGERIDOS } from "@/lib/fabricantes";
+import { usePermissions } from "@/hooks/use-permissions";
 
 
 interface Props {
@@ -26,6 +28,7 @@ const empty = {
   product_id: "",
   dispenser_family_id: "",
   linha_produto: "",
+  fabricante: "",
 
   localizacao_interna: "",
   endereco_instalacao: "",
@@ -49,6 +52,7 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
   const { data: products = [] } = useProducts();
   const { data: families = [] } = useDispenserFamilies();
 
+  const canSeeRevenue = usePermissions().permissions.canAccessFinanceiro;
   const create = useCreateComodato();
   const update = useUpdateComodato();
   const isEdit = !!comodato;
@@ -63,6 +67,7 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
         dispenser_family_id: comodato.dispenser_family_id ?? "",
 
         linha_produto: comodato.linha_produto ?? "",
+        fabricante: comodato.fabricante ?? "",
         localizacao_interna: comodato.localizacao_interna ?? "",
         endereco_instalacao: comodato.endereco_instalacao ?? "",
         cidade: comodato.cidade ?? "",
@@ -114,6 +119,7 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
       inventory_item_id: form.inventory_item_id || null,
       product_id: form.product_id || null,
       linha_produto: form.linha_produto || null,
+      fabricante: form.fabricante.trim() || null,
       dispenser_family_id: form.dispenser_family_id || null,
 
       localizacao_interna: form.localizacao_interna || null,
@@ -122,7 +128,7 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
       estado: form.estado || null,
       consumo_minimo: form.consumo_minimo ? Number(form.consumo_minimo) : null,
       unidade_consumo: form.unidade_consumo || null,
-      valor_mensal: form.valor_mensal ? Number(form.valor_mensal) : null,
+      ...(canSeeRevenue ? { valor_mensal: form.valor_mensal ? Number(form.valor_mensal) : null } : {}),
       data_inicio: form.data_inicio || null,
       data_fim: form.data_fim || null,
       status: form.status,
@@ -181,6 +187,11 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
               </Select>
             </div>
             <div>
+              <Label htmlFor="comodato-fabricante">Fabricante / Marca</Label>
+              <Input id="comodato-fabricante" list="fabricantes-sugeridos" value={form.fabricante} onChange={(e) => set("fabricante", e.target.value)} placeholder="Ex.: Kimberly-Clark, Diversey, Ekkoa" />
+              <datalist id="fabricantes-sugeridos">{FABRICANTES_SUGERIDOS.map((f) => <option key={f} value={f} />)}</datalist>
+            </div>
+            <div>
               <Label>Tipo de Dispenser</Label>
               <Select
                 value={form.dispenser_family_id || "none"}
@@ -228,10 +239,10 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
               <Label>Unidade</Label>
               <Input value={form.unidade_consumo} onChange={(e) => set("unidade_consumo", e.target.value)} placeholder="un, L, kg..." />
             </div>
-            <div>
+            {canSeeRevenue && <div>
               <Label>Valor Mensal (R$)</Label>
               <Input type="number" step="0.01" value={form.valor_mensal} onChange={(e) => set("valor_mensal", e.target.value)} />
-            </div>
+            </div>}
             <div>
               <Label>Localização Interna</Label>
               <Input value={form.localizacao_interna} onChange={(e) => set("localizacao_interna", e.target.value)} placeholder="Ex: banheiro térreo" />

@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useOrganization } from "@/hooks/use-organizations";
-import { ROLE_LABELS, mergePermissions, pickPrimaryRole, sortRoles, type AppRole } from "@/lib/permissions";
+import { MODULE_ROUTES, ROLE_LABELS, homeRoute, mergePermissions, pickPrimaryRole, routeAllowed, routeWritable, sortRoles, type AppRole } from "@/lib/permissions";
 
 export type { AppRole } from "@/lib/permissions";
 
@@ -15,18 +15,12 @@ export function usePermissions() {
   const isSuperAdmin = hasRole("super_admin");
 
   const canAccessRoute = (path: string): boolean => {
-    // Profile page is always accessible
     if (path === "/meu-perfil") return true;
-    // Block Ekkoa routes if org doesn't have access
-    if (path.startsWith("/ekkoa") && !orgHasEkkoaAccess) {
-      return false;
-    }
-    if (path.startsWith("/areas-cobertura") && !orgHasEkkoaAccess) {
-      return false;
-    }
-    if (permissions.routes.includes("*")) return true;
-    return permissions.routes.some((r) => path.startsWith(r));
+    // Loan/installed-base module (comodatos, OS, coverage) is enabled per organization
+    if (!isSuperAdmin && !orgHasEkkoaAccess && MODULE_ROUTES.some((r) => path.startsWith(r))) return false;
+    return routeAllowed(permissions, path);
   };
+  const canWriteRoute = (path: string): boolean => canAccessRoute(path) && routeWritable(permissions, path);
 
   const getRoleLabel = (r?: string): string => {
     return ROLE_LABELS[(r as AppRole)] || r || "Desconhecido";
@@ -38,6 +32,8 @@ export function usePermissions() {
     hasRole,
     permissions,
     canAccessRoute,
+    canWriteRoute,
+    homeRoute: homeRoute(canAccessRoute),
     getRoleLabel,
     isAdmin: hasRole("admin") || isSuperAdmin,
     isSuperAdmin,

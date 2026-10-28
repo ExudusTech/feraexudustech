@@ -18,6 +18,8 @@ export interface PermissionConfig {
   canAccessRelatorios: boolean;
   /** Whether the role can access settings */
   canAccessConfiguracoes: boolean;
+  /** Routes this role may only view (no create/edit/delete) */
+  readOnlyRoutes?: string[];
 }
 
 export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
@@ -42,7 +44,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes", "/configuracoes"],
+    routes: ["/dashboard", "/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/comodatos", "/manutencoes", "/inventario", "/equipamentos", "/financeiro", "/relatorios", "/areas-cobertura", "/configuracoes", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -52,7 +54,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   vendedor: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
+    routes: ["/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -62,7 +64,8 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   consultor_tecnico: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
+    routes: ["/agenda", "/comodatos", "/manutencoes", "/inventario", "/produtos", "/suporte"],
+    readOnlyRoutes: ["/inventario", "/produtos"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -72,7 +75,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   operacional: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
+    routes: ["/dashboard", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -82,7 +85,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   user: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/suporte"],
+    routes: ["/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -152,5 +155,40 @@ export function mergePermissions(roles: string[]): PermissionConfig {
     canAccessEkkoa: configs.some((c) => c.canAccessEkkoa),
     canAccessRelatorios: configs.some((c) => c.canAccessRelatorios),
     canAccessConfiguracoes: configs.some((c) => c.canAccessConfiguracoes),
+    // A route is read-only only when every role that grants it marks it read-only.
+    readOnlyRoutes: routes.includes("*") ? [] : routes.filter((r) =>
+      configs.filter((c) => c.routes.includes(r)).every((c) => (c.readOnlyRoutes ?? []).includes(r))),
   };
+}
+
+const routeMatches = (route: string, path: string) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`);
+
+/** Whether the merged permissions allow opening a path. */
+export function routeAllowed(perms: PermissionConfig, path: string): boolean {
+  if (path === "/meu-perfil") return true;
+  if (perms.routes.includes("*")) return true;
+  return perms.routes.some((r) => routeMatches(r, path));
+}
+
+/** Whether the merged permissions allow creating/editing on a path. */
+export function routeWritable(perms: PermissionConfig, path: string): boolean {
+  return perms.canWrite && routeAllowed(perms, path) && !(perms.readOnlyRoutes ?? []).some((r) => routeMatches(r, path));
+}
+
+/** Modules hidden when the organization does not have the loan/installed-base module enabled. */
+export const MODULE_ROUTES = ["/comodatos", "/manutencoes", "/areas-cobertura"];
+
+/** First screen the user may open, used as landing page and when a route is denied. */
+export const HOME_CANDIDATES = ["/dashboard", "/agenda", "/leads", "/comodatos", "/financeiro", "/suporte"];
+export function homeRoute(allowed: (path: string) => boolean): string {
+  return HOME_CANDIDATES.find((r) => allowed(r)) ?? "/meu-perfil";
+}
+
+/** Old Ekkoa tabs mapped to their new screens. */
+export const LEGACY_EKKOA_TABS: Record<string, string> = {
+  dashboard: "/dashboard", instalacoes: "/comodatos", contratos: "/comodatos", faturamento: "/financeiro",
+  operacoes: "/manutencoes", agendamentos: "/agenda", fragancias: "/produtos", fragrancias: "/produtos",
+};
+export function legacyEkkoaTarget(tab: string | null): string {
+  return (tab && LEGACY_EKKOA_TABS[tab]) || "/comodatos";
 }

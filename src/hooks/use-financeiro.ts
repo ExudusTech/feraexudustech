@@ -148,6 +148,7 @@ export interface MaintenanceItem {
   end_time: string | null; estimated_cost: number | null; actual_cost: number | null;
   assigned_to: string | null; status: string; recurrence: string | null; notes: string | null;
   inventory_item_id: string | null; comodato_id: string | null; linha_produto: string | null;
+  fabricante?: string | null; tipo_os?: string | null; motivo_retirada?: string | null;
   created_by: string; created_at: string; updated_at: string | null;
 }
 
