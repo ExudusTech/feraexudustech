@@ -183,7 +183,7 @@ export default function Usuarios() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Usuário</TableHead>
-                  <TableHead>E-mail</TableHead>
+                  <TableHead>E-mail / WhatsApp</TableHead>
                   <TableHead>Perfil</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>E-mail Verificado</TableHead>
