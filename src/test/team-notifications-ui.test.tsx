@@ -20,11 +20,10 @@ describe("Team recipient management", () => {
     expect(screen.getByLabelText("Transferência")).toBeInTheDocument();
     expect(screen.getByLabelText("Lead da Matriz")).toBeInTheDocument();
     expect(screen.queryByLabelText("Fora de cobertura")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Usuário")).toBeInTheDocument();
   });
   it("gestor edits an external contact with event subscriptions", async () => {
     render(<TeamNotifications />);
-    fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
-    expect(screen.getByLabelText("Usuário")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Editar PH (teste)" }));
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Comercial" } });
     fireEvent.change(screen.getByLabelText("WhatsApp"), { target: { value: "21 99999-9999" } });
