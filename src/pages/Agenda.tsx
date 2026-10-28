@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Calendar, List, Search, MoreHorizontal, Pencil, Trash2, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, CalendarDays, List, Search, MoreHorizontal, Pencil, Trash2, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSchedules, useDeleteSchedule, type Schedule } from "@/hooks/use-schedules";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,6 +18,8 @@ import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInte
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
+import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "todas" | "minhas" | "criadas";
@@ -33,7 +35,9 @@ export default function Agenda() {
 
   const [viewMode, setViewMode] = useState<ViewMode>(canViewAll ? "todas" : "minhas");
   useEffect(() => { setViewMode(canViewAll ? "todas" : "minhas"); }, [canViewAll, user?.organization_id]);
-  const [displayMode, setDisplayMode] = useState<"lista" | "calendario">("lista");
+  const isMobile = useIsMobile();
+  const [displayMode, setDisplayMode] = useState<"hoje" | "lista" | "calendario">("lista");
+  useEffect(() => { if (isMobile) setDisplayMode((m) => (m === "lista" ? "hoje" : m)); }, [isMobile]);
   const [calendarView, setCalendarView] = useState<CalendarView>("mes");
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -68,6 +72,11 @@ export default function Agenda() {
   const leadMap = useMemo(() => {
     const map = new Map<string, string>();
     leads.forEach((l) => map.set(l.id, l.title));
+    return map;
+  }, [leads]);
+  const leadInfo = useMemo(() => {
+    const map = new Map<string, { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }>();
+    leads.forEach((l: any) => map.set(l.id, { title: l.company_name || l.title, contact_phone: l.contact_phone, maps_url: l.maps_url, whatsapp: l.pessoa?.whatsapp }));
     return map;
   }, [leads]);
 
@@ -284,27 +293,32 @@ export default function Agenda() {
     <AppLayout>
       <div className="space-y-6">
         {linkedId && !isLoading && !schedules.some(item => item.id === linkedId) && <p role="alert" className="text-muted-foreground">Agendamento não encontrado ou sem permissão de acesso.</p>}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Agenda</h1>
-            <p className="text-muted-foreground">Gerencie seus agendamentos</p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-bold">Agenda</h1>
+            <p className="hidden sm:block text-muted-foreground">Gerencie seus agendamentos</p>
           </div>
-          <Button onClick={() => { setEditItem(null); setDialogOpen(true); }}>
-            <Plus className="h-4 w-4 mr-2" /> Novo Agendamento
+          <Button onClick={() => { setEditItem(null); setDialogOpen(true); }} aria-label="Novo Agendamento">
+            <Plus className="h-4 w-4 md:mr-2" /> <span className="hidden md:inline">Novo Agendamento</span><span className="md:hidden">Novo</span>
           </Button>
         </div>
 
         {/* Toggle: Minhas agendas vs Criadas por mim */}
         <div className="flex flex-wrap items-center gap-3">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-            <TabsList>
+            <TabsList className="h-auto flex-wrap">
               {canViewAll && <TabsTrigger value="todas">Todas</TabsTrigger>}
-              <TabsTrigger value="minhas">Minhas Agendas</TabsTrigger>
-              <TabsTrigger value="criadas">Criadas por mim</TabsTrigger>
+              <TabsTrigger value="minhas">Minhas<span className="hidden sm:inline">&nbsp;Agendas</span></TabsTrigger>
+              <TabsTrigger value="criadas">Criadas<span className="hidden sm:inline">&nbsp;por mim</span></TabsTrigger>
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-1 ml-auto border rounded-lg p-0.5">
+          <div className="flex items-center gap-1 sm:ml-auto border rounded-lg p-0.5">
+            {isMobile && (
+              <Button variant={displayMode === "hoje" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("hoje")}>
+                <CalendarDays className="h-4 w-4 mr-1" /> Hoje
+              </Button>
+            )}
             <Button variant={displayMode === "lista" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("lista")}>
               <List className="h-4 w-4 mr-1" /> Lista
             </Button>
@@ -317,19 +331,19 @@ export default function Agenda() {
         {/* Filters (list mode) */}
         {displayMode === "lista" && (
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-60" />
+              <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 w-full sm:w-60" />
             </div>
             <Select value={filterCity} onValueChange={setFilterCity}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Cidade" /></SelectTrigger>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-40"><SelectValue placeholder="Cidade" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas Cidades</SelectItem>
                 {cities.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-40"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos Status</SelectItem>
                 <SelectItem value="agendado">Agendado</SelectItem>
@@ -339,7 +353,7 @@ export default function Agenda() {
               </SelectContent>
             </Select>
             <Select value={filterResponsavel} onValueChange={setFilterResponsavel}>
-              <SelectTrigger className="w-48"><SelectValue placeholder="Responsável" /></SelectTrigger>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-48"><SelectValue placeholder="Responsável" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos Responsáveis</SelectItem>
                 <SelectItem value="unassigned">Sem responsável</SelectItem>
@@ -347,7 +361,7 @@ export default function Agenda() {
               </SelectContent>
             </Select>
             <Select value={filterSubtype} onValueChange={setFilterSubtype}>
-              <SelectTrigger className="w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos Subtipos</SelectItem>
                 {SCHEDULE_SUBTYPE_VALUES.map((v) => <SelectItem key={v} value={v}>{scheduleSubtypeLabel(v)}</SelectItem>)}
@@ -358,12 +372,12 @@ export default function Agenda() {
 
         {/* Calendar navigation */}
         {displayMode === "calendario" && (
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button variant="outline" size="icon" onClick={() => navigateCalendar("prev")}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-lg font-medium capitalize min-w-[200px] text-center">{calendarTitle()}</span>
+              <span className="text-lg font-medium capitalize min-w-[140px] sm:min-w-[200px] text-center">{calendarTitle()}</span>
               <Button variant="outline" size="icon" onClick={() => navigateCalendar("next")}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -383,8 +397,10 @@ export default function Agenda() {
         {/* Content */}
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        ) : displayMode === "hoje" ? (
+          <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} />
         ) : displayMode === "lista" ? (
-          <div className="border rounded-lg overflow-hidden">
+          <div className="border rounded-lg overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
