@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isManager, resolveRequestedRoles } from "../_shared/roles.ts";
+import { saveRoles } from "./set-roles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,9 +21,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseServiceKey || !anonKey) throw new Error("configuration_missing");
 
     const callerClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -100,28 +102,17 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "set_roles": {
-        const nextRoles = resolveRequestedRoles(body, callerRoleList);
-        if (!nextRoles) {
-          return new Response(JSON.stringify({ error: "Perfis inválidos" }), {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        const { data: current } = await adminClient.from("user_roles").select("role").eq("user_id", target_user_id);
-        const currentRoles = (current ?? []).map((r: any) => r.role as string);
-        // Backup the previous set before replacing it
-        await adminClient.from("backup_20261028b_user_roles").insert(currentRoles.map((r) => ({ user_id: target_user_id, role: r })));
-        const toRemove = currentRoles.filter((r) => !nextRoles.includes(r));
-        const toAdd = nextRoles.filter((r) => !currentRoles.includes(r));
-        if (toRemove.length) {
-          const { error } = await adminClient.from("user_roles").delete().eq("user_id", target_user_id).in("role", toRemove);
-          if (error) throw error;
-        }
-        if (toAdd.length) {
-          const { error } = await adminClient.from("user_roles").insert(toAdd.map((r) => ({ user_id: target_user_id, role: r })));
-          if (error) throw error;
-        }
-        return new Response(JSON.stringify({ success: true, roles: nextRoles }), {
+        const result = await saveRoles(body, callerRoleList, {
+          read: async () => {
+            const { data, error } = await adminClient.from("user_roles").select("role").eq("user_id", target_user_id);
+            return { error, roles: (data ?? []).map((r) => r.role as string) };
+          },
+          backup: async (roles) => adminClient.from("backup_20261028b_user_roles").insert(roles.map((role) => ({ user_id: target_user_id, role }))),
+          add: async (roles) => adminClient.from("user_roles").upsert(roles.map((role) => ({ user_id: target_user_id, role })), { onConflict: "user_id,role", ignoreDuplicates: true }),
+          remove: async (roles) => adminClient.from("user_roles").delete().eq("user_id", target_user_id).in("role", roles),
+        }, (stage, code) => console.error("[manage-user] set_roles", stage, code));
+        return new Response(JSON.stringify(result.body), {
+          status: result.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
