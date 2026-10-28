@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import ContactActions from "@/components/ContactActions";
+import { fromNotes, mapsLink } from "@/lib/service-kind";
 import { Badge } from "@/components/ui/badge";
 import { useCreateSchedule, useUpdateSchedule, useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
@@ -126,14 +128,21 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
             )}
           </div>
         </DialogHeader>
+        {isEdit && (
+          <ContactActions
+            phone={(selectedLead as any)?.contact_phone || fromNotes(form.notes, "Telefone")}
+            whatsapp={(selectedLead as any)?.pessoa?.whatsapp}
+            mapUrl={mapsUrl || mapsLink(form.location)}
+          />
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>
 
             {/* CEP First - when areas exist */}
             {showCepSection && (
               <>
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <Label className="font-semibold">CEP do local {!isEdit && "*"}</Label>
                   <Input
                     value={form.zip_code}
@@ -144,7 +153,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
                 </div>
 
                 {cepValid && (
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <Alert variant={matchedArea ? "default" : "destructive"} className="py-2">
                       <div className="flex items-center gap-2">
                         {matchedArea ? (
@@ -172,7 +181,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
 
             {/* Date - smart filtering when area matched */}
             {matchedArea && allowedDates.length > 0 ? (
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <Label>Data *</Label>
                 <Select
                   value={form.scheduled_date}
@@ -244,15 +253,15 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
             </div>
 
             {overlapDetected && (
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <p className="text-xs text-destructive flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" /> Já existe agendamento nesse horário para o consultor.
                 </p>
               </div>
             )}
 
-            <div className="col-span-2"><Label>Local</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
-            <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
+            <div className="sm:col-span-2"><Label>Local</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
+            <div className="sm:col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
             <div>
               <Label>Subtipo</Label>
               <Select value={form.schedule_subtype || "none"} onValueChange={(v) => set("schedule_subtype", v === "none" ? "" : v)}>
@@ -279,9 +288,9 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
+            <div className="sm:col-span-2"><Label>Observações</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
             {mapsUrl && (
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <Button type="button" variant="outline" asChild>
                   <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-4 w-4 mr-2" /> Abrir no Google Maps
@@ -290,7 +299,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="sticky bottom-0 -mx-4 px-4 py-2 bg-background border-t sm:static sm:mx-0 sm:px-0 sm:py-0 sm:border-0 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={isPending || blockSubmit}>{isPending ? "Salvando..." : "Salvar"}</Button>
           </div>

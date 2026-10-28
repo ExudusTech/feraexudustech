@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import ContactActions from "@/components/ContactActions";
+import { mapsLink } from "@/lib/service-kind";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -494,8 +496,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
                 <Label className="text-xs">2. Endereço (rua/avenida) *</Label>
                 <Input
                   value={testForm.street}
@@ -637,6 +639,13 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Lead" : "Novo Lead"}</DialogTitle>
         </DialogHeader>
+        {isEdit && lead && (
+          <ContactActions
+            phone={(lead as any).contact_phone}
+            whatsapp={(lead as any).pessoa?.whatsapp}
+            mapUrl={(lead as any).maps_url || mapsLink([(lead as any).address, (lead as any).city].filter(Boolean).join(", "))}
+          />
+        )}
 
         {isEdit && (canConvert || canManageTest) && (
           <>
@@ -659,9 +668,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         {/* Show lead details summary when in edit mode */}
         {isEdit && lead && !showTestForm && (
           <div className="space-y-2 p-3 rounded-lg bg-muted/30 border text-sm">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
               {lead.category && (
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <span className="text-muted-foreground text-xs">Categorias:</span>
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {parseCategories(lead.category).map(cat => (
@@ -674,7 +683,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                 <div><span className="text-muted-foreground text-xs">Contato:</span> <span>{lead.contact_name}</span></div>
               )}
               {lead.pessoa && (
-                <div className="col-span-2 space-y-1 rounded-md border p-2">
+                <div className="sm:col-span-2 space-y-1 rounded-md border p-2">
                   <div><span className="text-muted-foreground text-xs">Pessoa:</span> <span>{lead.pessoa.nome}</span></div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     {(lead.pessoa.whatsapp || lead.pessoa.telefone) && (
@@ -690,16 +699,16 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                 <div><span className="text-muted-foreground text-xs">Telefone:</span> <span>{lead.contact_phone}</span></div>
               )}
               {lead.contact_email && (
-                <div className="col-span-2"><span className="text-muted-foreground text-xs">Email:</span> <span>{lead.contact_email}</span></div>
+                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Email:</span> <span>{lead.contact_email}</span></div>
               )}
               {lead.source && (
                 <div><span className="text-muted-foreground text-xs">Origem:</span> <span>{lead.source}</span></div>
               )}
               <div><span className="text-muted-foreground text-xs">Estágio:</span> <Badge variant="outline" className="text-xs ml-1">{STAGE_CONFIG[lead.stage].label}</Badge></div>
               {lead.description && (
-                <div className="col-span-2"><span className="text-muted-foreground text-xs">Descrição:</span> <p className="text-xs mt-0.5">{lead.description}</p></div>
+                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Descrição:</span> <p className="text-xs mt-0.5">{lead.description}</p></div>
               )}
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <span className="text-muted-foreground text-xs">Criado em:</span> <span className="text-xs">{new Date(lead.created_at).toLocaleString("pt-BR")}</span>
               </div>
             </div>
@@ -726,13 +735,13 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
               <Label>Nome do Cliente/Empresa *</Label>
               <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
               {formErrors.title && <p className="text-xs text-destructive mt-1">{formErrors.title}</p>}
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Label>Categorias</Label>
               <div className="flex flex-wrap gap-2 mt-1.5 p-2 rounded-md border bg-background min-h-[40px]">
                 {form.categories.length > 0 && form.categories.map(cat => (
@@ -745,7 +754,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
                 ))}
                 {form.categories.length === 0 && <span className="text-xs text-muted-foreground">Nenhuma categoria selecionada</span>}
               </div>
-              <div className="grid grid-cols-2 gap-1 mt-2 max-h-32 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 mt-2 max-h-32 overflow-y-auto">
                 {categories.sort().map((cat) => (
                   <label key={cat} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-2 py-1">
                     <Checkbox
@@ -818,12 +827,12 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Input type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} />
               {formErrors.contact_email && <p className="text-xs text-destructive mt-1">{formErrors.contact_email}</p>}
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Label>Descrição</Label>
               <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />
             </div>
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="sticky bottom-0 -mx-4 px-4 py-2 bg-background border-t sm:static sm:mx-0 sm:px-0 sm:py-0 sm:border-0 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
             <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
           </div>
