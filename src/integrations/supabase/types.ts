@@ -1168,6 +1168,111 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261028b_organizations: {
+        Row: {
+          accent_color: string | null
+          address: string | null
+          backed_up_at: string | null
+          city: string | null
+          cnpj: string | null
+          created_at: string | null
+          email: string | null
+          flora_default_lead_owner: string | null
+          has_ekkoa_access: boolean | null
+          heading_font: string | null
+          id: string | null
+          is_active: boolean | null
+          logo_url: string | null
+          max_users: number | null
+          name: string | null
+          phone: string | null
+          plan: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          state: string | null
+          support_color: string | null
+          trading_name: string | null
+          updated_at: string | null
+          website: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          accent_color?: string | null
+          address?: string | null
+          backed_up_at?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          accent_color?: string | null
+          address?: string | null
+          backed_up_at?: string | null
+          city?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          email?: string | null
+          flora_default_lead_owner?: string | null
+          has_ekkoa_access?: boolean | null
+          heading_font?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          logo_url?: string | null
+          max_users?: number | null
+          name?: string | null
+          phone?: string | null
+          plan?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          state?: string | null
+          support_color?: string | null
+          trading_name?: string | null
+          updated_at?: string | null
+          website?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261028b_user_roles: {
+        Row: {
+          backed_up_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          backed_up_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          backed_up_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -3554,6 +3659,7 @@ export type Database = {
           email: string
           flora_default_lead_owner: string | null
           has_ekkoa_access: boolean
+          heading_font: string | null
           id: string
           is_active: boolean
           logo_url: string | null
@@ -3564,6 +3670,7 @@ export type Database = {
           primary_color: string | null
           secondary_color: string | null
           state: string | null
+          support_color: string | null
           trading_name: string | null
           updated_at: string | null
           website: string | null
@@ -3578,6 +3685,7 @@ export type Database = {
           email: string
           flora_default_lead_owner?: string | null
           has_ekkoa_access?: boolean
+          heading_font?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -3588,6 +3696,7 @@ export type Database = {
           primary_color?: string | null
           secondary_color?: string | null
           state?: string | null
+          support_color?: string | null
           trading_name?: string | null
           updated_at?: string | null
           website?: string | null
@@ -3602,6 +3711,7 @@ export type Database = {
           email?: string
           flora_default_lead_owner?: string | null
           has_ekkoa_access?: boolean
+          heading_font?: string | null
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -3612,6 +3722,7 @@ export type Database = {
           primary_color?: string | null
           secondary_color?: string | null
           state?: string | null
+          support_color?: string | null
           trading_name?: string | null
           updated_at?: string | null
           website?: string | null
