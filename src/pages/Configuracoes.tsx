@@ -12,6 +12,8 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeamNotifications from "@/components/settings/TeamNotifications";
 import FloraDefaultOwner from "@/components/settings/FloraDefaultOwner";
+import LogoUpload from "@/components/settings/LogoUpload";
+import { contrastRatio, readableForeground } from "@/lib/brand";
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter",
@@ -44,7 +46,7 @@ export default function Configuracoes() {
         city: org.city || "",
         state: org.state || "",
         zip_code: org.zip_code || "",
-        primary_color: org.primary_color || "#1B365D",
+        primary_color: org.primary_color || "#DC2626",
         secondary_color: org.secondary_color || "#2C5F2D",
         accent_color: org.accent_color || "#7FCAD4",
       });
@@ -152,7 +154,8 @@ export default function Configuracoes() {
               Identidade Visual
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
+            {org && <LogoUpload orgId={org.id} logoUrl={org.logo_url} canEdit={isAdmin} />}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-1.5">
                 <Label>Cor Primária</Label>
@@ -213,10 +216,17 @@ export default function Configuracoes() {
             {/* Preview */}
             <div className="mt-4 p-4 rounded-lg border border-border bg-muted/30">
               <p className="text-sm text-muted-foreground mb-2">Pré-visualização</p>
-              <div className="flex gap-3">
-                <div className="h-12 w-12 rounded-lg" style={{ backgroundColor: form.primary_color }} />
-                <div className="h-12 w-12 rounded-lg" style={{ backgroundColor: form.secondary_color }} />
-                <div className="h-12 w-12 rounded-lg" style={{ backgroundColor: form.accent_color }} />
+              <div className="flex flex-wrap gap-3">
+                {[form.primary_color, form.secondary_color, form.accent_color].map((c, i) => {
+                  const fg = readableForeground(c || "#000000");
+                  const ratio = contrastRatio(c || "#000000", fg);
+                  return (
+                    <div key={i} className="h-14 min-w-24 px-3 rounded-lg flex flex-col items-center justify-center text-xs font-semibold" style={{ backgroundColor: c, color: fg }}>
+                      <span>Texto</span>
+                      <span className="font-normal">{ratio.toFixed(1)}:1 {ratio >= 4.5 ? "AA" : ""}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </CardContent>
