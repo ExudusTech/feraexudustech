@@ -1,5 +1,6 @@
 # Tasks
-- [ ] Fix role-save error, verify safe messages and backup handling, run tests and deploy manage-user.
+- [x] Harden role saving with checked backups, idempotent additions and safe error messages; 224 app tests and 3 function tests passed, manage-user deployed.
+- [ ] Confirm original role-save failure cause (blocked: logs contain only boot entries; authenticated reproduction unavailable).
 - [ ] Verify role editing live as PH and a NitsClean admin (blocked: PH session mint unavailable; no NitsClean admin account exists).
 - [x] Enrich Flora schedules from lead/person data, backfill 5 existing rows, improve editing/maps and team booking notifications; 161 MCP tests passed and mcp deployed.
 - [x] Separate people from establishment leads, backfill existing chat leads, update MCP/UI, pass 159 MCP tests and deploy.

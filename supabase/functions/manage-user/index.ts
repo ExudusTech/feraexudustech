@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { isManager, resolveRequestedRoles } from "../_shared/roles.ts";
+import { isManager } from "../_shared/roles.ts";
 import { saveRoles } from "./set-roles.ts";
 
 const corsHeaders = {
