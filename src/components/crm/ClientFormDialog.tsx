@@ -58,7 +58,7 @@ export default function ClientFormDialog({ open, onOpenChange, client }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
         </DialogHeader>

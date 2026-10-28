@@ -80,7 +80,7 @@ export default function EkkoaCoverageAreaFormDialog({ open, onOpenChange, area }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Área" : "Nova Área de Cobertura"}</DialogTitle>
         </DialogHeader>

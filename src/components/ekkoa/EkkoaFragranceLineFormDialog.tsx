@@ -54,7 +54,7 @@ export default function EkkoaFragranceLineFormDialog({ open, onOpenChange, fragr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Linha" : "Nova Linha de Fragrância"}</DialogTitle>
         </DialogHeader>

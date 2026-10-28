@@ -159,7 +159,7 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Lead Ekkoa" : "Novo Lead Ekkoa"}</DialogTitle></DialogHeader>
 
         {isEdit && (canConvert || canScheduleTest) && (

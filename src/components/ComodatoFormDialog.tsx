@@ -139,7 +139,7 @@ export default function ComodatoFormDialog({ open, onOpenChange, comodato }: Pro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Comodato" : "Novo Comodato"}</DialogTitle>
           <DialogDescription>Contrato de cessão de equipamento a cliente.</DialogDescription>

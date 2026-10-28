@@ -104,7 +104,7 @@ export default function InventoryFormDialog({ open, onOpenChange, item, defaultI
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Item" : "Adicionar Item ao Inventário"}</DialogTitle>
           <DialogDescription>
