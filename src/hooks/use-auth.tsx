@@ -2,12 +2,15 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
+import { pickPrimaryRole } from "@/lib/permissions";
 
 interface AuthUser {
   id: string;
   email: string;
   name: string;
   role: string;
+  /** All roles of the user (permissions are the union) */
+  roles: string[];
   organization_id: string | null;
   avatar_url: string | null;
   /** Original org from profile (for super admin to return) */
@@ -60,7 +63,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select("role")
         .eq("user_id", authUser.id);
 
-      const primaryRole = roles?.[0]?.role || "user";
+      const roleList = (roles ?? []).map((r) => r.role as string);
+      const primaryRole = pickPrimaryRole(roleList);
       const orgId = profile?.organization_id || null;
 
       // Check if super admin has a stored org override
@@ -72,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: authUser.email || "",
         name: profile?.name || authUser.email || "",
         role: primaryRole,
+        roles: roleList,
         organization_id: effectiveOrgId,
         original_organization_id: orgId,
         avatar_url: profile?.avatar_url || null,
@@ -81,7 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: authUser.id,
         email: authUser.email || "",
         name: authUser.email || "",
-        role: "user",
+        role: "visitante",
+        roles: [],
         organization_id: null,
         original_organization_id: null,
         avatar_url: null,

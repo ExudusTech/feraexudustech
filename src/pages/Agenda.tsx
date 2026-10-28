@@ -25,7 +25,7 @@ type CalendarView = "dia" | "semana" | "mes" | "ano";
 
 export default function Agenda() {
   const { user } = useAuth();
-  const canViewAll = ["admin", "gestor", "super_admin"].includes(user?.role ?? "");
+  const canViewAll = (user?.roles ?? [user?.role ?? ""]).some(r => ["admin", "gestor", "super_admin"].includes(r));
   const { data: schedules = [], isLoading } = useSchedules();
   const { data: users = [] } = useOrganizationUsers();
   const { data: leads = [] } = useLeads();

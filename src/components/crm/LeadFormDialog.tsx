@@ -86,7 +86,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const { data: orgUsers = [] } = useOrganizationUsers();
 
   const consultants = useMemo(() =>
-    orgUsers.filter(u => u.role === "consultor_tecnico" && u.is_active),
+    orgUsers.filter(u => u.roles.includes("consultor_tecnico") && u.is_active),
     [orgUsers]
   );
 

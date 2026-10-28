@@ -1,140 +1,18 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useOrganization } from "@/hooks/use-organizations";
+import { ROLE_LABELS, mergePermissions, pickPrimaryRole, sortRoles, type AppRole } from "@/lib/permissions";
 
-export type AppRole = "super_admin" | "admin" | "gestor" | "vendedor" | "consultor_tecnico" | "operacional" | "user" | "visitante" | "financeiro";
-
-interface PermissionConfig {
-  /** Routes the role can access */
-  routes: string[];
-  /** Whether the role can create/edit/delete records */
-  canWrite: boolean;
-  /** Whether the role can delete records */
-  canDelete: boolean;
-  /** Whether the role can manage users */
-  canManageUsers: boolean;
-  /** Whether the role can access financial data */
-  canAccessFinanceiro: boolean;
-  /** Whether the role can access Ekkoa module */
-  canAccessEkkoa: boolean;
-  /** Whether the role can access reports */
-  canAccessRelatorios: boolean;
-  /** Whether the role can access settings */
-  canAccessConfiguracoes: boolean;
-}
-
-const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
-  super_admin: {
-    routes: ["*"],
-    canWrite: true,
-    canDelete: true,
-    canManageUsers: true,
-    canAccessFinanceiro: true,
-    canAccessEkkoa: true,
-    canAccessRelatorios: true,
-    canAccessConfiguracoes: true,
-  },
-  admin: {
-    routes: ["*"],
-    canWrite: true,
-    canDelete: true,
-    canManageUsers: true,
-    canAccessFinanceiro: true,
-    canAccessEkkoa: true,
-    canAccessRelatorios: true,
-    canAccessConfiguracoes: true,
-  },
-  gestor: {
-    routes: ["/dashboard", "/ekkoa", "/clientes", "/leads", "/propostas", "/produtos", "/financeiro", "/relatorios", "/areas-cobertura", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes", "/configuracoes"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: true,
-    canAccessEkkoa: true,
-    canAccessRelatorios: true,
-    canAccessConfiguracoes: true,
-  },
-  vendedor: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: false,
-    canAccessEkkoa: true,
-    canAccessRelatorios: false,
-    canAccessConfiguracoes: false,
-  },
-  consultor_tecnico: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: false,
-    canAccessEkkoa: true,
-    canAccessRelatorios: false,
-    canAccessConfiguracoes: false,
-  },
-  operacional: {
-    routes: ["/dashboard", "/ekkoa", "/agenda", "/suporte", "/equipamentos", "/comodatos", "/inventario", "/manutencoes"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: false,
-    canAccessEkkoa: true,
-    canAccessRelatorios: false,
-    canAccessConfiguracoes: false,
-  },
-  user: {
-    routes: ["/dashboard", "/clientes", "/leads", "/propostas", "/produtos", "/ekkoa", "/suporte"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: false,
-    canAccessEkkoa: true,
-    canAccessRelatorios: false,
-    canAccessConfiguracoes: false,
-  },
-  financeiro: {
-    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
-    canWrite: true,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: true,
-    canAccessEkkoa: false,
-    canAccessRelatorios: true,
-    canAccessConfiguracoes: false,
-  },
-  visitante: {
-    routes: ["/dashboard", "/suporte"],
-    canWrite: false,
-    canDelete: false,
-    canManageUsers: false,
-    canAccessFinanceiro: false,
-    canAccessEkkoa: false,
-    canAccessRelatorios: false,
-    canAccessConfiguracoes: false,
-  },
-};
-
-const ROLE_LABELS: Record<AppRole, string> = {
-  super_admin: "Super Admin",
-  admin: "Administrador",
-  gestor: "Gestor",
-  vendedor: "Vendedor",
-  consultor_tecnico: "Consultor Técnico",
-  operacional: "Operacional",
-  user: "Usuário",
-  financeiro: "Financeiro",
-  visitante: "Visitante",
-};
+export type { AppRole } from "@/lib/permissions";
 
 export function usePermissions() {
   const { user } = useAuth();
   const { data: organization } = useOrganization();
-  const role = (user?.role as AppRole) || "visitante";
-  const permissions = ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.visitante;
-
+  const roles = sortRoles(user?.roles?.length ? user.roles : [user?.role || "visitante"]);
+  const role = pickPrimaryRole(roles);
+  const permissions = mergePermissions(roles);
+  const hasRole = (r: AppRole) => roles.includes(r);
   const orgHasEkkoaAccess = organization?.has_ekkoa_access === true;
-  const isSuperAdmin = role === "super_admin";
+  const isSuperAdmin = hasRole("super_admin");
 
   const canAccessRoute = (path: string): boolean => {
     // Profile page is always accessible
@@ -156,13 +34,15 @@ export function usePermissions() {
 
   return {
     role,
+    roles,
+    hasRole,
     permissions,
     canAccessRoute,
     getRoleLabel,
-    isAdmin: role === "admin" || role === "super_admin",
+    isAdmin: hasRole("admin") || isSuperAdmin,
     isSuperAdmin,
-    isFinanceiro: role === "financeiro",
+    isFinanceiro: hasRole("financeiro"),
     orgHasEkkoaAccess: orgHasEkkoaAccess || isSuperAdmin,
-    roleLabel: getRoleLabel(role),
+    roleLabel: roles.map((r) => getRoleLabel(r)).join(" + "),
   };
 }
