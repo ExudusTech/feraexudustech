@@ -22,12 +22,12 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
   const location = useLocation();
 
   return (
-    <header className="flex items-center justify-between px-6 py-4 border-b bg-card">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+    <header className="flex items-center justify-between gap-2 px-3 py-3 md:px-6 md:py-4 border-b bg-card pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="min-w-0">
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight truncate">{title}</h1>
+        {subtitle && <p className="hidden sm:block text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 md:gap-3 shrink-0">
         {/* Super Admin org indicator */}
         {isSuperAdmin && organization && (
           <Button
@@ -37,7 +37,7 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
             onClick={() => navigate(`/admin/selecionar-organizacao?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`)}
           >
             <Building2 className="h-3.5 w-3.5 text-primary" />
-            <span className="max-w-[150px] truncate">{organization.name}</span>
+            <span className="max-w-[90px] md:max-w-[150px] truncate">{organization.name}</span>
             <ArrowLeftRight className="h-3 w-3 text-muted-foreground" />
           </Button>
         )}
@@ -45,7 +45,7 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar..." className="pl-10 w-64 h-9" />
         </div>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative hidden md:inline-flex">
           <Bell className="h-5 w-5" />
           <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-destructive rounded-full" />
         </Button>

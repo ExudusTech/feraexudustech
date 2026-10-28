@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isManager, resolveRequestedRoles } from "../_shared/roles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,8 +44,9 @@ Deno.serve(async (req) => {
       .select("role")
       .eq("user_id", caller.id);
 
-    const callerRole = callerRoles?.[0]?.role;
-    if (callerRole !== "super_admin" && callerRole !== "admin") {
+    const callerRoleList = (callerRoles ?? []).map((r: any) => r.role as string);
+    const callerRole = callerRoleList.includes("super_admin") ? "super_admin" : callerRoleList.includes("admin") ? "admin" : null;
+    if (!isManager(callerRoleList)) {
       return new Response(JSON.stringify({ error: "Permissão negada" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -65,7 +67,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { name, email, password, role, organization_id: requestedOrgId } = await req.json();
+    const body = await req.json();
+    const { name, email, password, organization_id: requestedOrgId } = body;
+    const assignedRoles = resolveRequestedRoles(body, callerRoleList);
+    if (!assignedRoles) {
+      return new Response(JSON.stringify({ error: "Perfis inválidos" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Super admins can specify a target org; otherwise use caller's org
     const targetOrgId = (callerRole === "super_admin" && requestedOrgId) 
@@ -118,13 +128,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Only super_admin may grant super_admin
-    const validRoles = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "user", "financeiro", "visitante"];
-    if (callerRole === "super_admin") validRoles.push("super_admin");
-    const assignedRole = validRoles.includes(role) ? role : "user";
-
     await adminClient.from("user_roles").delete().eq("user_id", userId);
-    await adminClient.from("user_roles").insert({ user_id: userId, role: assignedRole });
+    const { error: rolesError } = await adminClient.from("user_roles").insert(assignedRoles.map((r) => ({ user_id: userId, role: r })));
+    if (rolesError) console.error("[create-user] roles insert failed", rolesError.code);
 
     return new Response(JSON.stringify({ success: true, user_id: userId }), {
       status: 200,

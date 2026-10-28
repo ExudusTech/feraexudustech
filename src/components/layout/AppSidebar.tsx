@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useState, useEffect } from "react";
 import logoExudus from "@/assets/logo-exudus-new.jpeg";
 
-const mainNavItems = [
+export const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Users, label: "Clientes", path: "/clientes" },
   { icon: Target, label: "Leads", path: "/leads" },
@@ -34,7 +34,7 @@ const mainNavItems = [
   { icon: MapPin, label: "Áreas de Cobertura", path: "/areas-cobertura" },
 ];
 
-const bottomNavItems = [
+export const bottomNavItems = [
   { icon: Crown, label: "Organizações", path: "/admin/organizacoes", superAdminOnly: true },
   { icon: UserCog, label: "Usuários", path: "/usuarios" },
   { icon: Settings, label: "Configurações", path: "/configuracoes" },
@@ -126,20 +126,26 @@ export default function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300",
+        "hidden md:flex flex-col h-screen bg-sidebar border-r border-sidebar-border transition-all duration-300",
         collapsed ? "w-[68px]" : "w-64"
       )}
     >
       {/* Logo */}
       <div className="relative flex items-center justify-center overflow-hidden px-1 pt-5 pb-3" style={{ height: collapsed ? '68px' : '106px' }}>
-        <img
-          src={logoUrl || logoExudus}
-          alt="Logo"
-          className={cn(
-            "shrink-0 transition-all object-contain",
-            collapsed ? "w-16 h-16" : "w-[92%]"
-          )}
-        />
+        {logoUrl ? (
+          <div className={cn("rounded-xl bg-white flex items-center justify-center shadow-sm", collapsed ? "w-14 h-14 p-1" : "w-[88%] h-[84px] p-2")}>
+            <img src={logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
+          </div>
+        ) : (
+          <img
+            src={logoExudus}
+            alt="Logo"
+            className={cn(
+              "shrink-0 transition-all object-contain",
+              collapsed ? "w-16 h-16" : "w-[92%]"
+            )}
+          />
+        )}
         <Button
           variant="ghost"
           size="icon"

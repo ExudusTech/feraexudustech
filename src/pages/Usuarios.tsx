@@ -1,34 +1,23 @@
 import AppLayout from "@/components/layout/AppLayout";
 import { useOrganizationUsers, useUpdateUserProfile, useUpdateUserRole } from "@/hooks/use-users";
-import { usePermissions, AppRole } from "@/hooks/use-permissions";
+import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import RolePicker from "@/components/usuarios/RolePicker";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, Shield, UserCheck, UserX, Plus, KeyRound, Ban, Unlock } from "lucide-react";
+import { Users, Shield, UserCheck, UserX, Plus, KeyRound, Ban, Unlock, Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import UserFormDialog from "@/components/usuarios/UserFormDialog";
 import { useQueryClient } from "@tanstack/react-query";
-
-const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
-  { value: "admin", label: "Administrador" },
-  { value: "gestor", label: "Gestor" },
-  { value: "vendedor", label: "Vendedor" },
-  { value: "consultor_tecnico", label: "Consultor Técnico" },
-  { value: "operacional", label: "Operacional" },
-  { value: "user", label: "Usuário" },
-  { value: "financeiro", label: "Financeiro" },
-  { value: "visitante", label: "Visitante" },
-];
 
 export default function Usuarios() {
   const { user } = useAuth();
@@ -46,8 +35,14 @@ export default function Usuarios() {
     updateProfile.mutate({ id: profileId, is_active: !currentActive });
   };
 
-  const handleRoleChange = (userId: string, role: string) => {
-    updateRole.mutate({ userId, role });
+  const [rolesDialog, setRolesDialog] = useState<{ userId: string; name: string; roles: string[] } | null>(null);
+  const handleSaveRoles = () => {
+    if (!rolesDialog) return;
+    if (rolesDialog.roles.length === 0) {
+      toast({ title: "Selecione pelo menos um perfil", variant: "destructive" });
+      return;
+    }
+    updateRole.mutate({ userId: rolesDialog.userId, roles: rolesDialog.roles }, { onSuccess: () => setRolesDialog(null) });
   };
 
   const handleResetPassword = async () => {
@@ -156,7 +151,7 @@ export default function Usuarios() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Usuário</TableHead>
@@ -198,27 +193,17 @@ export default function Usuarios() {
                         </TableCell>
                         <TableCell className="text-muted-foreground">{u.email}</TableCell>
                         <TableCell>
-                          {isAdmin && !isCurrentUser ? (
-                            <Select
-                              value={u.role}
-                              onValueChange={(v) => handleRoleChange(u.user_id, v)}
-                            >
-                              <SelectTrigger className="w-[140px] h-8">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {ROLE_OPTIONS.map(r => (
-                                  <SelectItem key={r.value} value={r.value}>
-                                    {r.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge variant={roleBadgeVariant(u.role) as any}>
-                              {getRoleLabel(u.role)}
-                            </Badge>
-                          )}
+                          <div className="flex flex-wrap items-center gap-1">
+                            {u.roles.map(r => (
+                              <Badge key={r} variant={roleBadgeVariant(r) as any}>{getRoleLabel(r)}</Badge>
+                            ))}
+                            {isAdmin && !isCurrentUser && (isSuperAdmin || !u.roles.includes("super_admin")) && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar perfis"
+                                onClick={() => setRolesDialog({ userId: u.user_id, name: u.name, roles: u.roles })}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant={u.is_active ? "default" : "destructive"}>
@@ -284,12 +269,28 @@ export default function Usuarios() {
                   })
                 )}
               </TableBody>
-            </Table>
+            </Table></div>
           </CardContent>
         </Card>
       </div>
 
       <UserFormDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+
+      <Dialog open={!!rolesDialog} onOpenChange={(open) => { if (!open) setRolesDialog(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Perfis - {rolesDialog?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">As permissões somam todos os perfis marcados.</p>
+          {rolesDialog && (
+            <RolePicker value={rolesDialog.roles} onChange={(roles) => setRolesDialog({ ...rolesDialog, roles })} allowSuperAdmin={isSuperAdmin} />
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRolesDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSaveRoles} disabled={updateRole.isPending}>{updateRole.isPending ? "Salvando..." : "Salvar"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={!!resetPasswordDialog} onOpenChange={(open) => { if (!open) { setResetPasswordDialog(null); setNewPassword(""); } }}>

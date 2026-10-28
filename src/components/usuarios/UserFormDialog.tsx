@@ -3,22 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import RolePicker from "@/components/usuarios/RolePicker";
+import { usePermissions } from "@/hooks/use-permissions";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import type { AppRole } from "@/hooks/use-permissions";
-
-const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
-  { value: "admin", label: "Administrador" },
-  { value: "gestor", label: "Gestor" },
-  { value: "vendedor", label: "Vendedor" },
-  { value: "consultor_tecnico", label: "Consultor Técnico" },
-  { value: "operacional", label: "Operacional" },
-  { value: "user", label: "Usuário" },
-  { value: "financeiro", label: "Financeiro" },
-  { value: "visitante", label: "Visitante" },
-];
 
 interface UserFormDialogProps {
   open: boolean;
@@ -29,7 +18,8 @@ export default function UserFormDialog({ open, onOpenChange }: UserFormDialogPro
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<string>("user");
+  const [roles, setRoles] = useState<string[]>(["user"]);
+  const { isSuperAdmin } = usePermissions();
   const [loading, setLoading] = useState(false);
   const qc = useQueryClient();
 
@@ -39,12 +29,16 @@ export default function UserFormDialog({ open, onOpenChange }: UserFormDialogPro
       toast({ title: "Preencha todos os campos obrigatórios", variant: "destructive" });
       return;
     }
+    if (roles.length === 0) {
+      toast({ title: "Selecione pelo menos um perfil", variant: "destructive" });
+      return;
+    }
 
     setLoading(true);
     try {
       // Edge function validates caller's role server-side and uses their profile org_id
       const res = await supabase.functions.invoke("create-user", {
-        body: { name, email, password, role },
+        body: { name, email, password, roles },
       });
 
       if (res.error || res.data?.error) {
@@ -57,7 +51,7 @@ export default function UserFormDialog({ open, onOpenChange }: UserFormDialogPro
       setName("");
       setEmail("");
       setPassword("");
-      setRole("user");
+      setRoles(["user"]);
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     } finally {
@@ -85,17 +79,8 @@ export default function UserFormDialog({ open, onOpenChange }: UserFormDialogPro
             <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
           </div>
           <div className="space-y-2">
-            <Label>Perfil</Label>
-            <Select value={role} onValueChange={setRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLE_OPTIONS.map(r => (
-                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Perfis (pode marcar mais de um)</Label>
+            <RolePicker value={roles} onChange={setRoles} allowSuperAdmin={isSuperAdmin} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

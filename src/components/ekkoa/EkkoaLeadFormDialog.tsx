@@ -38,7 +38,7 @@ export default function EkkoaLeadFormDialog({ open, onOpenChange, lead }: Props)
   const { data: orgUsers = [] } = useOrganizationUsers();
 
   const consultants = useMemo(() =>
-    orgUsers.filter(u => u.role === "consultor_tecnico" && u.is_active),
+    orgUsers.filter(u => u.roles.includes("consultor_tecnico") && u.is_active),
     [orgUsers]
   );
 

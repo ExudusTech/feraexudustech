@@ -85,6 +85,20 @@
       "when": 1793154799726,
       "tag": "0011_security_batch1",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793192456082,
+      "tag": "0012_lote2_branding_roles_backup",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793192476375,
+      "tag": "0013_org_logos_policies",
+      "breakpoints": true
     }
   ]
 }

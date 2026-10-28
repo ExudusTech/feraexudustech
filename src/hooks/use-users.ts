@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
+import { sortRoles } from "@/lib/permissions";
 
 export interface UserProfile {
   id: string;
@@ -18,7 +19,9 @@ export interface UserProfile {
 }
 
 export interface UserWithRole extends UserProfile {
+  /** Primary (most privileged) role, kept for legacy single-role checks */
   role: string;
+  roles: string[];
 }
 
 export function useOrganizationUsers() {
@@ -45,13 +48,13 @@ export function useOrganizationUsers() {
         .select("user_id, role")
         .in("user_id", userIds);
 
-      const roleMap = new Map<string, string>();
-      roles?.forEach((r: any) => roleMap.set(r.user_id, r.role));
+      const roleMap = new Map<string, string[]>();
+      roles?.forEach((r: any) => roleMap.set(r.user_id, [...(roleMap.get(r.user_id) ?? []), r.role]));
 
-      return profiles.map((p: any) => ({
-        ...p,
-        role: roleMap.get(p.user_id) || "user",
-      })) as UserWithRole[];
+      return profiles.map((p: any) => {
+        const list = sortRoles(roleMap.get(p.user_id) ?? []);
+        return { ...p, roles: list, role: list[0] ?? "visitante" };
+      }) as UserWithRole[];
     },
     enabled: !!user,
   });
@@ -81,12 +84,12 @@ export function useUpdateUserProfile() {
 export function useUpdateUserRole() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      const { error } = await supabase
-        .from("user_roles")
-        .update({ role: role as any })
-        .eq("user_id", userId);
-      if (error) throw error;
+    mutationFn: async ({ userId, roles }: { userId: string; roles: string[] }) => {
+      // Server validates organization and super_admin rules
+      const res = await supabase.functions.invoke("manage-user", {
+        body: { action: "set_roles", target_user_id: userId, roles },
+      });
+      if (res.error || res.data?.error) throw new Error(res.data?.error || "Erro ao atualizar perfis");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["org_users"] });

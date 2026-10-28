@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isManager, resolveRequestedRoles } from "../_shared/roles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,15 +44,17 @@ Deno.serve(async (req) => {
       .select("role")
       .eq("user_id", caller.id);
 
-    const callerRole = callerRoles?.[0]?.role;
-    if (callerRole !== "super_admin" && callerRole !== "admin") {
+    const callerRoleList = (callerRoles ?? []).map((r: any) => r.role as string);
+    const callerRole = callerRoleList.includes("super_admin") ? "super_admin" : callerRoleList.includes("admin") ? "admin" : null;
+    if (!isManager(callerRoleList)) {
       return new Response(JSON.stringify({ error: "Permissão negada" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { action, target_user_id, new_password } = await req.json();
+    const body = await req.json();
+    const { action, target_user_id, new_password } = body;
 
     if (!action || !target_user_id) {
       return new Response(JSON.stringify({ error: "Ação e usuário são obrigatórios" }), {
@@ -74,7 +77,7 @@ Deno.serve(async (req) => {
         .from("user_roles")
         .select("role")
         .eq("user_id", target_user_id);
-      if (targetRoles?.[0]?.role === "super_admin") {
+      if ((targetRoles ?? []).some((r: any) => r.role === "super_admin")) {
         return new Response(JSON.stringify({ error: "Permissão negada" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -96,6 +99,33 @@ Deno.serve(async (req) => {
     }
 
     switch (action) {
+      case "set_roles": {
+        const nextRoles = resolveRequestedRoles(body, callerRoleList);
+        if (!nextRoles) {
+          return new Response(JSON.stringify({ error: "Perfis inválidos" }), {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const { data: current } = await adminClient.from("user_roles").select("role").eq("user_id", target_user_id);
+        const currentRoles = (current ?? []).map((r: any) => r.role as string);
+        // Backup the previous set before replacing it
+        await adminClient.from("backup_20261028b_user_roles").insert(currentRoles.map((r) => ({ user_id: target_user_id, role: r })));
+        const toRemove = currentRoles.filter((r) => !nextRoles.includes(r));
+        const toAdd = nextRoles.filter((r) => !currentRoles.includes(r));
+        if (toRemove.length) {
+          const { error } = await adminClient.from("user_roles").delete().eq("user_id", target_user_id).in("role", toRemove);
+          if (error) throw error;
+        }
+        if (toAdd.length) {
+          const { error } = await adminClient.from("user_roles").insert(toAdd.map((r) => ({ user_id: target_user_id, role: r })));
+          if (error) throw error;
+        }
+        return new Response(JSON.stringify({ success: true, roles: nextRoles }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       case "reset_password": {
         if (!new_password || new_password.length < 6) {
           return new Response(JSON.stringify({ error: "Senha deve ter pelo menos 6 caracteres" }), {
