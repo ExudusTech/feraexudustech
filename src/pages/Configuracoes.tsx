@@ -92,7 +92,7 @@ export default function Configuracoes() {
         ) : undefined
       }
     >
-      <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl">
+      <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl min-w-0">
         <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger></TabsList>
         <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>
         <TabsContent value="flora"><FloraDefaultOwner /></TabsContent>

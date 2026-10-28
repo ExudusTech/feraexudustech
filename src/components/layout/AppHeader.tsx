@@ -33,12 +33,13 @@ export default function AppHeader({ title, subtitle, actions }: AppHeaderProps) 
           <Button
             variant="outline"
             size="sm"
-            className="gap-2 text-xs h-8 border-primary/20 hover:border-primary/40"
+            aria-label={`Organização: ${organization.name}`}
+            className="gap-2 text-xs md:h-8 border-primary/20 hover:border-primary/40"
             onClick={() => navigate(`/admin/selecionar-organizacao?returnTo=${encodeURIComponent(`${location.pathname}${location.search}`)}`)}
           >
             <Building2 className="h-3.5 w-3.5 text-primary" />
-            <span className="max-w-[90px] md:max-w-[150px] truncate">{organization.name}</span>
-            <ArrowLeftRight className="h-3 w-3 text-muted-foreground" />
+            <span className="hidden md:inline max-w-[150px] truncate">{organization.name}</span>
+            <ArrowLeftRight className="hidden md:inline h-3 w-3 text-muted-foreground" />
           </Button>
         )}
         <div className="relative hidden md:block">
