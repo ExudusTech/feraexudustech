@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
+import FragrancePanel from "@/components/products/FragrancePanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -181,6 +182,8 @@ export default function Produtos() {
 
       <ProductFormDialog open={dialogOpen} onOpenChange={setDialogOpen} product={selected} />
       <ImportProductsDialog open={importOpen} onOpenChange={setImportOpen} />
+
+      <div className="mt-6"><FragrancePanel canEdit={canEditProducts} /></div>
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>

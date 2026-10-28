@@ -20,13 +20,15 @@ import TransactionFormDialog from "@/components/financeiro/TransactionFormDialog
 import ExpenseFormDialog from "@/components/financeiro/ExpenseFormDialog";
 import MaintenanceFormDialog from "@/components/financeiro/MaintenanceFormDialog";
 import PaymentMethodFormDialog from "@/components/financeiro/PaymentMethodFormDialog";
+import LoanBillingPanel from "@/components/financeiro/LoanBillingPanel";
 
-type TabKey = "transacoes" | "despesas" | "manutencao" | "metodos";
+type TabKey = "transacoes" | "despesas" | "manutencao" | "comodatos" | "metodos";
 
 const TAB_CONFIG: Record<TabKey, { label: string; icon: React.ElementType; newLabel: string }> = {
   transacoes: { label: "Transações", icon: ArrowUpDown, newLabel: "Nova Transação" },
   despesas: { label: "Despesas", icon: Receipt, newLabel: "Nova Despesa" },
   manutencao: { label: "Manutenção", icon: Wrench, newLabel: "Nova Manutenção" },
+  comodatos: { label: "Faturamento de comodatos", icon: Receipt, newLabel: "" },
   metodos: { label: "Métodos Pgto.", icon: CreditCard, newLabel: "Novo Método" },
 };
 
@@ -65,6 +67,7 @@ export default function Financeiro() {
       transacoes: () => { setSelectedTx(null); setTxDialog(true); },
       despesas: () => { setSelectedExp(null); setExpDialog(true); },
       manutencao: () => { setSelectedMnt(null); setMntDialog(true); },
+      comodatos: () => {},
       metodos: () => { setSelectedMtd(null); setMtdDialog(true); },
     };
     actions[tab]();
@@ -76,6 +79,7 @@ export default function Financeiro() {
       transacoes: (id) => deleteTx.mutate(id),
       despesas: (id) => deleteExp.mutate(id),
       manutencao: (id) => deleteMnt.mutate(id),
+      comodatos: () => {},
       metodos: (id) => deleteMtd.mutate(id),
     };
     d[deleteTarget.type](deleteTarget.id);
@@ -86,10 +90,10 @@ export default function Financeiro() {
     <AppLayout
       title="Financeiro"
       subtitle="Transações, despesas e manutenção"
-      actions={<Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button>}
+      actions={tab !== "comodatos" && <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{TAB_CONFIG[tab].newLabel}</Button>}
     >
       <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setSearch(""); }} className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto">
           {(Object.keys(TAB_CONFIG) as TabKey[]).map((key) => {
             const { label, icon: Icon } = TAB_CONFIG[key];
             return <TabsTrigger key={key} value={key} className="gap-2"><Icon className="h-4 w-4" />{label}</TabsTrigger>;
@@ -179,6 +183,8 @@ export default function Financeiro() {
             </Table>
           </DataTable>
         </TabsContent>
+
+        <TabsContent value="comodatos"><LoanBillingPanel search={search} /></TabsContent>
 
         {/* Métodos de Pagamento */}
         <TabsContent value="metodos">
