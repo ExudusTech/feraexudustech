@@ -22,10 +22,6 @@ export default function Auth() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [signupName, setSignupName] = useState("");
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
   useEffect(() => {
@@ -58,25 +54,6 @@ export default function Auth() {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      await signUp(signupEmail, signupPassword, signupName);
-      toast({
-        title: "Conta criada!",
-        description: "Verifique seu e-mail para confirmar o cadastro.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Erro ao criar conta",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleForgotPassword = async () => {
     if (!loginEmail) {
@@ -139,14 +116,6 @@ export default function Auth() {
         <div className="w-full max-w-sm">
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-xl p-6 md:p-8 shadow-2xl">
             <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-7 bg-white/[0.04] border border-white/[0.06] p-1 rounded-xl h-11">
-                <TabsTrigger value="login" className="rounded-lg text-sm font-semibold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-600/30 text-white/35 transition-all duration-200">
-                  Entrar
-                </TabsTrigger>
-                <TabsTrigger value="signup" className="rounded-lg text-sm font-semibold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-600/30 text-white/35 transition-all duration-200">
-                  Criar Conta
-                </TabsTrigger>
-              </TabsList>
 
               <TabsContent value="login">
                 <form onSubmit={handleLogin} className="space-y-4">
@@ -182,39 +151,8 @@ export default function Auth() {
                   </Button>
                 </form>
               </TabsContent>
-
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="signup-name" className={labelClasses}>Nome completo</Label>
-                    <div className="relative">
-                      <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
-                      <Input id="signup-name" placeholder="Seu nome" className={inputClasses} value={signupName} onChange={(e) => setSignupName(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="signup-email" className={labelClasses}>E-mail</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
-                      <Input id="signup-email" type="email" placeholder="seu@email.com" className={inputClasses} value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="signup-password" className={labelClasses}>Senha</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" />
-                      <Input id="signup-password" type={showSignupPassword ? "text" : "password"} placeholder="Mínimo 6 caracteres" className={inputClasses} value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={6} />
-                      <button type="button" onClick={() => setShowSignupPassword(!showSignupPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors z-10">
-                        {showSignupPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full h-12 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 hover:shadow-xl hover:shadow-red-500/40 transition-all duration-300 group mt-2" disabled={isLoading}>
-                    {isLoading ? "Criando conta..." : (<>Criar Conta <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></>)}
-                  </Button>
-                </form>
-              </TabsContent>
             </Tabs>
+            <p className="text-center text-xs text-white/30 mt-5">Acesso somente para usuários cadastrados pelo administrador.</p>
           </div>
 
           <div className="flex justify-center gap-2 mt-8 flex-wrap">

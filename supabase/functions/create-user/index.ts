@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, organization_id: targetOrgId },
+      user_metadata: { name },
     });
 
     if (createError) {
@@ -98,32 +98,41 @@ Deno.serve(async (req) => {
     // We need to update the profile to point to the caller's org and set the correct role.
     const userId = newUser.user.id;
 
-    // Update profile to target organization
-    await adminClient
+    // Profile is created here (the signup trigger no longer creates profiles/orgs)
+    const { error: profileError } = await adminClient
       .from("profiles")
-      .update({
+      .upsert({
+        user_id: userId,
         organization_id: targetOrgId,
         name,
+        email,
         is_active: true,
         is_email_verified: true,
-      })
-      .eq("user_id", userId);
+      }, { onConflict: "user_id" });
+    if (profileError) {
+      console.error("[create-user] profile upsert failed", profileError.code);
+      await adminClient.auth.admin.deleteUser(userId);
+      return new Response(JSON.stringify({ error: "Erro interno ao criar usuário" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // Update user role
+    // Only super_admin may grant super_admin
     const validRoles = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "user", "financeiro", "visitante"];
+    if (callerRole === "super_admin") validRoles.push("super_admin");
     const assignedRole = validRoles.includes(role) ? role : "user";
 
-    await adminClient
-      .from("user_roles")
-      .update({ role: assignedRole })
-      .eq("user_id", userId);
+    await adminClient.from("user_roles").delete().eq("user_id", userId);
+    await adminClient.from("user_roles").insert({ user_id: userId, role: assignedRole });
 
     return new Response(JSON.stringify({ success: true, user_id: userId }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("[create-user] unexpected error");
+    return new Response(JSON.stringify({ error: "Erro interno ao criar usuário" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -11,6 +11,7 @@ import { Building2, Palette, Globe, Save } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeamNotifications from "@/components/settings/TeamNotifications";
+import FloraDefaultOwner from "@/components/settings/FloraDefaultOwner";
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter",
@@ -90,8 +91,9 @@ export default function Configuracoes() {
       }
     >
       <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl">
-        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger></TabsList>
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger></TabsList>
         <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>
+        <TabsContent value="flora"><FloraDefaultOwner /></TabsContent>
         <TabsContent value="empresa"><div className="space-y-6">
         {/* Plan info */}
         <Card>

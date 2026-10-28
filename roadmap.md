@@ -33,3 +33,10 @@
 - [x] Normalize missing string values across all MCP tools and verify tests (31 passing).
 - [x] Delete only the specified test lead, schedule and dependent records, preserving mcp_request_log (4 rows; absence verified).
 - [x] Deploy mcp and confirm results.
+## Lote 1 segurança (28/10)
+- [x] Cadastro público fechado + handle_new_user sem metadados
+- [x] user_roles sem super_admin para admin
+- [x] UPDATE restrito leads/clients/schedules
+- [x] Responsável padrão Flora (leads + visitas 4b) + aba Configurações
+- [x] Dependências críticas/altas (zod 4 pendente: versão maior)
+- [x] mcp sem error.message do banco

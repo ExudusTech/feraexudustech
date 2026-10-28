@@ -82,6 +82,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Non-super_admin may only act on users of their own organization
+    if (callerRole !== "super_admin") {
+      const { data: profs } = await adminClient.from("profiles").select("user_id, organization_id").in("user_id", [caller.id, target_user_id]);
+      const callerOrg = profs?.find((p: any) => p.user_id === caller.id)?.organization_id;
+      const targetOrg = profs?.find((p: any) => p.user_id === target_user_id)?.organization_id;
+      if (!callerOrg || callerOrg !== targetOrg) {
+        return new Response(JSON.stringify({ error: "Permissão negada" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     switch (action) {
       case "reset_password": {
         if (!new_password || new_password.length < 6) {
@@ -140,7 +153,8 @@ Deno.serve(async (req) => {
         });
     }
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error("[manage-user] unexpected error");
+    return new Response(JSON.stringify({ error: "Erro interno ao gerenciar usuário" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
