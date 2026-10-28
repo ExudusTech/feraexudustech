@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, ReactNode } from "react";
 import { useOrganization } from "@/hooks/use-organizations";
 import { buildBrandCss, isCustomBrand } from "@/lib/brand";
-import exudusIcon from "@/assets/logo-exudus-nova.png";
 
 interface OrgBranding {
   primaryColor: string | null;
@@ -57,7 +56,7 @@ function applyManifest(name: string, color: string, icon: string) {
     theme_color: color,
     icons: [
       { src: new URL(icon, window.location.origin).href, sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: new URL(icon, window.location.origin).href, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: new URL(icon === "/icon-192.png" ? "/icon-512.png" : icon, window.location.origin).href, sizes: "512x512", type: "image/png", purpose: "any" },
     ],
   };
   if (manifestUrl) URL.revokeObjectURL(manifestUrl);
@@ -94,7 +93,7 @@ export function OrgBrandingProvider({ children }: { children: ReactNode }) {
       style.remove();
     }
 
-    const icon = org?.logo_url || exudusIcon;
+    const icon = org?.logo_url || "/icon-192.png";
     setLink("icon", icon);
     setLink("apple-touch-icon", icon);
     const theme = custom && org?.primary_color ? org.primary_color : DEFAULT_THEME;
