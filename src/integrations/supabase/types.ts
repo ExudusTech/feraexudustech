@@ -2585,6 +2585,7 @@ export type Database = {
           dispenser_family_id: string | null
           endereco_instalacao: string | null
           estado: string | null
+          fabricante: string | null
           id: string
           inventory_item_id: string | null
           linha_produto: string | null
@@ -2613,6 +2614,7 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          fabricante?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -2641,6 +2643,7 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          fabricante?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -4120,17 +4123,20 @@ export type Database = {
           description: string | null
           end_time: string | null
           estimated_cost: number | null
+          fabricante: string | null
           id: string
           installation_id: string | null
           inventory_item_id: string | null
           linha_produto: string | null
           maintenance_type: string
+          motivo_retirada: string | null
           notes: string | null
           organization_id: string
           recurrence: string | null
           scheduled_date: string
           start_time: string | null
           status: string
+          tipo_os: string
           title: string
           updated_at: string | null
         }
@@ -4145,17 +4151,20 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
+          fabricante?: string | null
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_retirada?: string | null
           notes?: string | null
           organization_id: string
           recurrence?: string | null
           scheduled_date: string
           start_time?: string | null
           status?: string
+          tipo_os?: string
           title: string
           updated_at?: string | null
         }
@@ -4170,17 +4179,20 @@ export type Database = {
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
+          fabricante?: string | null
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_retirada?: string | null
           notes?: string | null
           organization_id?: string
           recurrence?: string | null
           scheduled_date?: string
           start_time?: string | null
           status?: string
+          tipo_os?: string
           title?: string
           updated_at?: string | null
         }
@@ -4369,7 +4381,9 @@ export type Database = {
           organization_id: string
           papel: string
           roles: string[]
+          tipo: string
           updated_at: string | null
+          user_id: string | null
           whatsapp: string | null
         }
         Insert: {
@@ -4383,7 +4397,9 @@ export type Database = {
           organization_id: string
           papel?: string
           roles?: string[]
+          tipo?: string
           updated_at?: string | null
+          user_id?: string | null
           whatsapp?: string | null
         }
         Update: {
@@ -4397,7 +4413,9 @@ export type Database = {
           organization_id?: string
           papel?: string
           roles?: string[]
+          tipo?: string
           updated_at?: string | null
+          user_id?: string | null
           whatsapp?: string | null
         }
         Relationships: [
