@@ -3,10 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import TeamNotifications from "@/components/settings/TeamNotifications";
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 const mocks = vi.hoisted(() => ({ save: vi.fn(async () => {}), mutate: vi.fn(), role: "gestor" }));
-vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ role: mocks.role, isAdmin: false }) }));
+vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ role: mocks.role, isAdmin: false, getRoleLabel: (r: string) => r }) }));
+vi.mock("@/hooks/use-users", () => ({ useOrganizationUsers: () => ({ data: [{ user_id: "u1", name: "Arilson", email: "a@x.com", phone: "5522999990000", roles: ["gestor"], is_active: true }] }) }));
 vi.mock("@/hooks/use-team-notifications", async importOriginal => {
   const actual = await importOriginal<typeof import("@/hooks/use-team-notifications")>();
-  return { ...actual, useTeamRecipients: () => ({ data: [{ id: "test", nome: "PH (teste)", whatsapp: "5521995367752", email: null, papel: "gestor", eventos: ["agendamento"], ativo: true }], isLoading: false }),
+  return { ...actual, useTeamRecipients: () => ({ data: [{ id: "test", tipo: "externo", user_id: null, nome: "PH (teste)", whatsapp: "5521995367752", email: null, papel: "gestor", eventos: ["agendamento"], ativo: true }], isLoading: false }),
     useSaveTeamRecipient: () => ({ mutateAsync: mocks.save, mutate: mocks.mutate, isPending: false }) };
 });
 afterEach(() => { cleanup(); mocks.save.mockClear(); mocks.mutate.mockClear(); mocks.role = "gestor"; });
@@ -20,14 +21,17 @@ describe("Team recipient management", () => {
     expect(screen.getByLabelText("Lead da Matriz")).toBeInTheDocument();
     expect(screen.queryByLabelText("Fora de cobertura")).not.toBeInTheDocument();
   });
-  it("gestor creates a recipient with event subscriptions", async () => {
+  it("gestor edits an external contact with event subscriptions", async () => {
     render(<TeamNotifications />);
     fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
+    expect(screen.getByLabelText("Usuário")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Editar PH (teste)" }));
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Comercial" } });
-    fireEvent.change(screen.getByLabelText("WhatsApp (com código do país, sem +)"), { target: { value: "5521999999999" } });
+    fireEvent.change(screen.getByLabelText("WhatsApp"), { target: { value: "21 99999-9999" } });
+    fireEvent.click(screen.getByLabelText("Agendamento"));
     fireEvent.click(screen.getByLabelText("Transferência"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar destinatário" }));
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ nome: "Comercial", eventos: ["transferencia"], ativo: true })));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ tipo: "externo", nome: "Comercial", eventos: ["transferencia"], ativo: true })));
   });
   it("edits an existing recipient and toggles active state", async () => {
     render(<TeamNotifications />);
