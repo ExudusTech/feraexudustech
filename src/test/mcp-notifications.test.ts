@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const allEvents = ["agendamento", "transferencia", "lead_matriz"];
-function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[] } = {}) {
+function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[] } = {}) {
   const recipients = options.recipients ?? [
     { id: "all", nome: "PH", whatsapp: "5521995367752", organization_id: org, ativo: true, eventos: allEvents },
     { id: "handoff", nome: "Comercial", whatsapp: "5521999999999", organization_id: org, ativo: true, eventos: ["transferencia"] },
@@ -21,6 +21,7 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
       let data: any = null;
       if (table === "notification_recipients") data = recipients.filter(r => filters.every(([op, key, val]) => op === "contains" ? val.every((v: string) => r[key].includes(v)) : r[key] === val));
       if (table === "holidays") data = [];
+      if (table === "profiles") data = options.profiles ?? [];
       if (table === "ekkoa_coverage_areas") data = [{ dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
       if (table === "notification_logs" && operation === "read") data = options.recent ? [{ id: "old" }] : [];
       if (table === "pessoas") data = operation === "read" ? null : { id: "pessoa", nome: value?.nome ?? "Contato", ...value };
@@ -136,5 +137,27 @@ describe("MCP team WhatsApp notifications", () => {
     const h = harness({ lead: { id: "ig-lead", description: "", instagram_handle: "padaria.lagos", canal_origem: "INSTAGRAM" } });
     await h.route("solicitar_atendimento_humano", { chat_id: "3E081F8C517E26FF46107A02E12740D2-998877", motivo: "Preço" }); await h.flush();
     const msg = sent(h)[0]; expect(msg).toContain("Instagram: @padaria.lagos"); expect(msg).not.toContain("wa.me");
+  });
+});
+
+describe("Linked user recipients", () => {
+  const linked = [
+    { id: "user", nome: "Cópia antiga", whatsapp: null, user_id: "u1", organization_id: org, ativo: true, eventos: allEvents },
+    { id: "ext", nome: "Matriz", whatsapp: "5521977776666", user_id: null, organization_id: org, ativo: true, eventos: allEvents },
+  ];
+  const phones = (h: any) => h.fetchMock.mock.calls.map((c: any) => JSON.parse(c[1].body).phone);
+  it("sends to the current WhatsApp of the linked user and to external contacts", async () => {
+    const h = harness({ recipients: linked, profiles: [{ user_id: "u1", name: "Arilson", phone: "5522999990000", is_active: true }] });
+    h.queue("transferencia"); await h.flush();
+    expect(phones(h).sort()).toEqual(["5521977776666", "5522999990000"]);
+    const log = h.writes.find((w: any) => w.table === "notification_logs" && w.value.recipient_id === "user").value;
+    expect(log.recipient_name).toBe("Arilson"); expect(log.destination).toBe("5522999990000");
+  });
+  it("skips a linked user without WhatsApp or inactive, logging INVALID_PHONE", async () => {
+    const h = harness({ recipients: linked, profiles: [{ user_id: "u1", name: "Arilson", phone: "5522999990000", is_active: false }] });
+    h.queue("transferencia"); await h.flush();
+    expect(phones(h)).toEqual(["5521977776666"]);
+    const log = h.writes.find((w: any) => w.table === "notification_logs" && w.value.recipient_id === "user").value;
+    expect(log.status).toBe("FAILED"); expect(log.error_message).toBe("INVALID_PHONE");
   });
 });
