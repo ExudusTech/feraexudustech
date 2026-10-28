@@ -435,10 +435,23 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
 async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
   params: Record<string, unknown>, leadId?: string, scheduleId?: string): Promise<void> {
   const { data: recipients, error } = await supabase.from("notification_recipients")
-    .select("id, nome, whatsapp").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
+    .select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
     .contains("eventos", [event]);
   if (error) throw new Error("Recipient lookup failed");
   if (!recipients?.length) return;
+  // Linked users: always read the current WhatsApp from their profile (inactive users are skipped).
+  const linkedIds = recipients.map((r: { user_id?: string | null }) => r.user_id).filter(Boolean);
+  if (linkedIds.length) {
+    const { data: profiles } = await supabase.from("profiles").select("user_id, name, phone, is_active")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("user_id", linkedIds);
+    const byUser = new Map((Array.isArray(profiles) ? profiles : []).map((p: Record<string, unknown>) => [p.user_id, p]));
+    for (const r of recipients as Array<Record<string, unknown>>) {
+      if (!r.user_id) continue;
+      const p = byUser.get(r.user_id) as Record<string, unknown> | undefined;
+      r.whatsapp = p && p.is_active !== false ? (p.phone as string | null) ?? null : null;
+      if (p?.name) r.nome = p.name;
+    }
+  }
   let lead: Record<string, unknown> | null = null;
   if (leadId || params.interaction_id) {
     let query = supabase.from("leads").select("id, empresa_nome, company, contact_name, contact_phone, endereco, bairro, city, regiao, maps_url, category")
