@@ -37,7 +37,7 @@ export default function PaymentMethodFormDialog({ open, onOpenChange, method }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{isEdit ? "Editar Método" : "Novo Método de Pagamento"}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label>Nome *</Label><Input value={form.name} onChange={(e) => setForm(p => ({ ...p, name: e.target.value }))} required /></div>

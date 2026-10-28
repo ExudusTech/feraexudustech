@@ -60,7 +60,7 @@ export default function EkkoaTechnicalVisitFormDialog({ open, onOpenChange, visi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Visita Técnica" : "Nova Visita Técnica"}</DialogTitle>
         </DialogHeader>

@@ -227,7 +227,7 @@ export default function ImportProductsDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Importar Produtos</DialogTitle>
           <DialogDescription>

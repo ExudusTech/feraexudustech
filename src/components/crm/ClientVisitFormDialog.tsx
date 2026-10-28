@@ -58,7 +58,7 @@ export default function ClientVisitFormDialog({ open, onOpenChange, visit, defau
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Editar Visita" : "Nova Visita"}</DialogTitle>
         </DialogHeader>
