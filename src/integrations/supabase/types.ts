@@ -469,6 +469,228 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261027_leads: {
+        Row: {
+          assigned_to: string | null
+          bairro: string | null
+          canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato: string | null
+          category: string | null
+          city: string | null
+          client_contact_id: string | null
+          client_id: string | null
+          company: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string | null
+          created_by: string | null
+          created_by_flora: boolean | null
+          description: string | null
+          empresa_nome: string | null
+          endereco: string | null
+          expected_close_date: string | null
+          flora_tags: string[] | null
+          fora_cobertura: boolean | null
+          gptmaker_chat_id: string | null
+          id: string | null
+          instagram_handle: string | null
+          interaction_id: string | null
+          latitude: number | null
+          longitude: number | null
+          maps_url: string | null
+          organization_id: string | null
+          origem_especifica: string | null
+          pessoa_id: string | null
+          place_id: string | null
+          position: number | null
+          post_id: string | null
+          post_titulo: string | null
+          precisa_humano: boolean | null
+          regiao: string | null
+          source: string | null
+          stage: Database["public"]["Enums"]["lead_stage"] | null
+          title: string | null
+          updated_at: string | null
+          value: number | null
+          vinculo: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261027_products_multquimica: {
+        Row: {
+          brand: string | null
+          category: string | null
+          compatible_dispenser_families: string[] | null
+          cost: number | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dispenser_family_id: string | null
+          disponivel_comodato: boolean | null
+          fornecedor: string | null
+          id: string | null
+          image_url: string | null
+          is_active: boolean | null
+          is_dispenser: boolean | null
+          linha_produto: string | null
+          min_stock: number | null
+          name: string | null
+          organization_id: string | null
+          price: number | null
+          sku: string | null
+          specifications: Json | null
+          stock: number | null
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
