@@ -5,8 +5,8 @@ import { useOrgBranding } from "@/hooks/use-org-branding";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
-  BarChart3, Settings, LogOut, Leaf, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon, Crown, CalendarDays, Cpu, HandshakeIcon, Wrench, Boxes,
+  BarChart3, Settings, LogOut, MapPin, UserCog, HelpCircle,
+  ChevronLeft, Sun, Moon, Crown, CalendarDays, HandshakeIcon, Wrench, Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";

@@ -12,10 +12,14 @@ import InventoryFormDialog from "@/components/ekkoa/InventoryFormDialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { LINHA_PRODUTO_VALUES, linhaLabel, linhaBadgeClass } from "@/lib/linha-produto";
 import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
+import { usePermissions } from "@/hooks/use-permissions";
 
 export default function Inventario() {
   const { data: items = [], isLoading } = useInventory();
   const del = useDeleteInventoryItem();
+  const { canWriteRoute, canAccessRoute } = usePermissions();
+  const canEdit = canWriteRoute("/inventario");
 
   const [search, setSearch] = useState("");
   const [linha, setLinha] = useState("all");
@@ -35,7 +39,10 @@ export default function Inventario() {
     <AppLayout
       title="Inventário"
       subtitle="Todos os itens em estoque — equipamentos e consumíveis"
-      actions={<Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Novo Item</Button>}
+      actions={<div className="flex flex-wrap gap-2">
+        {canAccessRoute("/equipamentos") && <Button variant="outline" asChild><Link to="/equipamentos">Modelos de equipamento</Link></Button>}
+        {canEdit && <Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Novo Item</Button>}
+      </div>}
     >
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative min-w-[240px]">
@@ -90,13 +97,13 @@ export default function Inventario() {
                 <TableCell><Badge variant="outline">{i.status}</Badge></TableCell>
                 <TableCell>{i.localizacao_interna ?? i.location ?? "—"}</TableCell>
                 <TableCell>
-                  <DropdownMenu>
+                  {canEdit && <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => { setEdit(i); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setDeleteId(i.id)} className="text-destructive"><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
                     </DropdownMenuContent>
-                  </DropdownMenu>
+                  </DropdownMenu>}
                 </TableCell>
               </TableRow>
             ))}
