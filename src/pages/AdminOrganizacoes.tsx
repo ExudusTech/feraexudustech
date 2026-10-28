@@ -117,7 +117,7 @@ export default function AdminOrganizacoes() {
                   <TableHead>CNPJ</TableHead>
                   <TableHead>Plano</TableHead>
                    <TableHead>Máx. Usuários</TableHead>
-                   <TableHead>Ekkoa</TableHead>
+                   <TableHead>Comodato e parque</TableHead>
                    <TableHead>Status</TableHead>
                    <TableHead>Ativa</TableHead>
                    <TableHead className="w-[60px]"></TableHead>
