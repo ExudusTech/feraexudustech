@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TIPOS_OS, FABRICANTES_SUGERIDOS } from "@/lib/fabricantes";
 import { useCreateMaintenance, useUpdateMaintenance, type MaintenanceItem } from "@/hooks/use-financeiro";
 
 interface Props { open: boolean; onOpenChange: (open: boolean) => void; item?: MaintenanceItem | null; }
 
-const empty = { title: "", description: "", maintenance_type: "preventiva", scheduled_date: "", start_time: "", end_time: "", estimated_cost: "0", status: "agendada", recurrence: "unico", notes: "" };
+const empty = { title: "", description: "", maintenance_type: "preventiva", scheduled_date: "", start_time: "", end_time: "", estimated_cost: "0", status: "agendada", recurrence: "unico", notes: "", tipo_os: "manutencao", fabricante: "", motivo_retirada: "" };
 
 export default function MaintenanceFormDialog({ open, onOpenChange, item }: Props) {
   const [form, setForm] = useState(empty);
@@ -25,6 +26,7 @@ export default function MaintenanceFormDialog({ open, onOpenChange, item }: Prop
         start_time: item.start_time || "", end_time: item.end_time || "",
         estimated_cost: String(item.estimated_cost || 0), status: item.status,
         recurrence: item.recurrence || "unico", notes: item.notes || "",
+        tipo_os: item.tipo_os || "manutencao", fabricante: item.fabricante || "", motivo_retirada: item.motivo_retirada || "",
       });
     } else setForm(empty);
   }, [item, open]);
@@ -34,12 +36,15 @@ export default function MaintenanceFormDialog({ open, onOpenChange, item }: Prop
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim() || !form.scheduled_date) return;
+    if (form.tipo_os === "retirada" && !form.motivo_retirada.trim()) return;
     const payload = {
       title: form.title, description: form.description || null,
       maintenance_type: form.maintenance_type, scheduled_date: form.scheduled_date,
       start_time: form.start_time || null, end_time: form.end_time || null,
       estimated_cost: parseFloat(form.estimated_cost) || null,
       status: form.status, recurrence: form.recurrence, notes: form.notes || null,
+      tipo_os: form.tipo_os, fabricante: form.fabricante.trim() || null,
+      motivo_retirada: form.tipo_os === "retirada" ? form.motivo_retirada.trim() : null,
     };
     if (isEdit) await update.mutateAsync({ id: item!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -51,10 +56,23 @@ export default function MaintenanceFormDialog({ open, onOpenChange, item }: Prop
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{isEdit ? "Editar Manutenção" : "Nova Manutenção"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? "Editar ordem de serviço" : "Nova ordem de serviço"}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2"><Label>Título *</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} required /></div>
+            <div>
+              <Label htmlFor="os-tipo">Tipo de ordem de serviço</Label>
+              <Select value={form.tipo_os} onValueChange={(v) => set("tipo_os", v)}>
+                <SelectTrigger id="os-tipo"><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(TIPOS_OS).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="os-fabricante">Fabricante</Label>
+              <Input id="os-fabricante" list="os-fabricantes" value={form.fabricante} onChange={(e) => set("fabricante", e.target.value)} placeholder="Ex.: Diversey" />
+              <datalist id="os-fabricantes">{FABRICANTES_SUGERIDOS.map((f) => <option key={f} value={f} />)}</datalist>
+            </div>
+            {form.tipo_os === "retirada" && <div className="col-span-2"><Label htmlFor="os-motivo">Motivo da retirada *</Label><Textarea id="os-motivo" required value={form.motivo_retirada} onChange={(e) => set("motivo_retirada", e.target.value)} rows={2} /></div>}
             <div>
               <Label>Tipo</Label>
               <Select value={form.maintenance_type} onValueChange={(v) => set("maintenance_type", v)}>

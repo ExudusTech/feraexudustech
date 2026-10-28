@@ -21,6 +21,7 @@ export interface Comodato {
   consumo_minimo: number | null;
   unidade_consumo: string | null;
   valor_mensal: number | null;
+  fabricante?: string | null;
   data_inicio: string | null;
   data_fim: string | null;
   status: string;
