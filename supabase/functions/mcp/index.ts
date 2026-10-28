@@ -37,6 +37,23 @@ const MCP_BEARER_TOKEN          = Deno.env.get("MCP_BEARER_TOKEN")!;
 // NitsClean organization ID (fallback hardcoded caso env var não esteja definida)
 const NITSCLEAN_ORG_ID = Deno.env.get("NITSCLEAN_ORG_ID") ?? "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 
+/** Generic DB failure: logs only stage + error code server-side, returns a generic message. */
+function dbFail(acao: string, err: unknown): string {
+  const code = (err as { code?: string } | null)?.code ?? "unknown";
+  console.error(`[MCP] db error at ${acao}`, code);
+  return `Erro interno ao ${acao}`;
+}
+
+/** Organization-level default owner for Flora leads/visits (null when unset or unreadable). */
+async function floraDefaultOwner(client: any): Promise<string | null> {
+  try {
+    const { data, error } = await client.from("organizations")
+      .select("flora_default_lead_owner").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
+    if (error) return null;
+    return (data?.flora_default_lead_owner as string | null) ?? null;
+  } catch { return null; }
+}
+
 // GPT Maker — notificações via Florazap (WhatsApp)
 const GPTMAKER_API_TOKEN          = Deno.env.get("GPTMAKER_API_TOKEN") ?? "";
 const GPTMAKER_WHATSAPP_CHANNEL_ID = Deno.env.get("GPTMAKER_WHATSAPP_CHANNEL_ID") ?? "";
@@ -192,7 +209,7 @@ async function resolvePessoa(
     const { data, error } = field === "email"
       ? await query.ilike("email", value).limit(1).maybeSingle()
       : await query.eq(field, value).limit(1).maybeSingle();
-    if (error) return { pessoa: null, error: error.message };
+    if (error) return { pessoa: null, error: dbFail("consultar pessoa", error) };
     if (data) { pessoa = data as PessoaRecord; break; }
   }
 
@@ -205,7 +222,7 @@ async function resolvePessoa(
       ...channelFields,
       chat_ids: chatId ? [chatId] : [],
     }).select("id, nome, email, telefone, whatsapp, instagram_user_id, instagram_handle, messenger_id, chat_ids").single();
-    if (error) return { pessoa: null, error: error.message };
+    if (error) return { pessoa: null, error: dbFail("consultar pessoa", error) };
     pessoa = data as PessoaRecord;
   }
 
@@ -221,7 +238,7 @@ async function resolvePessoa(
     const { data, error } = await supabase.from("pessoas").update(updates).eq("id", pessoa.id)
       .eq("organization_id", NITSCLEAN_ORG_ID)
       .select("id, nome, email, telefone, whatsapp, instagram_user_id, instagram_handle, messenger_id, chat_ids").single();
-    if (error) return { pessoa: null, error: error.message };
+    if (error) return { pessoa: null, error: dbFail("consultar pessoa", error) };
     pessoa = data as PessoaRecord;
   }
   return { pessoa };
@@ -232,7 +249,7 @@ async function pessoaWithLeads(supabase: ReturnType<typeof getClient>, pessoa: P
     .select("id, empresa_nome, company, title, city, stage, category")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id)
     .order("created_at", { ascending: false }).limit(5);
-  if (error) throw new Error(`Erro ao consultar leads da pessoa: ${error.message}`);
+  if (error) throw new Error(dbFail("consultar leads da pessoa", error));
   return {
     encontrado: true,
     pessoa: { id: pessoa.id, nome: pessoa.nome },
@@ -261,7 +278,7 @@ async function resolveVisitProduct(
   if (!leadId) return null;
   const { data, error } = await supabase.from("leads").select("category")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
-  if (error) throw new Error(`Erro ao consultar produto do lead: ${error.message}`);
+  if (error) throw new Error(dbFail("consultar produto do lead", error));
   const category = normalizeParamValue(data?.category);
   return typeof category === "string" ? category.trim() : null;
 }
@@ -285,7 +302,7 @@ async function loadHolidays(supabase: ReturnType<typeof getClient>, from: string
   const { data, error } = await supabase.from("holidays").select("date, name, city")
     .or(`organization_id.is.null,organization_id.eq.${NITSCLEAN_ORG_ID}`)
     .gte("date", from).lte("date", to);
-  if (error) throw new Error(`Erro ao consultar feriados: ${error.message}`);
+  if (error) throw new Error(dbFail("consultar feriados", error));
   return data ?? [];
 }
 
@@ -556,7 +573,7 @@ async function buscarContato(params: Record<string, unknown>): Promise<McpRespon
   const supabase = getClient();
   const notFound = ok({ encontrado: false });
   const personResult = await resolvePessoa(supabase, params, false);
-  if (personResult.error) return fail(`Erro ao consultar pessoa: ${personResult.error}`);
+  if (personResult.error) return fail(personResult.error);
   if (personResult.pessoa) {
     const personData = await pessoaWithLeads(supabase, personResult.pessoa);
     return ok(personData, undefined, "Confirme se é para um estabelecimento anterior ou para uma nova empresa");
@@ -730,7 +747,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true);
-  if (error) return fail(`Erro ao consultar cobertura: ${error.message}`);
+  if (error) return fail(dbFail("consultar cobertura", error));
   const allAreas: CoverageRegion[] = data ?? [];
   const postalMatch = cep ? narrowestCoverage(allAreas, cep) : null;
   const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
@@ -809,7 +826,7 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
   if (region) query = query.eq("name", region);
   else if (!params.cep && city) query = query.ilike("city", exactCity ? city : `%${city}%`);
   const { data, error } = await query;
-  if (error) throw new Error(`Erro ao consultar regiões: ${error.message}`);
+  if (error) throw new Error(dbFail("consultar regiões", error));
   if (!region && params.cep) {
     const match = narrowestCoverage(data ?? [], params.cep);
     return match ? [match] : [];
@@ -843,7 +860,7 @@ async function loadBookingLead(supabase: ReturnType<typeof getClient>, leadId?: 
   let query = supabase.from("leads").select(BOOKING_LEAD_SELECT).eq("organization_id", NITSCLEAN_ORG_ID);
   query = leadId ? query.eq("id", leadId) : query.eq("interaction_id", interactionId);
   const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(`Erro ao consultar dados do lead: ${error.message}`);
+  if (error) throw new Error(dbFail("consultar dados do lead", error));
   return data as BookingLead | null;
 }
 
@@ -877,11 +894,11 @@ async function fillBookingEmail(supabase: ReturnType<typeof getClient>, lead: Bo
   if (!lead || !email) return;
   const { error: leadError } = await supabase.from("leads").update({ contact_email: email })
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id).or("contact_email.is.null,contact_email.eq.");
-  if (leadError) throw new Error(`Erro ao atualizar e-mail do lead: ${leadError.message}`);
+  if (leadError) throw new Error(dbFail("atualizar e-mail do lead", leadError));
   if (lead.pessoa_id) {
     const { error: pessoaError } = await supabase.from("pessoas").update({ email })
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.pessoa_id).or("email.is.null,email.eq.");
-    if (pessoaError) throw new Error(`Erro ao atualizar e-mail da pessoa: ${pessoaError.message}`);
+    if (pessoaError) throw new Error(dbFail("atualizar e-mail da pessoa", pessoaError));
   }
 }
 
@@ -1310,14 +1327,14 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     ? params.chat_id.trim() : null;
   const personResult = await resolvePessoa(supabase, params, true);
   if (personResult.error || !personResult.pessoa) {
-    return fail(`Erro ao resolver pessoa: ${personResult.error ?? "pessoa não identificada"}`);
+    return fail(personResult.error ?? "Erro ao resolver pessoa: pessoa não identificada");
   }
 
   const { data: openLeads, error: openLeadError } = await supabase.from("leads")
     .select("id, contact_name, stage, place_id, empresa_nome, company, city")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", personResult.pessoa.id)
     .order("created_at", { ascending: false }).limit(20);
-  if (openLeadError) return fail(`Erro ao consultar leads da pessoa: ${openLeadError.message}`);
+  if (openLeadError) return fail(dbFail("consultar leads da pessoa", openLeadError));
   const requestedPlaceId = typeof params.place_id === "string" ? params.place_id.trim() : "";
   const companyKey = normalizedEstablishment(empresaFinal);
   const cityKey = normalizedEstablishment(cidade);
@@ -1363,12 +1380,13 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       client_contact_id: client_contact_id ?? null,
       position:          0,
       created_by_flora:  true,
+      assigned_to:       await floraDefaultOwner(supabase),
     })
     .select("id, contact_name, stage")
     .single();
 
   if (error) {
-    return fail(`Erro ao criar lead: ${error.message}`, "Tente novamente ou registre manualmente no Fera");
+    return fail(dbFail("criar lead", error), "Tente novamente ou registre manualmente no Fera");
   }
 
   await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
@@ -1431,7 +1449,7 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
     .select("id, contact_name, stage")
     .single();
 
-  if (error) return fail(`Erro ao atualizar lead: ${error.message}`);
+  if (error) return fail(dbFail("atualizar lead", error));
 
   return ok({ lead }, `Lead atualizado: ${lead!.contact_name}`, "Continue o atendimento ou agende uma visita técnica");
 }
@@ -1575,7 +1593,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     .from("schedules")
     .insert({
       organization_id: NITSCLEAN_ORG_ID, title,
-      source: "flora", assigned_to: area?.consultant_user_id ?? null,
+      source: "flora", assigned_to: area?.consultant_user_id ?? await floraDefaultOwner(supabase),
       scheduled_date:  data_visita, start_time: startTime, end_time: endTime,
       schedule_type: "visita_comercial", status: "agendado", location: bookingLocation(bookingLead, cidade),
       zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: bookingNotes(bookingLead, params, product),
@@ -1584,7 +1602,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     .select("id, title, scheduled_date, start_time, status")
     .single();
 
-  if (error) return fail(`Erro ao criar agendamento: ${error.message}`);
+  if (error) return fail(dbFail("criar agendamento", error));
 
   if (leadId) {
     await supabase.from("leads")
@@ -1713,7 +1731,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       organization_id: NITSCLEAN_ORG_ID,
       title, scheduled_date: data_visita, start_time: startTime, end_time: endTime,
       schedule_type: "visita_tecnica", schedule_subtype: "PROSPECCAO",
-      source: "flora", assigned_to: bookingArea(areas, data_visita, horario)?.consultant_user_id ?? null,
+      source: "flora", assigned_to: bookingArea(areas, data_visita, horario)?.consultant_user_id ?? await floraDefaultOwner(supabase),
       status: "agendado",
       location: bookingLocation(bookingLead, cidade), zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: notesArr,
       client_id: bookingLead?.client_id ?? null,
@@ -1722,7 +1740,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     .select("id, title, scheduled_date, start_time, status")
     .single();
 
-  if (error) return fail(`Erro ao criar agendamento: ${error.message}`);
+  if (error) return fail(dbFail("criar agendamento", error));
 
   if (leadId) {
     await supabase.from("leads")
@@ -1840,7 +1858,7 @@ async function cancelarReagendarVisita(params: Record<string, unknown>): Promise
     const { error } = await supabase.from("schedules")
       .update({ status: "cancelado", notes: motivo ? `Cancelado: ${motivo}` : "Cancelado via Flora" })
       .eq("id", schedId);
-    if (error) return fail(`Erro ao cancelar: ${error.message}`);
+    if (error) return fail(dbFail("cancelar", error));
     return ok({ cancelado: true }, "Agendamento cancelado", "Ofereça uma nova data ao cliente se quiser reagendar");
   }
 
@@ -1858,7 +1876,7 @@ async function cancelarReagendarVisita(params: Record<string, unknown>): Promise
       .eq("id", schedId)
       .select("id, scheduled_date, start_time")
       .single();
-    if (error) return fail(`Erro ao reagendar: ${error.message}`);
+    if (error) return fail(dbFail("reagendar", error));
     return ok({ reagendado: true, agendamento: updated }, `Reagendado para ${nova_data} às ${novo_horario}h`);
   }
 
@@ -1895,7 +1913,7 @@ async function moverLeadEstagio(params: Record<string, unknown>): Promise<McpRes
     .select("id, contact_name, stage")
     .single();
 
-  if (error) return fail(`Erro: ${error.message}`);
+  if (error) return fail(dbFail("processar a solicitação", error));
   return ok({ lead }, `Lead movido para ${novo_estagio}`);
 }
 
@@ -1926,7 +1944,7 @@ async function atribuirResponsavel(params: Record<string, unknown>): Promise<Mcp
     .update({ assigned_to: userId, updated_at: new Date().toISOString() })
     .eq("id", leadId);
 
-  if (error) return fail(`Erro: ${error.message}`);
+  if (error) return fail(dbFail("processar a solicitação", error));
   return ok(
     { atribuido: true, responsavel: profiles?.[0]?.name ?? responsavel_nome },
     `Lead atribuído para ${profiles?.[0]?.name ?? responsavel_nome}`
@@ -1956,7 +1974,7 @@ async function adicionarTag(params: Record<string, unknown>): Promise<McpRespons
     .update({ flora_tags: newTags, updated_at: new Date().toISOString() })
     .eq("id", leadId);
 
-  if (error) return fail(`Erro: ${error.message}`);
+  if (error) return fail(dbFail("processar a solicitação", error));
   return ok({ tags: newTags }, `Tags adicionadas: ${tags.join(", ")}`);
 }
 
@@ -2027,13 +2045,14 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
       company: fields.empresa, empresa_nome: fields.empresa,
       city: fields.cidade, category: fields.produto_interesse,
       stage: "novo", source: canal.toLowerCase(), canal_origem: canal,
+      assigned_to: await floraDefaultOwner(supabase),
       interaction_id: fields.interaction_id ?? String(Date.now()),
       gptmaker_chat_id: fields.chat_id,
       instagram_handle: pessoa?.instagram_handle ?? null,
       pessoa_id: pessoa?.id ?? null,
       position: 0, created_by_flora: true,
     }).select(leadSelect).single();
-    if (error || !data) return fail(`Erro ao registrar lead da transferência: ${error?.message ?? "sem retorno"}`);
+    if (error || !data) return fail(dbFail("registrar lead da transferência", error));
     lead = data as Record<string, unknown>;
     leadCriado = true;
   }
@@ -2101,7 +2120,7 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
       .gte("created_at", new Date(Date.now() - 86400000).toISOString());
     else lookup = lookup.eq("interaction_id", interaction_id);
     const { data, error } = await lookup.order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (error) return fail(`Erro ao consultar lead: ${error.message}`);
+    if (error) return fail(dbFail("consultar lead", error));
     existingId = data?.id;
   }
   const values = {
@@ -2126,7 +2145,7 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
     : supabase.from("leads").insert(values);
   const { data: lead, error } = await write.select("id").single();
   if (error) {
-    return fail(`Erro ao registrar: ${error.message}`);
+    return fail(dbFail("registrar", error));
   }
 
   return ok(
@@ -2190,7 +2209,7 @@ async function enviarCodigoOtp(params: Record<string, unknown>): Promise<McpResp
     expira_em:       expiraEm.toISOString(),
   });
 
-  if (error) return fail(`Erro ao gerar OTP: ${error.message}`);
+  if (error) return fail(dbFail("gerar OTP", error));
 
   // TODO: Envio real via Z-API / API WhatsApp
   // await fetch("https://api.z-api.io/instances/INSTANCE/token/TOKEN/send-text", {
@@ -2781,11 +2800,11 @@ Deno.serve(async (req: Request) => {
       error_message: result.success ? null : result.message,
     });
   } catch (err) {
-    console.error(`[MCP] Error in ${rpc.method}:`, err);
-    const message = `Internal error: ${err instanceof Error ? err.message : String(err)}`;
-    return finish(jsonRpcError(rpc.id, -32603, message), {
+    console.error(`[MCP] Error in ${rpc.method}`, err instanceof Error ? err.name : "unknown");
+    const detail = `Internal error: ${err instanceof Error ? err.message : String(err)}`;
+    return finish(jsonRpcError(rpc.id, -32603, "Erro interno ao processar a solicitação"), {
       method: rpc.method, params: rpc.params, success: false,
-      error_code: -32603, error_message: message,
+      error_code: -32603, error_message: detail,
     });
   }
 });
