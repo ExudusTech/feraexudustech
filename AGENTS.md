@@ -15,3 +15,7 @@
 - Flora schedules copy tenant-scoped lead and person contact/location details at creation so Agenda history and background notifications remain useful even if the lead later changes.
 - Coverage binding inference stays local to verificar_cobertura_regiao, and outside-coverage registration uses tenant-scoped select plus insert/update without global interaction uniqueness, so other tools and tenants remain unaffected.
 - Human handoff always resolves or creates a tenant-scoped lead, appends notes instead of overwriting, and deduplicates team alerts per lead over 30 minutes (except high urgency) so every transfer is visible without spamming the team.
+- Users are created only server-side (create-user sets organization and role); the signup trigger grants just 'visitante' and never reads user metadata, so self-signup cannot join a tenant or escalate.
+- Owner-or-privileged UPDATE policies plus an immutability trigger on organization_id/created_by protect leads, clients and schedules; service-role paths (mcp) bypass both.
+- Flora leads and visits fall back to the organization's flora_default_lead_owner (coverage consultant first for visits); bulk reassignment runs in a security-definer function that backs up rows first.
+- MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
