@@ -43,3 +43,7 @@
 - [x] Responsável padrão Flora (leads + visitas 4b) + aba Configurações
 - [x] Dependências críticas/altas (zod 4 pendente: versão maior)
 - [x] mcp sem error.message do banco
+## Lote 3 (28/10)
+- [x] Passo 0: limpeza de dados de teste com backup_20261028d_*
+- [x] Frente 1: WhatsApp obrigatório, destinatários usuário/externo sem duplicidade, mcp lê WhatsApp do usuário
+- [x] Frente 2: menu Ekkoa removido; Comodatos/Manutenções (OS)/Financeiro/Produtos/Dashboard; redirecionamentos

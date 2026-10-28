@@ -24,3 +24,6 @@
 - Organization branding is applied at runtime from the organizations row (colors via injected CSS vars with WCAG-checked foregrounds, logo, favicon, manifest); legacy default colors count as "not customized" so other tenants keep the Exudus brand.
 - Organization logos live in the private org-logos bucket (public buckets are blocked in this workspace) and are referenced by long-lived signed URLs in organizations.logo_url.
 - Below the md breakpoint the side menu is replaced by a bottom nav and dialogs render full-screen; installability is manifest-only (no service worker).
+- Notification recipients reference org users by user_id and read WhatsApp live from profiles.phone (external contacts keep their own number); a trigger blocks duplicate users/numbers so one person is never alerted twice.
+- Loan equipment is manufacturer-neutral: comodatos and maintenance_schedule (work orders) carry a fabricante field; legacy ekkoa_* tables are DEPRECATED except ekkoa_coverage_areas (used by Flora), and /ekkoa only redirects.
+- Per-role read-only screens use readOnlyRoutes in src/lib/permissions.ts (read-only only if every granting role says so), and denied routes redirect to the first allowed home screen.
