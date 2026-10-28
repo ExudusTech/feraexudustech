@@ -1,51 +1,48 @@
-# Lote 1 de correções de segurança
+# Lote 2 — Vários perfis, marca por organização e uso no celular
 
-Antes de qualquer alteração de linhas: backup em `backup_20261028_<tabela>` (somente das linhas afetadas), sem RLS aberta (RLS ativa, zero políticas, como os backups atuais). Não mexer em: autenticação do `mcp`, secrets, `mcp_request_log`, demais fluxos da Flora.
+Fora do escopo (não será tocado): função mcp, Flora, secrets, autenticação (login/cadastro/sessão). Backup `backup_20261028b_*` antes de qualquer alteração de linha (previsto: `organizations` para as cores da NitsClean e `user_roles` dos usuários editados).
 
-## 1. Cadastro fechado (crítico)
-- `Auth.tsx`: remover a aba "Cadastrar" e o fluxo `signUp`; fica só login e "esqueci a senha".
-- Desligar cadastro público na configuração de autenticação (`disable_signup: true`). Criação de usuário pelo `create-user` continua funcionando (usa a API administrativa, que não é afetada).
-- Reescrever `handle_new_user`: ignora `raw_user_meta_data` para organização e papel. Cria só o perfil com `organization_id = NULL` e papel `visitante`. Não cria mais organização automática.
-- `create-user`: continua definindo organização e papel no servidor (já faz: atualiza perfil e `user_roles` após criar). Ajustes:
-  - deixa de mandar `organization_id` nos metadados;
-  - admin comum não pode criar `super_admin` nem escolher outra organização (só super_admin);
-  - o gatilho `protect_profile_org_change` passa a aceitar a troca de organização quando feita pelo servidor (service role) — hoje ele bloquearia o novo fluxo.
-- Teste: cadastro direto gera visitante sem organização; `create-user` gera usuário na organização com o papel escolhido.
+## A) Usuário com vários perfis
 
-## 2. Papéis (`user_roles`) (alto)
-Substituir a política "Admins can manage roles in their org" por políticas separadas (INSERT/UPDATE/DELETE) com USING e WITH CHECK:
-- usuário-alvo pertence à mesma organização do admin;
-- o papel antigo e o novo nunca são `super_admin`;
-- admin não altera os próprios papéis para `super_admin`.
-Política de super_admin permanece. `manage-user` recebe a mesma regra no servidor.
+Situação verificada: o banco já guarda vários papéis e `has_role` checa cada um (RLS já soma os papéis). Mas o app lê só o primeiro papel (`use-auth` usa `roles[0]`) e `usePermissions` monta o menu a partir de um único papel. Hoje, então, Marcos com vendedor + consultor veria só um dos dois.
 
-## 3. Edição restrita (alto) — leads, clients, schedules
-Nova política UPDATE:
-- USING: mesma organização E (privilegiado OU `created_by = auth.uid()` OU `assigned_to`/`assigned_user_id = auth.uid()`).
-- WITH CHECK: organização continua a do usuário.
-- Gatilho BEFORE UPDATE que impede trocar `organization_id` e `created_by` (exceto service role), pois WITH CHECK não compara com o valor antigo.
-- `mcp` usa service role, que ignora RLS e o gatilho — continua igual.
+1. `use-auth` carrega todos os papéis (`roles: string[]`); `role` continua existindo como o papel de maior prioridade (super_admin > admin > gestor > financeiro > vendedor > consultor_tecnico > operacional > user > visitante), para não quebrar quem já usa esse campo.
+2. `usePermissions` junta as permissões de todos os papéis: rotas = soma; canEdit/canDelete/finanças/relatórios/config = verdadeiro se qualquer papel tiver. `isAdmin`/`isSuperAdmin` passam a checar a lista.
+3. Formulário de usuário (/usuarios): seleção múltipla com caixas de marcação (pelo menos 1 perfil); "Super Admin" aparece só para super admin.
+4. `create-user` e `manage-user` aceitam `roles[]` (e ainda `role` por compatibilidade): validam cada papel, recusam super_admin vindo de admin comum e usuário de outra organização (regras do lote 1 mantidas), e trocam o conjunto de papéis inteiro.
+5. Lista de usuários mostra cada perfil como etiqueta.
+6. Testes: união de permissões (vendedor+consultor abre /leads e /agenda; gestor+vendedor), escolha do papel principal, recusa de super_admin por admin.
 
-## 4. Responsável padrão dos leads da Flora
-- Nova coluna `organizations.flora_default_lead_owner` (uuid, opcional) + validação por gatilho de que é usuário ativo da organização.
-- Configurações → nova aba "Leads da Flora": seletor com usuários da organização (admin/gestor salvam).
-- Ao salvar: backup em `backup_20261028_leads` dos leads `source` Flora (identificados por `gptmaker_chat_id`/origem Flora) sem `assigned_to`, e atribuí-los ao responsável escolhido.
-- `criar_lead` e `solicitar_atendimento_humano` (quando criam lead) preenchem `assigned_to` com esse usuário; sem configuração, continua nulo.
-- Vendedor: `/leads` já está liberado no menu dele e a RLS permite ver leads com `assigned_to = ele`; o link `/leads?lead=<id>` abre. Será coberto por teste.
-- Consultor técnico: sem mudança neste lote (não tem `/leads`).
+## B) Marca por organização
 
-## 5. Dependências (alto)
-`npm audit` aponta 1 crítica e 15 altas. Atualizar via `bun` os pacotes afetados para versões corrigidas, evitando mudanças de versão maior que quebrem o app (ex.: `zod` 4 só se compatível); listar o que não puder ser atualizado sem quebra. Rodar todos os testes e conferir o build.
+1. O provedor de marca passa a aplicar principal, secundária e destaque (não só a principal), o logo na barra lateral e no cabeçalho, o favicon e a cor do navegador. Sem organização (super admin) ou sem cores → marca Exudus atual.
+2. Contraste AA: para cada cor, calcular automaticamente a cor do texto por cima (branco ou escuro) pela razão de contraste ≥ 4,5; se a cor da marca for escura demais para destacar no fundo preto, usar uma variante clareada só para textos/realces no tema escuro.
+3. Tela de login: depois de digitar o e-mail não há como saber a organização antes de entrar sem expor dados; proposta: a marca da organização aparece logo após o login (seleção de organização e app). Login continua com marca Exudus. (Se quiser logo no login, seria por endereço próprio, ex. `?org=nitsclean` — fica fora deste lote, salvo pedido.)
+4. Configurações → Identidade Visual: upload do logo (PNG/JPG/SVG, até 2 MB, validado na tela e no armazenamento), pré-visualização lado a lado em fundo claro e escuro; salva em `organizations.logo_url`.
+5. Armazenamento: nova pasta pública `org-logos` só para logos, limite 2 MB e tipos permitidos; gravar só admin/gestor/super admin na pasta da própria organização (`<org_id>/...`).
+6. Barra lateral escura: logo dentro de uma placa clara arredondada (opção fixa, simples e previsível).
+7. NitsClean: cores atualizadas para principal #025159, secundária #91BF4B, destaque #5EB5BF (apoio #182859 guardado no campo de configurações da organização) — com backup antes.
+8. Fonte: Montserrat aplicada aos títulos apenas da organização NitsClean via configuração por organização (campo `heading_font` nas configurações; padrão continua Plus Jakarta Sans/Inter).
 
-## 6. Erros do `mcp` (médio)
-Trocar retornos com `error.message` do banco por "Erro interno ao <ação>" e registrar no servidor só código/nome da etapa (sem dados pessoais). Lógica das ferramentas inalterada. Atualizar testes afetados.
+## C) Celular (Arilson e Marcos)
 
-## Verificação
-- Todos os testes (`bunx vitest run`), deploy de `mcp`, `create-user`, `manage-user`.
-- Consultas confirmando políticas e gatilhos novos; contagem de linhas em backup.
-- Relatório final: o que mudou, backups criados, pacotes atualizados, resultado dos testes.
+1. Links das notificações: `/agenda?agendamento=` e `/leads?lead=` abrem o detalhe em tela cheia no celular (folha de baixo para cima ocupando a tela), também depois do login (o retorno já existe do lote anterior; será conferido).
+2. Agenda no celular: abas "Hoje" e "Amanhã" em lista por horário. Cada cartão: horário, cliente, tipo (Visita comercial / Visita técnica / Entrega / Manutenção, derivado do tipo de agendamento já existente), endereço e botões grandes Abrir no Maps, Ligar, WhatsApp (só aparecem quando há dado).
+3. Detalhe do lead e do agendamento: layout em coluna única, sem tabelas com rolagem lateral; ações principais (Ligar, WhatsApp, Maps, Editar) fixas no topo/rodapé.
+4. Navegação inferior no celular: Agenda, Leads, Clientes, Mais (Mais abre o menu completo filtrado por permissão). Menu lateral só em telas maiores.
+5. Toque ≥ 44px nos botões e itens; campos com fonte 16px no celular.
+6. App instalável (só "adicionar à tela inicial", sem modo offline): manifest com nome/cor da organização, ícones 192/512 (Exudus padrão; logo da organização quando houver), abertura em tela cheia, e um aviso com instruções "Adicionar à tela inicial" para iPhone e Android (dispensável). Obs.: o celular grava nome/ícone na instalação; mudar a marca depois exige reinstalar.
+7. Teste em 360px e 390px com Playwright logado (Agenda, Leads, detalhes, Clientes, Configurações, Usuários) e relatório das telas que ainda quebrarem.
+
+## D) Limite de usuários
+
+Sem alteração. No relatório: Super Admin → Organizações → coluna "Usuários" da NitsClean → escolher 10 (opções 3/5/10/15/25/50/100).
 
 ## Detalhes técnicos
-- Migração única com: `handle_new_user`, `protect_profile_org_change` (liberar `auth.role() = 'service_role'`), políticas de `user_roles`, políticas UPDATE + gatilho de imutabilidade em leads/clients/schedules, coluna e gatilho em `organizations`.
-- Atribuição em massa ao salvar a configuração: função `SECURITY DEFINER` `apply_flora_default_owner(org)` que verifica admin/gestor, grava backup e atualiza — evita depender da RLS do cliente.
-- Ponto de atenção: a RLS de UPDATE de schedules hoje permite qualquer usuário da org mover agendamentos; após a mudança, técnicos só editam os seus ou os que criaram.
+
+- Migração: bucket via ferramenta de armazenamento + políticas em `storage.objects` (`(storage.foldername(name))[1] = get_user_organization_id(auth.uid())::text` e papel privilegiado); sem tabelas novas. Backups `backup_20261028b_organizations` / `backup_20261028b_user_roles` com RLS e sem acesso por anon/authenticated.
+- `AuthUser.roles: AppRole[]`; `usePermissions` usa `mergePermissions(roles)` (função pura testável em `src/lib/permissions.ts`).
+- Funções `create-user` e `manage-user` republicadas; mcp não.
+- PWA: só `public/manifest.webmanifest` + tags no `index.html`; manifest dinâmico por organização via `link rel=manifest` trocado em tempo de execução com blob; sem service worker.
+- Contraste: helper `readableForeground(hex)` (WCAG) com testes.
+- Rodar todos os testes (vitest + testes das funções) e relatar.
