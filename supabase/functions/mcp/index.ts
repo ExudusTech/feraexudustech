@@ -1185,15 +1185,31 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     found = [];
   }
   if (!found.length) correspondencia = "nenhuma";
-  const produtos = found.slice(0, 5).map((p) => {
+  const fmt = (p: Record<string, unknown>) => {
     const desc = typeof p.description === "string" ? p.description.trim() : "";
     return {
       id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
       fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
       descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
     };
-  });
-  return { success: true, data: { encontrado: produtos.length > 0, correspondencia, produtos } };
+  };
+  const produtoCitado = termo ?? categoria ?? null;
+  if (correspondencia === "total") {
+    return { success: true, data: { encontrado: true, correspondencia, produto_citado: produtoCitado, produtos: found.slice(0, 5).map(fmt) } };
+  }
+  const similares = found.slice(0, 3).map(fmt);
+  let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
+  const cats: string[] = [];
+  const seen = new Set<string>();
+  for (const s of similares) {
+    const c = typeof s.categoria === "string" ? s.categoria.trim() : "";
+    if (c && !seen.has(foldProductText(c))) { seen.add(foldProductText(c)); cats.push(c); }
+  }
+  if (similares.length) {
+    const lista = cats.length ? (cats.length === 1 ? cats[0] : `${cats.slice(0, -1).join(", ")} e ${cats[cats.length - 1]}`) : "produtos";
+    mensagem += ` Temos opções de ${lista} que podem atender a mesma necessidade.`;
+  }
+  return { success: true, data: { encontrado: false, correspondencia, produto_citado: produtoCitado, produtos: [], similares, mensagem_para_lead: mensagem } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2333,7 +2349,7 @@ const TOOLS_MANIFEST = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor ou descrição. Nunca retorna preço. Retorna encontrado, correspondencia (total|parcial|nenhuma) e até 5 produtos ativos.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor ou descrição. Nunca retorna preço. Só correspondência TOTAL (todas as palavras do termo) retorna encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {
