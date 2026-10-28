@@ -1142,35 +1142,58 @@ async function obterPromocaoVigente(_params: Record<string, unknown>): Promise<M
   );
 }
 
+const PRODUCT_SEARCH_FIELDS = ["name", "brand", "category", "fornecedor", "linha_produto", "description"] as const;
+
+function foldProductText(value: unknown): string {
+  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function productSearchText(value: unknown): string | null {
+  const v = normalizeParamValue(value);
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t || /^n[aã]o informad[oa]$/i.test(t)) return null;
+  return t;
+}
+
 async function consultarProduto(params: Record<string, unknown>): Promise<McpResponse> {
-  const { nome, categoria } = params as { nome?: string; categoria?: string };
-
+  const termo = productSearchText(params.termo) ?? productSearchText(params.nome);
+  const categoria = productSearchText(params.categoria);
   const supabase = getClient();
-
-  let query = supabase
+  const { data: rows } = await supabase
     .from("products")
-    .select("id, name, category, description, price, brand, unit, specifications")
+    .select("id, name, brand, category, fornecedor, linha_produto, unit, description")
     .eq("organization_id", NITSCLEAN_ORG_ID)
-    .eq("is_active", true);
-
-  if (nome)      query = query.ilike("name", `%${nome}%`);
-  if (categoria) query = query.ilike("category", `%${categoria}%`);
-
-  const { data: products } = await query.limit(10);
-
-  if (!products || products.length === 0) {
-    return ok(
-      { produtos: [] },
-      `Nenhum produto encontrado para "${nome ?? categoria}"`,
-      "Ofereça o catálogo completo ou sugira agendar uma demonstração"
-    );
+    .eq("is_active", true)
+    .limit(2000);
+  let products = (rows ?? []) as Array<Record<string, unknown>>;
+  if (categoria) {
+    const c = foldProductText(categoria);
+    products = products.filter((p) => foldProductText(p.category).includes(c));
   }
-
-  return ok(
-    { produtos: products },
-    `${products.length} produto(s) encontrado(s)`,
-    "Apresente os produtos e pergunte qual atende melhor a necessidade do cliente"
-  );
+  const words = foldProductText(termo ?? "").split(" ").filter((w) => w.length >= 3);
+  const haystack = (p: Record<string, unknown>) => PRODUCT_SEARCH_FIELDS.map((f) => foldProductText(p[f])).join(" ");
+  let correspondencia: "total" | "parcial" | "nenhuma" = "total";
+  let found = products;
+  if (words.length) {
+    found = products.filter((p) => { const h = haystack(p); return words.every((w) => h.includes(w)); });
+    if (!found.length) {
+      found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
+      correspondencia = "parcial";
+    }
+  } else if (!categoria) {
+    found = [];
+  }
+  if (!found.length) correspondencia = "nenhuma";
+  const produtos = found.slice(0, 5).map((p) => {
+    const desc = typeof p.description === "string" ? p.description.trim() : "";
+    return {
+      id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
+      fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
+      descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
+    };
+  });
+  return { success: true, data: { encontrado: produtos.length > 0, correspondencia, produtos } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2013,7 +2036,7 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   try {
     const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
       .in("event_type", ["transferencia", "lead_matriz"]).contains("payload", { lead_id: leadId })
-      .gte("created_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
+      .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
     recent = (data ?? []).length > 0;
   } catch { console.error("[solicitar_atendimento_humano] dedup lookup failed"); }
   const notificado = !recent || urgencia === "alta";
@@ -2310,12 +2333,13 @@ const TOOLS_MANIFEST = [
   },
   {
     name: "consultar_produto",
-    description: "Busca informações de produto por nome ou categoria",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor ou descrição. Nunca retorna preço. Retorna encontrado, correspondencia (total|parcial|nenhuma) e até 5 produtos ativos.",
     parameters: {
       type: "object",
       properties: {
-        nome:      { type: "string" },
-        categoria: { type: "string" },
+        termo:     { type: "string", description: "Texto livre citado pelo cliente: nome, marca ou linha do produto" },
+        categoria: { type: "string", description: "Categoria opcional para restringir a busca" },
+        nome:      { type: "string", description: "Compatibilidade: mesmo que termo" },
       },
     },
   },
