@@ -65,8 +65,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent acting on self
-    if (target_user_id === caller.id) {
+    // Prevent acting on self (except updating own WhatsApp)
+    if (target_user_id === caller.id && action !== "set_whatsapp") {
       return new Response(JSON.stringify({ error: "Não é possível realizar esta ação em sua própria conta" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -101,6 +101,25 @@ Deno.serve(async (req) => {
     }
 
     switch (action) {
+      case "set_whatsapp": {
+        const phone = normalizeWhatsapp(body.whatsapp);
+        if (!phone) {
+          return new Response(JSON.stringify({ error: "WhatsApp inválido: use DDD + número (ex.: 5522999999999)" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const { error } = await adminClient.from("profiles").update({ phone }).eq("user_id", target_user_id);
+        if (error) {
+          console.error("[manage-user] set_whatsapp", error.code);
+          return new Response(JSON.stringify({ error: "Não foi possível salvar o WhatsApp" }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ success: true, whatsapp: phone }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       case "set_roles": {
         const result = await saveRoles(body, callerRoleList, {
           read: async () => {

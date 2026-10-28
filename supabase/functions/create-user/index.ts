@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isManager, resolveRequestedRoles } from "../_shared/roles.ts";
+import { normalizeWhatsapp } from "../_shared/whatsapp.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -82,8 +83,9 @@ Deno.serve(async (req) => {
       ? requestedOrgId 
       : callerProfile.organization_id;
 
-    if (!name || !email || !password) {
-      return new Response(JSON.stringify({ error: "Nome, e-mail e senha são obrigatórios" }), {
+    const phone = normalizeWhatsapp(body.whatsapp);
+    if (!name || !email || !password || !phone) {
+      return new Response(JSON.stringify({ error: !phone && name && email && password ? "WhatsApp inválido: use DDD + número (ex.: 5522999999999)" : "Nome, e-mail, WhatsApp e senha são obrigatórios" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -116,6 +118,7 @@ Deno.serve(async (req) => {
         organization_id: targetOrgId,
         name,
         email,
+        phone,
         is_active: true,
         is_email_verified: true,
       }, { onConflict: "user_id" });
