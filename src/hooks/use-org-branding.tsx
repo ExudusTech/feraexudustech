@@ -1,11 +1,14 @@
 import { createContext, useContext, useEffect, ReactNode } from "react";
 import { useOrganization } from "@/hooks/use-organizations";
+import { buildBrandCss, isCustomBrand } from "@/lib/brand";
+import exudusIcon from "@/assets/logo-exudus-nova.png";
 
 interface OrgBranding {
   primaryColor: string | null;
   secondaryColor: string | null;
   accentColor: string | null;
   logoUrl: string | null;
+  orgName: string | null;
 }
 
 const BrandingContext = createContext<OrgBranding>({
@@ -13,65 +16,103 @@ const BrandingContext = createContext<OrgBranding>({
   secondaryColor: null,
   accentColor: null,
   logoUrl: null,
+  orgName: null,
 });
 
-function hexToHsl(hex: string): string | null {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return null;
-  let r = parseInt(result[1], 16) / 255;
-  let g = parseInt(result[2], 16) / 255;
-  let b = parseInt(result[3], 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-      case g: h = ((b - r) / d + 2) / 6; break;
-      case b: h = ((r - g) / d + 4) / 6; break;
-    }
+const STYLE_ID = "org-brand-vars";
+const DEFAULT_THEME = "#000000";
+
+function setLink(rel: string, href: string, type?: string) {
+  let el = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!el) {
+    el = document.createElement("link");
+    el.rel = rel;
+    document.head.appendChild(el);
   }
-  return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
+  el.href = href;
+  if (type) el.type = type;
+}
+
+function setMeta(name: string, content: string) {
+  let el = document.head.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+  if (!el) {
+    el = document.createElement("meta");
+    el.name = name;
+    document.head.appendChild(el);
+  }
+  el.content = content;
+}
+
+let manifestUrl: string | null = null;
+
+/** Installable-app metadata per organization (manifest only, no service worker). */
+function applyManifest(name: string, color: string, icon: string) {
+  const manifest = {
+    name,
+    short_name: name.length > 12 ? name.split(" ")[0] : name,
+    start_url: `${window.location.origin}/agenda`,
+    scope: `${window.location.origin}/`,
+    display: "standalone",
+    background_color: "#ffffff",
+    theme_color: color,
+    icons: [
+      { src: new URL(icon, window.location.origin).href, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: new URL(icon, window.location.origin).href, sizes: "512x512", type: "image/png", purpose: "any" },
+    ],
+  };
+  if (manifestUrl) URL.revokeObjectURL(manifestUrl);
+  manifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" }));
+  setLink("manifest", manifestUrl);
 }
 
 export function OrgBrandingProvider({ children }: { children: ReactNode }) {
   const { data: org } = useOrganization();
+  const custom = isCustomBrand(org?.primary_color);
+  const headingFont = (org as any)?.heading_font as string | null | undefined;
 
   useEffect(() => {
-    const root = document.documentElement;
-
-    if (org?.primary_color) {
-      const hsl = hexToHsl(org.primary_color);
-      if (hsl) {
-        root.style.setProperty("--primary", hsl);
-        root.style.setProperty("--ring", hsl);
-        root.style.setProperty("--sidebar-primary", hsl);
-        root.style.setProperty("--sidebar-ring", hsl);
+    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (custom && org?.primary_color) {
+      if (!style) {
+        style = document.createElement("style");
+        style.id = STYLE_ID;
+        document.head.appendChild(style);
       }
+      let css = buildBrandCss({ primary: org.primary_color, secondary: org.secondary_color, accent: org.accent_color });
+      if (headingFont === "Montserrat") {
+        css += `h1,h2,h3,h4,h5,h6{font-family:'Montserrat',sans-serif}`;
+        if (!document.getElementById("font-montserrat")) {
+          const l = document.createElement("link");
+          l.id = "font-montserrat";
+          l.rel = "stylesheet";
+          l.href = "https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap";
+          document.head.appendChild(l);
+        }
+      }
+      style.textContent = css;
+    } else if (style) {
+      style.remove();
     }
 
-    return () => {
-      root.style.removeProperty("--primary");
-      root.style.removeProperty("--ring");
-      root.style.removeProperty("--sidebar-primary");
-      root.style.removeProperty("--sidebar-ring");
-    };
-  }, [org?.primary_color]);
+    const icon = org?.logo_url || exudusIcon;
+    setLink("icon", icon);
+    setLink("apple-touch-icon", icon);
+    const theme = custom && org?.primary_color ? org.primary_color : DEFAULT_THEME;
+    setMeta("theme-color", theme);
+    setMeta("apple-mobile-web-app-capable", "yes");
+    setMeta("apple-mobile-web-app-title", org?.trading_name || org?.name || "Fera");
+    applyManifest(org?.trading_name || org?.name || "Fera", theme, icon);
+  }, [custom, org?.primary_color, org?.secondary_color, org?.accent_color, org?.logo_url, org?.name, org?.trading_name, headingFont]);
 
   const value: OrgBranding = {
-    primaryColor: org?.primary_color || null,
-    secondaryColor: org?.secondary_color || null,
-    accentColor: org?.accent_color || null,
+    primaryColor: custom ? org?.primary_color ?? null : null,
+    secondaryColor: custom ? org?.secondary_color ?? null : null,
+    accentColor: custom ? org?.accent_color ?? null : null,
     logoUrl: org?.logo_url || null,
+    orgName: org?.trading_name || org?.name || null,
   };
 
-  return (
-    <BrandingContext.Provider value={value}>
-      {children}
-    </BrandingContext.Provider>
-  );
+  return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }
 
 export function useOrgBranding() {
