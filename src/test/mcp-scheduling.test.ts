@@ -197,7 +197,7 @@ describe("MCP holidays and booking email", () => {
   });
   it("calendar read failure cannot create a booking", async () => {
     const h = harness("Diversey", undefined, [], null, true);
-    await expect(h.route(visit)).rejects.toThrow("Erro ao consultar feriados");
+    await expect(h.route(visit)).rejects.toThrow("Erro interno ao consultar feriados");
     expect(h.writes).toEqual([]);
   });
 });
