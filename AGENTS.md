@@ -19,3 +19,7 @@
 - Owner-or-privileged UPDATE policies plus an immutability trigger on organization_id/created_by protect leads, clients and schedules; service-role paths (mcp) bypass both.
 - Flora leads and visits fall back to the organization's flora_default_lead_owner (coverage consultant first for visits); bulk reassignment runs in a security-definer function that backs up rows first.
 - MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
+- Users may hold several roles; the app merges permissions as the union (src/lib/permissions.ts) and role changes go only through create-user/manage-user (shared rules in supabase/functions/_shared/roles.ts), so admin limits stay enforced server-side.
+- Organization branding is applied at runtime from the organizations row (colors via injected CSS vars with WCAG-checked foregrounds, logo, favicon, manifest); legacy default colors count as "not customized" so other tenants keep the Exudus brand.
+- Organization logos live in the private org-logos bucket (public buckets are blocked in this workspace) and are referenced by long-lived signed URLs in organizations.logo_url.
+- Below the md breakpoint the side menu is replaced by a bottom nav and dialogs render full-screen; installability is manifest-only (no service worker).
