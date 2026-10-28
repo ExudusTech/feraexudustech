@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 import { sortRoles } from "@/lib/permissions";
+import { userRoleError } from "@/lib/user-role-error";
 
 export interface UserProfile {
   id: string;
@@ -89,7 +90,7 @@ export function useUpdateUserRole() {
       const res = await supabase.functions.invoke("manage-user", {
         body: { action: "set_roles", target_user_id: userId, roles },
       });
-      if (res.error || res.data?.error) throw new Error(res.data?.error || "Erro ao atualizar perfis");
+      if (res.error || res.data?.error) throw new Error(await userRoleError(res.data, res.error));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["org_users"] });
