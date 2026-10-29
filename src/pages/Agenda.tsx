@@ -187,7 +187,7 @@ export default function Agenda() {
                 <div className="text-xs font-medium mb-1">{format(day, "d")}</div>
                 <div className="space-y-0.5">
                   {daySchedules.slice(0, 2).map((s) => (
-                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={`${serviceKind(s.schedule_type, s.schedule_subtype)} — ${s.title}`} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium shrink-0">{s.start_time.slice(0, 5)}</span>}
                       <span className="min-w-0 truncate">{s.title}</span>
                       {s.source === "flora" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Flora</Badge>}
@@ -225,6 +225,7 @@ export default function Agenda() {
                     <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
+                      <div className="truncate text-[10px] opacity-80">{serviceKind(s.schedule_type, s.schedule_subtype)}</div>
                       {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                     </div>
@@ -251,7 +252,7 @@ export default function Agenda() {
               <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
-                  <div className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
+                  <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
                   <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
