@@ -7,7 +7,7 @@ vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ role: mocks
 vi.mock("@/hooks/use-users", () => ({ useOrganizationUsers: () => ({ data: [{ user_id: "u1", name: "Arilson", email: "a@x.com", phone: "5522999990000", roles: ["gestor"], is_active: true }] }) }));
 vi.mock("@/hooks/use-team-notifications", async importOriginal => {
   const actual = await importOriginal<typeof import("@/hooks/use-team-notifications")>();
-  return { ...actual, useTeamRecipients: () => ({ data: [{ id: "test", tipo: "externo", user_id: null, nome: "PH (teste)", whatsapp: "5521995367752", email: null, papel: "gestor", eventos: ["agendamento"], ativo: true }], isLoading: false }),
+  return { ...actual, useTeamRecipients: () => ({ data: [{ id: "test", tipo: "externo", user_id: null, nome: "PH (teste)", whatsapp: "5521995367752", email: null, papel: "gestor", eventos: ["agendamento_comercial"], ativo: true }], isLoading: false }),
     useSaveTeamRecipient: () => ({ mutateAsync: mocks.save, mutate: mocks.mutate, isPending: false }) };
 });
 afterEach(() => { cleanup(); mocks.save.mockClear(); mocks.mutate.mockClear(); mocks.role = "gestor"; });
@@ -40,7 +40,7 @@ describe("Team recipient management", () => {
     expect(screen.getByLabelText("Nome")).toHaveValue("PH (teste)");
     fireEvent.click(screen.getByLabelText("Lead da Matriz"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar destinatário" }));
-    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ id: "test", eventos: ["agendamento", "lead_matriz"] })));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ id: "test", eventos: ["agendamento_comercial", "lead_matriz"] })));
   });
   it("read-only users cannot change recipients", () => {
     mocks.role = "vendedor"; render(<TeamNotifications />);

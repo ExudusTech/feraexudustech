@@ -1,3 +1,4 @@
+import { notifySchedule } from "@/lib/notify-schedule";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -179,6 +180,7 @@ export function useCreateMaintenance() {
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;
+      notifySchedule("maintenance", data.id);
       return data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["maintenance_schedule"] }); toast({ title: "Manutenção criada" }); },
