@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
       .eq("id", body.id!).maybeSingle();
     record = data; if (data) { event = scheduleEvent(data.schedule_type, data.schedule_subtype, data.source); linkPath = `/agenda?agendamento=${data.id}`; }
   } else {
-    const { data } = await caller.from("maintenance_schedule").select("id, organization_id, title, scheduled_date, start_time, tipo_os, maintenance_type")
+    const { data } = await caller.from("maintenance_schedule").select("id, organization_id, title, scheduled_date, start_time, tipo_os, maintenance_type, clients(name)")
       .eq("id", body.id!).maybeSingle();
     record = data; if (data) { event = "agendamento_tecnico"; linkPath = "/manutencoes"; }
   }
