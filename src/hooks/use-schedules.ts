@@ -1,3 +1,4 @@
+import { notifySchedule } from "@/lib/notify-schedule";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -54,11 +55,13 @@ export function useCreateSchedule() {
         client_id: input.client_id, location: input.location, zip_code: input.zip_code, notes: input.notes,
         operation_id: input.operation_id,
         schedule_subtype: input.schedule_subtype ?? null,
+        ...(input.schedule_type ? { schedule_type: input.schedule_type } : {}),
         lead_id: input.lead_id ?? null,
         assigned_to: input.assigned_to ?? null, source: "manual",
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;
+      notifySchedule("schedule", data.id);
       return data;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["schedules"] }); toast({ title: "Agendamento criado" }); },

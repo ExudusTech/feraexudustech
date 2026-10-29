@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 import { normalizeWhatsapp } from "@/lib/whatsapp";
-export const TEAM_EVENTS = { agendamento: "Agendamento", transferencia: "Transferência", lead_matriz: "Lead da Matriz" };
+export const TEAM_EVENTS = { agendamento_comercial: "Agendamento — visita comercial", agendamento_tecnico: "Agendamento — visita técnica", transferencia: "Transferência", lead_matriz: "Lead da Matriz" };
 export type TeamEvent = keyof typeof TEAM_EVENTS;
 export type RecipientKind = "usuario" | "externo";
 export interface TeamRecipient { id: string; tipo: RecipientKind; user_id: string | null; nome: string; whatsapp: string | null; email: string | null; papel: string; eventos: string[]; ativo: boolean }
