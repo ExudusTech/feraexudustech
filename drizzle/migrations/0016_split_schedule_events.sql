@@ -1,0 +1,10 @@
+CREATE TABLE public.backup_20261029_notification_recipients AS SELECT r.*, now() AS backed_up_at FROM public.notification_recipients r WHERE 'agendamento' = ANY(r.eventos);
+CREATE TABLE public.backup_20261029_schedules AS SELECT s.*, now() AS backed_up_at FROM public.schedules s WHERE s.source = 'flora' AND s.schedule_type = 'visita_tecnica';
+ALTER TABLE public.backup_20261029_notification_recipients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.backup_20261029_schedules ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.backup_20261029_notification_recipients TO service_role;
+GRANT ALL ON public.backup_20261029_schedules TO service_role;
+ALTER TABLE public.notification_recipients DROP CONSTRAINT team_recipient_events_valid;
+UPDATE public.notification_recipients SET eventos = (SELECT array_agg(DISTINCT e ORDER BY e) FROM unnest(array_remove(eventos,'agendamento') || ARRAY['agendamento_comercial','agendamento_tecnico']) e) WHERE 'agendamento' = ANY(eventos);
+ALTER TABLE public.notification_recipients ADD CONSTRAINT team_recipient_events_valid CHECK (eventos <@ ARRAY['agendamento_comercial','agendamento_tecnico','transferencia','lead_matriz']::text[]);
+UPDATE public.schedules SET schedule_type = 'visita_comercial', title = regexp_replace(title, '^Visita Técnica', 'Visita Comercial') WHERE source = 'flora' AND schedule_type = 'visita_tecnica';

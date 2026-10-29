@@ -113,6 +113,13 @@
       "when": 1793231501006,
       "tag": "0015_lote3_recipients_users_and_comodato_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793299005655,
+      "tag": "0016_split_schedule_events",
+      "breakpoints": true
     }
   ]
 }
