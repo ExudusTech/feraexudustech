@@ -379,7 +379,7 @@ async function logInteraction(
 
 // ─── Team notifications: isolated background work, tenant/event subscriptions ───
 
-type TeamEvent = "agendamento" | "transferencia" | "lead_matriz";
+type TeamEvent = "agendamento_comercial" | "transferencia" | "lead_matriz";
 const FERA_NOTIFICATION_URL = "https://fera.exudustech.com.br";
 
 function notificationText(event: TeamEvent, params: Record<string, unknown>, lead: Record<string, unknown> | null,
@@ -392,8 +392,8 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
   const link = scheduleId ? `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(scheduleId)}`
     : leadId ? `${FERA_NOTIFICATION_URL}/leads?lead=${encodeURIComponent(leadId)}` : `${FERA_NOTIFICATION_URL}/leads`;
   const lines: string[] = [];
-  if (event === "agendamento") {
-    lines.push("📅 Nova visita agendada pela Flora", `Cliente: ${client}`);
+  if (event === "agendamento_comercial") {
+    lines.push("📅 Nova visita comercial agendada pela Flora", `Cliente: ${client}`);
     const street = text(params.endereco) || text(lead?.endereco);
     const neighborhood = text(params.bairro) || text(lead?.bairro);
     const leadCity = text(lead?.city) || city;
@@ -1731,7 +1731,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   const product = bookingProduct(bookingLead, produto_interesse);
   const empresaLabel = bookingLead?.empresa_nome || bookingLead?.company || empresa || "empresa";
-  const title        = `Visita Técnica — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
+  const title        = `Visita Comercial — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
   const startTime    = `${horario}:00`;
   const endHour      = parseInt(horario.split(":")[0], 10) + 1;
   const endTime      = `${String(endHour).padStart(2, "0")}:00:00`;
@@ -1743,7 +1743,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     .insert({
       organization_id: NITSCLEAN_ORG_ID,
       title, scheduled_date: data_visita, start_time: startTime, end_time: endTime,
-      schedule_type: "visita_tecnica", schedule_subtype: "PROSPECCAO",
+      schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO",
       source: "flora", assigned_to: bookingArea(areas, data_visita, horario)?.consultant_user_id ?? await floraDefaultOwner(supabase),
       status: "agendado",
       location: bookingLocation(bookingLead, cidade), zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: notesArr,
@@ -1765,12 +1765,12 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
 
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
-  queueTeamNotification(supabase, "agendamento", { ...params, produto_interesse: product,
+  queueTeamNotification(supabase, "agendamento_comercial", { ...params, produto_interesse: product,
     endereco: bookingLead?.endereco, bairro: bookingLead?.bairro, cidade: bookingLead?.city || cidade,
     maps_url: bookingLead?.maps_url }, leadId, schedule?.id);
 
   const mensagemParaLead =
-    `Perfeito! Sua visita técnica está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
+    `Perfeito! Sua visita comercial está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
     (product
       ? `Nosso consultor vai apresentar ${product} para a sua empresa. `
       : `Nosso consultor vai apresentar as soluções ideais para a sua empresa. `) +
