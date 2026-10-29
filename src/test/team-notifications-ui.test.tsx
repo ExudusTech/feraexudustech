@@ -12,11 +12,12 @@ vi.mock("@/hooks/use-team-notifications", async importOriginal => {
 });
 afterEach(() => { cleanup(); mocks.save.mockClear(); mocks.mutate.mockClear(); mocks.role = "gestor"; });
 describe("Team recipient management", () => {
-  it("offers only the three supported events", () => {
+  it("offers only the four supported events", () => {
     render(<TeamNotifications />);
     fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
-    expect(screen.getAllByRole("checkbox")).toHaveLength(3);
-    expect(screen.getByLabelText("Agendamento")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+    expect(screen.getByLabelText("Agendamento — visita comercial")).toBeInTheDocument();
+    expect(screen.getByLabelText("Agendamento — visita técnica")).toBeInTheDocument();
     expect(screen.getByLabelText("Transferência")).toBeInTheDocument();
     expect(screen.getByLabelText("Lead da Matriz")).toBeInTheDocument();
     expect(screen.queryByLabelText("Fora de cobertura")).not.toBeInTheDocument();
@@ -27,7 +28,7 @@ describe("Team recipient management", () => {
     fireEvent.click(screen.getByRole("button", { name: "Editar PH (teste)" }));
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Comercial" } });
     fireEvent.change(screen.getByLabelText("WhatsApp"), { target: { value: "21 99999-9999" } });
-    fireEvent.click(screen.getByLabelText("Agendamento"));
+    fireEvent.click(screen.getByLabelText("Agendamento — visita comercial"));
     fireEvent.click(screen.getByLabelText("Transferência"));
     fireEvent.click(screen.getByRole("button", { name: "Salvar destinatário" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ tipo: "externo", nome: "Comercial", eventos: ["transferencia"], ativo: true })));

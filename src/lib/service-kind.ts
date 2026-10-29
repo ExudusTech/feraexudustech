@@ -1,6 +1,14 @@
 /** Field-friendly service type for a schedule, derived from its existing type/subtype. */
 export type ServiceKind = "Visita comercial" | "Visita técnica" | "Entrega" | "Manutenção";
 
+export const SERVICE_KINDS: ServiceKind[] = ["Visita comercial", "Visita técnica", "Entrega", "Manutenção"];
+export const SCHEDULE_TYPE_OPTIONS = [
+  { value: "visita_comercial", label: "Visita comercial" },
+  { value: "visita_tecnica", label: "Visita técnica" },
+  { value: "entrega", label: "Entrega" },
+  { value: "manutencao", label: "Manutenção" },
+];
+
 export function serviceKind(type?: string | null, subtype?: string | null): ServiceKind {
   const t = (type ?? "").toLowerCase();
   const st = (subtype ?? "").toUpperCase();

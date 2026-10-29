@@ -1,3 +1,4 @@
+import { notifySchedule } from "@/lib/notify-schedule";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -98,7 +99,7 @@ export function useScheduleTestInstallation() {
         .single();
       if (opError) throw new Error(`Erro ao criar operação: ${opError.message}`);
 
-      const { error: schedError } = await supabase
+      const { data: testSchedule, error: schedError } = await supabase
         .from("schedules")
         .insert({
           title: `Instalação de Teste - ${input.lead.contact_name || input.lead.title}`,
@@ -113,9 +114,10 @@ export function useScheduleTestInstallation() {
           operation_id: operation.id,
           organization_id: orgId,
           created_by: userId,
-        });
+        }).select("id").single();
       if (schedError) throw new Error(`Erro ao criar agendamento do consultor: ${schedError.message}`);
 
+      if (testSchedule?.id) notifySchedule("schedule", testSchedule.id);
       const dMinus1Date = addDays(input.scheduledDate, -1);
       const { error: d1Error } = await supabase
         .from("schedules")

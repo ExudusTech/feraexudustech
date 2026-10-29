@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "todas" | "minhas" | "criadas";
@@ -46,6 +47,7 @@ export default function Agenda() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
   const [filterSubtype, setFilterSubtype] = useState("all");
+  const [filterKind, setFilterKind] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
@@ -115,12 +117,13 @@ export default function Agenda() {
       if (filterStatus !== "all" && s.status !== filterStatus) return false;
       if (filterResponsavel === "unassigned" ? s.assigned_to !== null : filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
       if (filterSubtype !== "all" && (s.schedule_subtype ?? "") !== filterSubtype) return false;
+      if (filterKind !== "all" && serviceKind(s.schedule_type, s.schedule_subtype) !== filterKind) return false;
       if (filterCity !== "all") {
         if (!s.location || !s.location.toLowerCase().includes(filterCity.toLowerCase())) return false;
       }
       return true;
     });
-  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterCity]);
+  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterKind, filterCity]);
 
   const getStatusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -184,7 +187,7 @@ export default function Agenda() {
                 <div className="text-xs font-medium mb-1">{format(day, "d")}</div>
                 <div className="space-y-0.5">
                   {daySchedules.slice(0, 2).map((s) => (
-                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={s.title} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={`${serviceKind(s.schedule_type, s.schedule_subtype)} — ${s.title}`} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium shrink-0">{s.start_time.slice(0, 5)}</span>}
                       <span className="min-w-0 truncate">{s.title}</span>
                       {s.source === "flora" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Flora</Badge>}
@@ -222,6 +225,7 @@ export default function Agenda() {
                     <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
+                      <div className="truncate text-[10px] opacity-80">{serviceKind(s.schedule_type, s.schedule_subtype)}</div>
                       {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                     </div>
@@ -248,7 +252,7 @@ export default function Agenda() {
               <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
-                  <div className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
+                  <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
                   <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
@@ -360,6 +364,13 @@ export default function Agenda() {
                 {users.map((u) => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filterKind} onValueChange={setFilterKind}>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-44" aria-label="Tipo de serviço"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
+                {SERVICE_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select value={filterSubtype} onValueChange={setFilterSubtype}>
               <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
               <SelectContent>
@@ -423,6 +434,7 @@ export default function Agenda() {
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</TableCell>
                       <TableCell>
+                        <Badge variant="secondary" className="mr-1">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                         {s.schedule_subtype ? (
                           <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
                             {scheduleSubtypeLabel(s.schedule_subtype)}

@@ -4,7 +4,7 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
-const allEvents = ["agendamento", "transferencia", "lead_matriz"];
+const allEvents = ["agendamento_comercial", "agendamento_tecnico", "transferencia", "lead_matriz"];
 function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[] } = {}) {
   const recipients = options.recipients ?? [
     { id: "all", nome: "PH", whatsapp: "5521995367752", organization_id: org, ativo: true, eventos: allEvents },
