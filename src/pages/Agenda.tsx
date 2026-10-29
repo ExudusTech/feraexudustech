@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "todas" | "minhas" | "criadas";
@@ -46,6 +47,7 @@ export default function Agenda() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
   const [filterSubtype, setFilterSubtype] = useState("all");
+  const [filterKind, setFilterKind] = useState("all");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
@@ -115,12 +117,13 @@ export default function Agenda() {
       if (filterStatus !== "all" && s.status !== filterStatus) return false;
       if (filterResponsavel === "unassigned" ? s.assigned_to !== null : filterResponsavel !== "all" && s.assigned_to !== filterResponsavel) return false;
       if (filterSubtype !== "all" && (s.schedule_subtype ?? "") !== filterSubtype) return false;
+      if (filterKind !== "all" && serviceKind(s.schedule_type, s.schedule_subtype) !== filterKind) return false;
       if (filterCity !== "all") {
         if (!s.location || !s.location.toLowerCase().includes(filterCity.toLowerCase())) return false;
       }
       return true;
     });
-  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterCity]);
+  }, [modeFiltered, search, filterStatus, filterResponsavel, filterSubtype, filterKind, filterCity]);
 
   const getStatusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -360,6 +363,13 @@ export default function Agenda() {
                 {users.map((u) => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Select value={filterKind} onValueChange={setFilterKind}>
+              <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-44" aria-label="Tipo de serviço"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
+                {SERVICE_KINDS.map((k) => <SelectItem key={k} value={k}>{k}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select value={filterSubtype} onValueChange={setFilterSubtype}>
               <SelectTrigger className="w-[calc(50%-0.375rem)] sm:w-44"><SelectValue placeholder="Subtipo" /></SelectTrigger>
               <SelectContent>
@@ -423,6 +433,7 @@ export default function Agenda() {
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</TableCell>
                       <TableCell>
+                        <Badge variant="secondary" className="mr-1">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                         {s.schedule_subtype ? (
                           <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
                             {scheduleSubtypeLabel(s.schedule_subtype)}

@@ -1,3 +1,4 @@
+import { SCHEDULE_TYPE_OPTIONS } from "@/lib/service-kind";
 import { useState, useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,7 @@ interface Props {
   schedule?: Schedule | null;
 }
 
-const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "", schedule_subtype: "", lead_id: "" };
+const empty = { title: "", description: "", scheduled_date: "", start_time: "", end_time: "", status: "agendado", location: "", notes: "", zip_code: "", schedule_subtype: "", lead_id: "", schedule_type: "visita_comercial" };
 
 export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Props) {
   const [form, setForm] = useState(empty);
@@ -46,6 +47,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
         location: schedule.location || "", notes: schedule.notes || "",
         zip_code: schedule.zip_code || "",
         schedule_subtype: schedule.schedule_subtype || "",
+        schedule_type: schedule.schedule_type || "visita_comercial",
         lead_id: schedule.lead_id || "",
       });
     } else setForm(empty);
@@ -103,6 +105,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
       start_time: form.start_time || null, end_time: form.end_time || null, status: form.status,
       location: form.location || null, zip_code: form.zip_code || null, notes: form.notes || null,
       schedule_subtype: form.schedule_subtype || null,
+      schedule_type: form.schedule_type || "visita_comercial",
       lead_id: leadExplicitlyCleared ? null : (form.lead_id || schedule?.lead_id || null),
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
@@ -262,6 +265,15 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
 
             <div className="sm:col-span-2"><Label>Local</Label><Input value={form.location} onChange={(e) => set("location", e.target.value)} /></div>
             <div className="sm:col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} /></div>
+            <div>
+              <Label>Tipo de serviço</Label>
+              <Select value={form.schedule_type} onValueChange={(v) => set("schedule_type", v)}>
+                <SelectTrigger aria-label="Tipo de serviço"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SCHEDULE_TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label>Subtipo</Label>
               <Select value={form.schedule_subtype || "none"} onValueChange={(v) => set("schedule_subtype", v === "none" ? "" : v)}>
