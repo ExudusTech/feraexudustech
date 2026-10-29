@@ -27,3 +27,4 @@
 - Notification recipients reference org users by user_id and read WhatsApp live from profiles.phone (external contacts keep their own number); a trigger blocks duplicate users/numbers so one person is never alerted twice.
 - Loan equipment is manufacturer-neutral: comodatos and maintenance_schedule (work orders) carry a fabricante field; legacy ekkoa_* tables are DEPRECATED except ekkoa_coverage_areas (used by Flora), and /ekkoa only redirects.
 - Per-role read-only screens use readOnlyRoutes in src/lib/permissions.ts (read-only only if every granting role says so), and denied routes redirect to the first allowed home screen.
+- Team visit alerts are split into commercial and technical events; Flora bookings notify from mcp, and visits created in Fera notify through notify-schedule, which reads the record with the caller's own access and dedupes via notification_logs, so tenants stay isolated and no new secret is needed.
