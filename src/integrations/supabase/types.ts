@@ -2437,6 +2437,90 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261029b_products: {
+        Row: {
+          backed_up_at: string | null
+          brand: string | null
+          category: string | null
+          compatible_dispenser_families: string[] | null
+          cost: number | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dispenser_family_id: string | null
+          disponivel_comodato: boolean | null
+          fornecedor: string | null
+          id: string | null
+          image_url: string | null
+          is_active: boolean | null
+          is_dispenser: boolean | null
+          linha_produto: string | null
+          min_stock: number | null
+          name: string | null
+          organization_id: string | null
+          price: number | null
+          sku: string | null
+          specifications: Json | null
+          stock: number | null
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          backed_up_at?: string | null
+          brand?: string | null
+          category?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          backed_up_at?: string | null
+          brand?: string | null
+          category?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -5065,6 +5149,36 @@ export type Database = {
           },
         ]
       }
+      product_image_sends: {
+        Row: {
+          chat_id: string
+          error_code: string | null
+          id: string
+          organization_id: string
+          product_id: string
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          chat_id: string
+          error_code?: string | null
+          id?: string
+          organization_id: string
+          product_id: string
+          sent_at?: string
+          status: string
+        }
+        Update: {
+          chat_id?: string
+          error_code?: string | null
+          id?: string
+          organization_id?: string
+          product_id?: string
+          sent_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
       product_imports: {
         Row: {
           created_at: string
@@ -5128,6 +5242,7 @@ export type Database = {
           created_by: string
           description: string | null
           dispenser_family_id: string | null
+          disponibilidade: string
           disponivel_comodato: boolean | null
           fornecedor: string | null
           id: string
@@ -5154,6 +5269,7 @@ export type Database = {
           created_by: string
           description?: string | null
           dispenser_family_id?: string | null
+          disponibilidade?: string
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
           id?: string
@@ -5180,6 +5296,7 @@ export type Database = {
           created_by?: string
           description?: string | null
           dispenser_family_id?: string | null
+          disponibilidade?: string
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
           id?: string
