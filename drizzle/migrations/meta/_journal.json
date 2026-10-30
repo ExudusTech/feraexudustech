@@ -120,6 +120,13 @@
       "when": 1793299005655,
       "tag": "0016_split_schedule_events",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793400930033,
+      "tag": "0017_product_disponibilidade_and_images",
+      "breakpoints": true
     }
   ]
 }
