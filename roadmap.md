@@ -47,3 +47,10 @@
 - [x] Passo 0: limpeza de dados de teste com backup_20261028d_*
 - [x] Frente 1: WhatsApp obrigatório, destinatários usuário/externo sem duplicidade, mcp lê WhatsApp do usuário
 - [x] Frente 2: menu Ekkoa removido; Comodatos/Manutenções (OS)/Financeiro/Produtos/Dashboard; redirecionamentos
+## Lote 5/6 produtos (29-30/10)
+- [x] Situação do produto (estoque/sob_encomenda/descontinuado) + backup_20261029b_products
+- [x] Tela Produtos: filtros, ação em massa, segmentos/embalagem
+- [x] consultar_produto: sem descontinuados, marca, segmento, disponibilidade
+- [x] Imagens: bucket product-images (privado, opção B), envio/troca/remoção, lote, miniaturas
+- [x] consultar_produto: image_url, chat_id, envio GPT Maker com bloqueio 24h
+- [ ] Futuro: catálogo PDF por segmento
