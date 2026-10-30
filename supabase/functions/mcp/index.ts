@@ -1186,28 +1186,122 @@ function productSearchText(value: unknown): string | null {
   return t;
 }
 
+const PRODUCT_IMAGE_BUCKET = "product-images";
+
+async function resolveProductImageUrls(supabase: ReturnType<typeof getClient>, values: unknown[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const paths: string[] = [];
+  for (const v of values) {
+    if (typeof v !== "string" || !v.trim()) continue;
+    if (/^https:\/\//i.test(v)) out.set(v, v); else paths.push(v);
+  }
+  if (paths.length) {
+    try {
+      const { data } = await supabase.storage.from(PRODUCT_IMAGE_BUCKET).createSignedUrls(paths, 3600);
+      for (const d of (data ?? []) as Array<{ path?: string; signedUrl?: string }>) if (d?.path && d.signedUrl) out.set(d.path, d.signedUrl);
+    } catch (e) { console.warn("[mcp] product image sign failed", (e as { code?: string })?.code ?? "unknown"); }
+  }
+  return out;
+}
+
+async function sendProductImage(supabase: ReturnType<typeof getClient>, chatId: string, product: Record<string, unknown>, imageUrl: string): Promise<boolean> {
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  try {
+    const { data: prev } = await supabase.from("product_image_sends").select("id")
+      .eq("chat_id", chatId).eq("product_id", product.id).eq("status", "enviado").gte("sent_at", since).limit(1);
+    if (Array.isArray(prev) && prev.length) return false;
+  } catch { /* lookup failure: proceed */ }
+  let status = "erro"; let errorCode: string | null = null;
+  try {
+    if (!GPTMAKER_API_TOKEN) throw new Error("CONFIG_MISSING");
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const res = await fetch(`https://api.gptmaker.ai/v2/chat/${encodeURIComponent(chatId)}/send-message`, {
+        method: "POST", signal: ctrl.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${GPTMAKER_API_TOKEN}` },
+        body: JSON.stringify({ image: imageUrl, message: String(product.name ?? "") }),
+      });
+      if (res.ok) status = "enviado"; else errorCode = `HTTP_${res.status}`;
+    } finally { clearTimeout(timer); }
+  } catch (e) { errorCode = (e as Error)?.message === "CONFIG_MISSING" ? "CONFIG_MISSING" : ((e as Error)?.name === "AbortError" ? "TIMEOUT" : "NETWORK"); }
+  if (errorCode) console.warn("[mcp] product image send failed", errorCode);
+  try {
+    await supabase.from("product_image_sends").insert({ organization_id: NITSCLEAN_ORG_ID, chat_id: chatId, product_id: product.id, status, error_code: errorCode });
+  } catch { /* never break the response */ }
+  return status === "enviado";
+}
+
+function productSegments(p: Record<string, unknown>): string[] {
+  const s = (p.specifications as Record<string, unknown> | null)?.segmentos;
+  const list = Array.isArray(s) ? s : typeof s === "string" ? s.split(/[,;]/) : [];
+  return list.map((x) => foldProductText(x)).filter(Boolean);
+}
+
+function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Record<string, unknown>> {
+  const groups = new Map<string, Array<Record<string, unknown>>>();
+  for (const p of list) { const k = foldProductText(p.category); if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(p); }
+  const out: Array<Record<string, unknown>> = []; const gs = [...groups.values()];
+  for (let i = 0; out.length < n && gs.some((g) => g.length > i); i++) for (const g of gs) { if (g[i] && out.length < n) out.push(g[i]); }
+  return out;
+}
+
 async function consultarProduto(params: Record<string, unknown>): Promise<McpResponse> {
   const termo = productSearchText(params.termo) ?? productSearchText(params.nome);
   const categoria = productSearchText(params.categoria);
+  const chatId = productSearchText(params.chat_id);
   const supabase = getClient();
   const { data: rows } = await supabase
     .from("products")
-    .select("id, name, brand, category, fornecedor, linha_produto, unit, description")
+    .select("id, name, brand, category, fornecedor, linha_produto, unit, description, disponibilidade, image_url, specifications")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true)
-    .limit(2000);
-  let products = (rows ?? []) as Array<Record<string, unknown>>;
+    .neq("disponibilidade", "descontinuado")
+    .limit(3000);
+  let products = ((rows ?? []) as Array<Record<string, unknown>>).filter((p) => p.disponibilidade !== "descontinuado" && p.is_active !== false);
   if (categoria) {
     const c = foldProductText(categoria);
     products = products.filter((p) => foldProductText(p.category).includes(c));
   }
-  const words = foldProductText(termo ?? "").split(" ").filter((w) => w.length >= 3);
+  const termFold = foldProductText(termo ?? "");
+  const words = termFold.split(" ").filter((w) => w.length >= 3);
   const haystack = (p: Record<string, unknown>) => PRODUCT_SEARCH_FIELDS.map((f) => foldProductText(p[f])).join(" ");
+  const fmt = (p: Record<string, unknown>, urls: Map<string, string>) => {
+    const desc = typeof p.description === "string" ? p.description.trim() : "";
+    return {
+      id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
+      fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
+      descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
+      disponibilidade: p.disponibilidade ?? "estoque",
+      image_url: typeof p.image_url === "string" ? (urls.get(p.image_url) ?? null) : null,
+    };
+  };
+  const produtoCitado = termo ?? categoria ?? null;
+  const respondFound = async (corr: string, list: Array<Record<string, unknown>>, allowImage: boolean) => {
+    const urls = await resolveProductImageUrls(supabase, list.map((p) => p.image_url));
+    const produtos = list.map((p) => fmt(p, urls));
+    let imagemEnviada = false;
+    if (allowImage && chatId && list.length === 1 && produtos[0].image_url) {
+      imagemEnviada = await sendProductImage(supabase, chatId, list[0], produtos[0].image_url as string);
+    }
+    return { success: true, data: { encontrado: true, correspondencia: corr, produto_citado: produtoCitado, produtos, imagem_enviada: imagemEnviada } } as McpResponse;
+  };
+
+  // 1. Brand / supplier name only
+  if (termFold && !categoria) {
+    const byBrand = products.filter((p) => foldProductText(p.brand) === termFold || foldProductText(p.fornecedor) === termFold);
+    if (byBrand.length) return respondFound("marca", pickVaried(byBrand, 5), false);
+  }
+  // 2. Text match
   let correspondencia: "total" | "parcial" | "nenhuma" = "total";
   let found = products;
   if (words.length) {
     found = products.filter((p) => { const h = haystack(p); return words.every((w) => h.includes(w)); });
     if (!found.length) {
+      // 3. Segment
+      if (termFold.length >= 4) {
+        const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(termFold) || termFold.includes(s)));
+        if (bySeg.length) return respondFound("segmento", pickVaried(bySeg, 5), false);
+      }
       found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
       correspondencia = "parcial";
     }
@@ -1215,19 +1309,8 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     found = [];
   }
   if (!found.length) correspondencia = "nenhuma";
-  const fmt = (p: Record<string, unknown>) => {
-    const desc = typeof p.description === "string" ? p.description.trim() : "";
-    return {
-      id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
-      fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
-      descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
-    };
-  };
-  const produtoCitado = termo ?? categoria ?? null;
-  if (correspondencia === "total") {
-    return { success: true, data: { encontrado: true, correspondencia, produto_citado: produtoCitado, produtos: found.slice(0, 5).map(fmt) } };
-  }
-  const similares = found.slice(0, 3).map(fmt);
+  if (correspondencia === "total") return respondFound("total", found.slice(0, 5), true);
+  const similares = found.slice(0, 3).map((p) => fmt(p, new Map()));
   let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
   const cats: string[] = [];
   const seen = new Set<string>();
@@ -1239,7 +1322,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     const lista = cats.length ? (cats.length === 1 ? cats[0] : `${cats.slice(0, -1).join(", ")} e ${cats[cats.length - 1]}`) : "produtos";
     mensagem += ` Temos opções de ${lista} que podem atender a mesma necessidade.`;
   }
-  return { success: true, data: { encontrado: false, correspondencia, produto_citado: produtoCitado, produtos: [], similares, mensagem_para_lead: mensagem } };
+  return { success: true, data: { encontrado: false, correspondencia, produto_citado: produtoCitado, produtos: [], similares, mensagem_para_lead: mensagem, imagem_enviada: false } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2381,13 +2464,14 @@ const TOOLS_MANIFEST = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor ou descrição. Nunca retorna preço. Só correspondência TOTAL (todas as palavras do termo) retorna encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url. Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Só correspondência TOTAL (todas as palavras do termo) retorna encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {
         termo:     { type: "string", description: "Texto livre citado pelo cliente: nome, marca ou linha do produto" },
         categoria: { type: "string", description: "Categoria opcional para restringir a busca" },
         nome:      { type: "string", description: "Compatibilidade: mesmo que termo" },
+        chat_id:   { type: "string", description: "ID do chat no GPT Maker; quando houver UM produto exato com imagem, a imagem é enviada ao cliente (no máximo 1x por 24h)" },
       },
     },
   },
