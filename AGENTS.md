@@ -28,5 +28,5 @@
 - Loan equipment is manufacturer-neutral: comodatos and maintenance_schedule (work orders) carry a fabricante field; legacy ekkoa_* tables are DEPRECATED except ekkoa_coverage_areas (used by Flora), and /ekkoa only redirects.
 - Per-role read-only screens use readOnlyRoutes in src/lib/permissions.ts (read-only only if every granting role says so), and denied routes redirect to the first allowed home screen.
 - Team visit alerts are split into commercial and technical events; Flora bookings notify from mcp, and visits created in Fera notify through notify-schedule, which reads the record with the caller's own access and dedupes via notification_logs, so tenants stay isolated and no new secret is needed.
-- Product availability lives in products.disponibilidade, kept in sync with is_active by a trigger, so Flora and the UI agree on what is sellable.
-- Product images are stored as paths in the private product-images bucket (public buckets blocked) and signed for 1h only at display/send time, so nothing stored expires; Flora sends at most one image per chat/product per 24h, logged in product_image_sends.
+- products.disponibilidade is trigger-synced with is_active so Flora and UI agree on what is sellable.
+- Product images: storage paths in private product-images, signed 1h only at display/send so nothing expires; Flora sends ≤1 image per chat/product/24h (product_image_sends).
