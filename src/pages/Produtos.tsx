@@ -14,6 +14,18 @@ import { useProducts, useDeleteProduct, useLastProductImport, type Product } fro
 import { usePermissions } from "@/hooks/use-permissions";
 import ProductFormDialog from "@/components/produtos/ProductFormDialog";
 import ImportProductsDialog from "@/components/produtos/ImportProductsDialog";
+import ImportImagesDialog from "@/components/produtos/ImportImagesDialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ImageIcon, Images } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import { useProductImageUrls } from "@/hooks/use-product-images";
+import { DISPONIBILIDADE_LABEL, reactivationStatus, type Disponibilidade } from "@/lib/product-images";
+
+const situacaoOf = (p: Product): Disponibilidade => p.disponibilidade ?? (p.is_active ? "estoque" : "descontinuado");
+const situacaoVariant = (d: Disponibilidade) => d === "estoque" ? "default" : d === "sob_encomenda" ? "outline" : "secondary";
 
 export default function Produtos() {
   const { data: products = [], isLoading } = useProducts();
@@ -29,15 +41,59 @@ export default function Produtos() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const [tipo, setTipo] = useState<"todos" | "dispensers" | "consumiveis">("todos");
+  const [marca, setMarca] = useState("todas");
+  const [situacao, setSituacao] = useState<"ativos" | "todas" | Disponibilidade>("ativos");
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<"descontinuar" | "reativar" | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const qc = useQueryClient();
+  const marcas = [...new Set(products.map((p) => p.brand || p.fornecedor).filter(Boolean) as string[])].sort();
 
   const filtered = products
     .filter((p) =>
       tipo === "todos" ? true : tipo === "dispensers" ? p.is_dispenser : !p.is_dispenser
     )
+    .filter((p) => marca === "todas" || p.brand === marca || p.fornecedor === marca)
+    .filter((p) => situacao === "todas" ? true : situacao === "ativos" ? situacaoOf(p) !== "descontinuado" : situacaoOf(p) === situacao)
     .filter((p) =>
       [p.name, p.sku, p.category, p.brand, p.fornecedor].some((f) => f?.toLowerCase().includes(search.toLowerCase()))
     );
 
+
+  const { data: imageUrls = {} } = useProductImageUrls(filtered.slice(0, 300).map((p) => p.image_url));
+  const thumb = (p: Product, cls: string) => (
+    <div className={`${cls} rounded-md border bg-muted flex items-center justify-center overflow-hidden shrink-0`}>
+      {p.image_url && imageUrls[p.image_url]
+        ? <img src={imageUrls[p.image_url]} alt="" loading="lazy" className="h-full w-full object-cover" />
+        : <ImageIcon className="h-4 w-4 text-muted-foreground" />}
+    </div>
+  );
+  const toggle = (id: string) => setSel((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSel = filtered.length > 0 && filtered.every((p) => sel.has(p.id));
+  const runBulk = async () => {
+    if (!bulk) return;
+    setBulkBusy(true);
+    try {
+      const chosen = products.filter((p) => sel.has(p.id));
+      const groups = new Map<Disponibilidade, string[]>();
+      for (const p of chosen) {
+        const d: Disponibilidade = bulk === "descontinuar" ? "descontinuado" : reactivationStatus(p);
+        groups.set(d, [...(groups.get(d) ?? []), p.id]);
+      }
+      for (const [d, ids] of groups) {
+        for (let i = 0; i < ids.length; i += 200) {
+          const { error } = await supabase.from("products").update({ disponibilidade: d, is_active: d !== "descontinuado" }).in("id", ids.slice(i, i + 200));
+          if (error) throw error;
+        }
+      }
+      toast({ title: bulk === "descontinuar" ? `${chosen.length} produtos descontinuados` : `${chosen.length} produtos reativados` });
+      setSel(new Set());
+      qc.invalidateQueries({ queryKey: ["products"] });
+    } catch {
+      toast({ title: "Erro", description: "Não foi possível atualizar os produtos.", variant: "destructive" });
+    } finally { setBulkBusy(false); setBulk(null); }
+  };
 
   const handleEdit = (p: Product) => { setSelected(p); setDialogOpen(true); };
   const handleNew = () => { setSelected(null); setDialogOpen(true); };
@@ -50,6 +106,7 @@ export default function Produtos() {
       actions={canEditProducts ? (
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar</Button>
+          {isAdmin && <Button variant="outline" onClick={() => setImagesOpen(true)}><Images className="h-4 w-4 mr-2" />Importar imagens em lote</Button>}
           <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Novo Produto</Button>
         </div>
       ) : undefined}
@@ -74,6 +131,23 @@ export default function Produtos() {
             ))}
           </div>
 
+          <Select value={marca} onValueChange={setMarca}>
+            <SelectTrigger className="w-44 h-9" aria-label="Fornecedor ou marca"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as marcas</SelectItem>
+              {marcas.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={situacao} onValueChange={(v) => setSituacao(v as typeof situacao)}>
+            <SelectTrigger className="w-44 h-9" aria-label="Situação"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ativos">Ativos (estoque + encomenda)</SelectItem>
+              <SelectItem value="estoque">Em estoque</SelectItem>
+              <SelectItem value="sob_encomenda">Sob encomenda</SelectItem>
+              <SelectItem value="descontinuado">Descontinuados</SelectItem>
+              <SelectItem value="todas">Todas</SelectItem>
+            </SelectContent>
+          </Select>
           {lastImport && (
             <p className="text-xs text-muted-foreground hidden md:block">
               Última importação: {new Date(lastImport.created_at).toLocaleString("pt-BR")}
@@ -86,6 +160,14 @@ export default function Produtos() {
           </div>
         </div>
 
+        {canEditProducts && sel.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3">
+            <span className="text-sm">{sel.size} selecionados</span>
+            <Button size="sm" variant="outline" onClick={() => setBulk("descontinuar")}>Marcar como descontinuado</Button>
+            <Button size="sm" variant="outline" onClick={() => setBulk("reativar")}>Reativar</Button>
+            <Button size="sm" variant="ghost" onClick={() => setSel(new Set())}>Limpar seleção</Button>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : filtered.length === 0 ? (
@@ -106,6 +188,8 @@ export default function Produtos() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  {canEditProducts && <TableHead className="w-10"><Checkbox aria-label="Selecionar todos" checked={allSel}
+                    onCheckedChange={(v) => setSel(v ? new Set(filtered.map((p) => p.id)) : new Set())} /></TableHead>}
                   <TableHead>Produto</TableHead><TableHead>SKU</TableHead><TableHead>Categoria</TableHead><TableHead>Fornecedor</TableHead>
                   <TableHead>Preço</TableHead><TableHead>Estoque</TableHead><TableHead>Status</TableHead><TableHead className="w-10" />
                 </TableRow>
@@ -113,8 +197,10 @@ export default function Produtos() {
               <TableBody>
                 {filtered.map((p) => (
                   <TableRow key={p.id} className="cursor-pointer" onClick={() => handleEdit(p)}>
+                    {canEditProducts && <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox aria-label={`Selecionar ${p.name}`} checked={sel.has(p.id)} onCheckedChange={() => toggle(p.id)} /></TableCell>}
                     <TableCell>
-                      <div>
+                      <div className="flex items-center gap-3">{thumb(p, "h-10 w-10")}<div>
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{p.name}</p>
                           {p.is_dispenser && <Badge variant="outline" className="text-xs">Dispenser</Badge>}
@@ -123,7 +209,7 @@ export default function Produtos() {
                           )}
                         </div>
                         {p.brand && <p className="text-xs text-muted-foreground">{p.brand}</p>}
-                      </div>
+                      </div></div>
                     </TableCell>
 
                     <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
@@ -136,7 +222,7 @@ export default function Produtos() {
                         {p.stock <= p.min_stock && p.min_stock > 0 && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
                       </div>
                     </TableCell>
-                    <TableCell><Badge variant={p.is_active ? "default" : "secondary"}>{p.is_active ? "Ativo" : "Inativo"}</Badge></TableCell>
+                    <TableCell><Badge variant={situacaoVariant(situacaoOf(p))}>{DISPONIBILIDADE_LABEL[situacaoOf(p)]}</Badge></TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       {canEditProducts && (
                         <DropdownMenu>
@@ -158,12 +244,13 @@ export default function Produtos() {
             {filtered.map((p) => (
               <Card key={p.id} className="p-4 cursor-pointer hover:shadow-md transition-shadow" onClick={() => handleEdit(p)}>
                 <div className="space-y-2">
+                  {thumb(p, "h-32 w-full")}
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="font-medium text-sm">{p.name}</p>
                       {p.brand && <p className="text-xs text-muted-foreground">{p.brand}</p>}
                     </div>
-                    <Badge variant={p.is_active ? "default" : "secondary"} className="text-xs">{p.is_active ? "Ativo" : "Inativo"}</Badge>
+                    <Badge variant={situacaoVariant(situacaoOf(p))} className="text-xs">{DISPONIBILIDADE_LABEL[situacaoOf(p)]}</Badge>
                   </div>
                   {p.category && <p className="text-xs text-muted-foreground">{p.category}</p>}
                   <div className="flex items-center justify-between pt-2 border-t">
@@ -182,6 +269,21 @@ export default function Produtos() {
 
       <ProductFormDialog open={dialogOpen} onOpenChange={setDialogOpen} product={selected} />
       <ImportProductsDialog open={importOpen} onOpenChange={setImportOpen} />
+      <ImportImagesDialog open={imagesOpen} onOpenChange={setImagesOpen} products={products} />
+      <AlertDialog open={!!bulk} onOpenChange={(o) => { if (!o && !bulkBusy) setBulk(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{bulk === "descontinuar" ? `Descontinuar ${sel.size} produtos?` : `Reativar ${sel.size} produtos?`}</AlertDialogTitle>
+            <AlertDialogDescription>{bulk === "descontinuar"
+              ? "Eles deixam de aparecer para a Flora e ficam inativos. Você pode reativar depois."
+              : "Itens de catálogo de parceiro voltam como \"Sob encomenda\"; os demais como \"Em estoque\"."}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkBusy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction disabled={bulkBusy} onClick={(e) => { e.preventDefault(); runBulk(); }}>Confirmar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="mt-6"><FragrancePanel canEdit={canEditProducts} /></div>
 
