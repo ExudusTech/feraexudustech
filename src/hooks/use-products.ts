@@ -18,6 +18,7 @@ export interface Product {
   min_stock: number;
   image_url: string | null;
   is_active: boolean;
+  disponibilidade?: "estoque" | "sob_encomenda" | "descontinuado";
   specifications: Record<string, any>;
   fornecedor: string | null;
   linha_produto: string | null;
@@ -53,7 +54,7 @@ export function useCreateProduct() {
       const { data, error } = await supabase.from("products").insert({
         name: input.name!, description: input.description, sku: input.sku, category: input.category,
         brand: input.brand, fornecedor: input.fornecedor, unit: input.unit || "un", price: input.price || 0, cost: input.cost || 0,
-        stock: input.stock || 0, min_stock: input.min_stock || 0, is_active: input.is_active ?? true,
+        stock: input.stock || 0, min_stock: input.min_stock || 0, is_active: input.is_active ?? true, disponibilidade: input.disponibilidade ?? "estoque",
         is_dispenser: input.is_dispenser ?? false,
         dispenser_family_id: input.dispenser_family_id ?? null,
         compatible_dispenser_families: input.compatible_dispenser_families ?? [],

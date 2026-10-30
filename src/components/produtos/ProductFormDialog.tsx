@@ -10,6 +10,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { useCreateProduct, useUpdateProduct, type Product } from "@/hooks/use-products";
+import { Badge } from "@/components/ui/badge";
+import { ImageIcon, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
+import { useProductImageUrls } from "@/hooks/use-product-images";
+import { toast } from "@/hooks/use-toast";
+import { DISPONIBILIDADE_LABEL, removeProductImage, uploadProductImage, type Disponibilidade } from "@/lib/product-images";
 import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 
 
@@ -41,7 +50,7 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 
 const empty = {
   name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
-  price: "", cost: "", stock: "0", min_stock: "0", is_active: true,
+  price: "", cost: "", stock: "0", min_stock: "0", is_active: true, disponibilidade: "estoque" as Disponibilidade,
   is_dispenser: false, dispenser_family_id: "",
 };
 
@@ -51,6 +60,13 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
   const { data: families = [] } = useDispenserFamilies();
   const [specs, setSpecs] = useState<Record<string, string>>({});
   const [customSpecs, setCustomSpecs] = useState<{ key: string; value: string }[]>([]);
+  const [lockedSpecs, setLockedSpecs] = useState<Record<string, any>>({});
+  const [imagePath, setImagePath] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const { user } = useAuth();
+  const { isAdmin } = usePermissions();
+  const qc = useQueryClient();
+  const { data: imageUrls } = useProductImageUrls([imagePath]);
 
   const create = useCreateProduct();
   const update = useUpdateProduct();
@@ -63,6 +79,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
         category: product.category || "", brand: product.brand || "", fornecedor: product.fornecedor || "", unit: product.unit,
         price: String(product.price), cost: String(product.cost), stock: String(product.stock),
         min_stock: String(product.min_stock), is_active: product.is_active,
+        disponibilidade: (product.disponibilidade ?? (product.is_active ? "estoque" : "descontinuado")) as Disponibilidade,
         is_dispenser: !!product.is_dispenser, dispenser_family_id: product.dispenser_family_id || "",
       });
       setCompatible(product.compatible_dispenser_families || []);
@@ -73,13 +90,19 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       const knownKeys = categoryFields.map(f => f.key);
       const known: Record<string, string> = {};
       const custom: { key: string; value: string }[] = [];
+      const locked: Record<string, any> = {};
       Object.entries(existingSpecs).forEach(([k, v]) => {
-        if (knownKeys.includes(k)) known[k] = String(v || "");
+        if (v !== null && typeof v === "object" || typeof v === "boolean" || ["origem", "disponibilidade"].includes(k)) locked[k] = v;
+        else if (knownKeys.includes(k)) known[k] = String(v || "");
         else custom.push({ key: k, value: String(v || "") });
       });
       setSpecs(known);
       setCustomSpecs(custom.length > 0 ? custom : []);
+      setLockedSpecs(locked);
+      setImagePath(product.image_url);
     } else {
+      setLockedSpecs({});
+      setImagePath(null);
       setForm(empty);
       setCompatible([]);
       setSpecs({});
@@ -98,7 +121,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
     if (!form.name.trim()) return;
 
     // Build specifications from dynamic + custom fields
-    const allSpecs: Record<string, any> = { ...specs };
+    const allSpecs: Record<string, any> = { ...lockedSpecs, ...specs };
     customSpecs.forEach(cs => {
       if (cs.key.trim()) allSpecs[cs.key.trim()] = cs.value;
     });
@@ -108,7 +131,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       category: form.category || null, brand: form.brand || null, fornecedor: form.fornecedor || null, unit: form.unit || "un",
       price: parseFloat(form.price) || 0, cost: parseFloat(form.cost) || 0,
       stock: parseInt(form.stock) || 0, min_stock: parseInt(form.min_stock) || 0,
-      is_active: form.is_active, specifications: allSpecs,
+      is_active: form.disponibilidade !== "descontinuado", disponibilidade: form.disponibilidade, specifications: allSpecs,
       is_dispenser: form.is_dispenser,
       dispenser_family_id: form.is_dispenser ? (form.dispenser_family_id || null) : null,
       compatible_dispenser_families: form.is_dispenser ? [] : compatible,
@@ -120,6 +143,28 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
   };
 
   const isPending = create.isPending || update.isPending;
+
+  const changeImage = async (file: File | null) => {
+    if (!product || !user?.organization_id) return;
+    setImageBusy(true);
+    try {
+      let next: string | null = null;
+      if (file) next = await uploadProductImage(user.organization_id, product, file);
+      else await removeProductImage(imagePath);
+      if (!file || next !== imagePath) {
+        const { error } = await supabase.from("products").update({ image_url: next }).eq("id", product.id);
+        if (error) throw new Error("Não foi possível salvar a imagem");
+      }
+      setImagePath(next);
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["product-image-urls"] });
+      toast({ title: file ? "Imagem salva" : "Imagem removida" });
+    } catch (e) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
+    } finally { setImageBusy(false); }
+  };
+  const segmentos: string[] = Array.isArray(lockedSpecs.segmentos) ? lockedSpecs.segmentos.map(String) : [];
+  const embalagem = (product?.specifications as Record<string, any> | undefined)?.embalagem;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -138,10 +183,50 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
             <div><Label>Estoque</Label><Input type="number" value={form.stock} onChange={(e) => set("stock", e.target.value)} /></div>
             <div><Label>Estoque Mín.</Label><Input type="number" value={form.min_stock} onChange={(e) => set("min_stock", e.target.value)} /></div>
             <div className="col-span-2"><Label>Descrição</Label><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} /></div>
-            <div className="col-span-2 flex items-center gap-2">
-              <Switch checked={form.is_active} onCheckedChange={(v) => set("is_active", v)} />
-              <Label>Produto ativo</Label>
+            <div className="col-span-2">
+              <Label>Situação</Label>
+              <Select value={form.disponibilidade} onValueChange={(v) => set("disponibilidade", v)}>
+                <SelectTrigger aria-label="Situação"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(DISPONIBILIDADE_LABEL) as Disponibilidade[]).map((k) => <SelectItem key={k} value={k}>{DISPONIBILIDADE_LABEL[k]}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          {(segmentos.length > 0 || embalagem) && (
+            <div className="space-y-2 rounded-md border p-3">
+              {segmentos.length > 0 && (
+                <div><p className="text-sm font-medium text-muted-foreground mb-1">Segmentos indicados</p>
+                  <div className="flex flex-wrap gap-1">{segmentos.map((s) => <Badge key={s} variant="secondary">{s}</Badge>)}</div></div>
+              )}
+              {embalagem && <p className="text-sm"><span className="text-muted-foreground">Embalagem: </span>{String(embalagem)}</p>}
+            </div>
+          )}
+
+          <Separator />
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">Imagem</p>
+            {!isEdit ? <p className="text-xs text-muted-foreground">Salve o produto para enviar a imagem.</p> : (
+              <div className="flex items-center gap-3">
+                <div className="h-20 w-20 rounded-md border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                  {imageBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : imagePath && imageUrls?.[imagePath]
+                    ? <img src={imageUrls[imagePath]} alt={form.name} className="h-full w-full object-cover" />
+                    : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
+                </div>
+                {isAdmin && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" size="sm" disabled={imageBusy} asChild>
+                      <label className="cursor-pointer">{imagePath ? "Trocar imagem" : "Enviar imagem"}
+                        <input type="file" accept=".jpg,.jpeg,.png,.webp" className="sr-only"
+                          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) changeImage(f); }} />
+                      </label>
+                    </Button>
+                    {imagePath && <Button type="button" variant="ghost" size="sm" disabled={imageBusy} onClick={() => changeImage(null)}>Remover</Button>}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Dispenser / compatibilidade */}
