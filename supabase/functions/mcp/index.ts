@@ -1257,11 +1257,11 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     .eq("is_active", true)
     .neq("disponibilidade", "descontinuado")
     .limit(3000);
-  let products = ((rows ?? []) as Array<Record<string, unknown>>).filter((p) => p.disponibilidade !== "descontinuado" && p.is_active !== false);
-  if (categoria) {
-    const c = foldProductText(categoria);
-    products = products.filter((p) => foldProductText(p.category).includes(c));
-  }
+  const products = ((rows ?? []) as Array<Record<string, unknown>>).filter((p) => p.disponibilidade !== "descontinuado" && p.is_active !== false);
+  const categoryFold = foldProductText(categoria ?? "");
+  const matchesCategory = (p: Record<string, unknown>) => Boolean(categoryFold) && foldProductText(p.category).includes(categoryFold);
+  // Category is a ranking hint only: never remove a term/brand/segment match.
+  const rankByCategory = (list: Array<Record<string, unknown>>) => [...list].sort((a, b) => Number(matchesCategory(b)) - Number(matchesCategory(a)));
   const termFold = foldProductText(termo ?? "");
   const words = termFold.split(" ").filter((w) => w.length >= 3);
   const haystack = (p: Record<string, unknown>) => PRODUCT_SEARCH_FIELDS.map((f) => foldProductText(p[f])).join(" ");
@@ -1287,9 +1287,9 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   };
 
   // 1. Brand / supplier name only
-  if (termFold && !categoria) {
+  if (termFold) {
     const byBrand = products.filter((p) => foldProductText(p.brand) === termFold || foldProductText(p.fornecedor) === termFold);
-    if (byBrand.length) return respondFound("marca", pickVaried(byBrand, 5), false);
+    if (byBrand.length) return respondFound("marca", pickVaried(rankByCategory(byBrand), 5), false);
   }
   // 2. Text match
   let correspondencia: "total" | "parcial" | "nenhuma" = "total";
@@ -1300,17 +1300,18 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       // 3. Segment
       if (termFold.length >= 4) {
         const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(termFold) || termFold.includes(s)));
-        if (bySeg.length) return respondFound("segmento", pickVaried(bySeg, 5), false);
+        if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
       found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
       correspondencia = "parcial";
     }
-  } else if (!categoria) {
+  } else {
     found = [];
   }
   if (!found.length) correspondencia = "nenhuma";
-  if (correspondencia === "total") return respondFound("total", found.slice(0, 5), true);
-  const similares = found.slice(0, 3).map((p) => fmt(p, new Map()));
+  if (correspondencia === "total") return respondFound("total", rankByCategory(found).slice(0, 5), true);
+  const alternatives = found.length ? found : products.filter(matchesCategory);
+  const similares = rankByCategory(alternatives).slice(0, 3).map((p) => fmt(p, new Map()));
   let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
   const cats: string[] = [];
   const seen = new Set<string>();
@@ -2469,7 +2470,7 @@ const TOOLS_MANIFEST = [
       type: "object",
       properties: {
         termo:     { type: "string", description: "Texto livre citado pelo cliente: nome, marca ou linha do produto" },
-        categoria: { type: "string", description: "Categoria opcional para restringir a busca" },
+        categoria: { type: "string", description: "Categoria opcional para ordenar resultados ou sugerir similares quando o termo não encontra produto; nunca exclui correspondências pelo termo" },
         nome:      { type: "string", description: "Compatibilidade: mesmo que termo" },
         chat_id:   { type: "string", description: "ID do chat no GPT Maker; quando houver UM produto exato com imagem, a imagem é enviada ao cliente (no máximo 1x por 24h)" },
       },
