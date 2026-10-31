@@ -1,5 +1,5 @@
 # Tasks
-- [ ] Isolate current establishment in Flora booking/handoff, preserve person name, test regressions and deploy mcp without changing existing records.
+- [x] Isolate current establishment in Flora booking/handoff, preserve person name; 296 tests passed and mcp deployed without changing existing production records.
 - [x] Corrigir categoria em consultar_produto; 288 testes e 10 consultas reais passaram; mcp publicada, sem envio de mensagens.
 - [x] Harden role saving with checked backups, idempotent additions and safe error messages; 224 app tests and 3 function tests passed, manage-user deployed.
 - [ ] Confirm original role-save failure cause (blocked: logs contain only boot entries; authenticated reproduction unavailable).
