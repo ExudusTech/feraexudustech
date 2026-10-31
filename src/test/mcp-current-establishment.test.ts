@@ -13,7 +13,7 @@ function harness(existingB = false) {
   const leads: any[] = [{ id: "A", pessoa_id: "person", empresa_nome: "Belisquê Restaurante", city: "Araruama", category: "Suma Grill D9", endereco: "Rua Belisquê", stage: "novo" }];
   if (existingB) leads.push({ id: "B", pessoa_id: "person", empresa_nome: company, city: "Cabo Frio", stage: "novo" });
   const writes: any[] = [], tasks: Promise<void>[] = [];
-  const fetch = vi.fn(async () => new Response("{}"));
+  const fetch = vi.fn(async (_url: string, _options: any) => new Response("{}"));
   const client = { from(table: string) {
     let operation = "read", value: any; const filters: any[] = [];
     const result = (single = false) => {
@@ -57,7 +57,8 @@ describe("Current establishment integrity", () => {
     const schedule = h.writes.find(w => w.table === "schedules").value;
     expect(schedule).toMatchObject({ lead_id: "B", location: address, zip_code: "28907090" });
     expect(schedule.title).toBe(`Visita Comercial — ${company} — Cabo Frio [Oxivir TB Pronto Uso]`);
-    const message = JSON.parse(h.fetch.mock.calls[0][1].body).message;
+    expect(h.fetch.mock.calls, JSON.stringify(h.writes)).not.toHaveLength(0);
+    const message = JSON.parse(h.fetch.mock.calls[0]?.[1]?.body ?? "{}").message;
     expect(message).toContain(address); expect(message).toContain(maps); expect(message).toContain("Oxivir TB Pronto Uso"); expect(message).not.toContain("Belisquê"); expect(message).not.toContain("Araruama");
     expect(result.data.mensagem_para_lead).toContain("Oxivir TB Pronto Uso");
     expect(h.leads[0].empresa_nome).toBe("Belisquê Restaurante");
@@ -71,7 +72,7 @@ describe("Current establishment integrity", () => {
   it.each(["PH", "não informado"])("prefers Paulo Henrique over %s", async nome_contato => {
     const h = harness(); await h.route("agendar_visita_tecnica", { ...visit, nome_contato });
     expect(h.writes.find(w => w.table === "schedules").value.notes).toContain("Contato: Paulo Henrique");
-    expect(JSON.parse(h.fetch.mock.calls[0][1].body).message).toContain("Paulo Henrique");
+    expect(JSON.parse(h.fetch.mock.calls[0]?.[1]?.body ?? "{}").message).toContain("Paulo Henrique");
   });
   it("handoff with stale A ID resolves B and keeps transfer event", async () => {
     const h = harness(); const r = await h.route("solicitar_atendimento_humano", { ...visit, motivo: "Pedido de preço" });
