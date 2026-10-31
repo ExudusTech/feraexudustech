@@ -1,5 +1,5 @@
 # Tasks
-- [ ] Corrigir categoria em consultar_produto, testar os casos solicitados e publicar/verificar mcp.
+- [x] Corrigir categoria em consultar_produto; 288 testes e 10 consultas reais passaram; mcp publicada, sem envio de mensagens.
 - [x] Harden role saving with checked backups, idempotent additions and safe error messages; 224 app tests and 3 function tests passed, manage-user deployed.
 - [ ] Confirm original role-save failure cause (blocked: logs contain only boot entries; authenticated reproduction unavailable).
 - [ ] Verify role editing live as PH and a NitsClean admin (blocked: PH session mint unavailable; no NitsClean admin account exists).
