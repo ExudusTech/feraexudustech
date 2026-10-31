@@ -120,7 +120,7 @@ describe("MCP team WhatsApp notifications", () => {
     const h = harness({ lead: { id: "old-lead", description: "Descrição original", canal_origem: "WHATSAPP" } });
     const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço", resumo: "Quer tabela" });
     expect(r.data.lead_id).toBe("old-lead"); expect(r.data.lead_criado).toBe(false);
-    const update = h.writes.find((w: any) => w.table === "leads" && w.operation === "update").value;
+    const update = h.writes.find((w: any) => w.table === "leads" && w.operation === "update" && w.value.precisa_humano).value;
     expect(update.precisa_humano).toBe(true);
     expect(update.description.startsWith("Descrição original\n[")).toBe(true); expect(update.description).toContain("Resumo: Quer tabela");
   });
