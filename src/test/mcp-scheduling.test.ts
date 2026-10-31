@@ -63,7 +63,7 @@ function harness(category: string | null = "Diversey", areas = [
 }
 
 const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Clínica Longevidade", produto_interesse: "Diversey",
-  endereco: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", bairro: "Vila Nova", cep: "28907350", maps_url: "https://maps.google.com/example", telefone: "5521999999999",
+  endereco: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", bairro: "Vila Nova", maps_url: "https://maps.google.com/example", telefone: "5521999999999",
   cidade: "Cabo Frio", data_visita: "2026-10-12", horario: "13:30", interaction_id: "test" };
 
 describe("MCP visit scheduling", () => {
@@ -92,7 +92,7 @@ describe("MCP visit scheduling", () => {
     expect((await h.route(visit, method)).success).toBe(true);
     const schedule = h.writes.find(w => w.table === "schedules")?.value;
     expect(schedule).toMatchObject({
-      lead_id: "lead", location: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", zip_code: "28907350",
+      lead_id: "lead", location: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", zip_code: method === "agendar_visita" ? "28907350" : null,
     });
     expect(schedule.notes).toBe(`Empresa: Clínica Longevidade | Contato: Pessoa do lead | Telefone: 5521999999999${method === "agendar_visita" ? " | E-mail: lead@example.com" : ""} | Produto: Diversey | Mapa: https://maps.google.com/example`);
   });

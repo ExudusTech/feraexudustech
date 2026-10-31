@@ -866,7 +866,7 @@ type BookingLead = {
   pessoa?: { nome?: string | null; email?: string | null; telefone?: string | null; whatsapp?: string | null } | null;
 };
 
-const BOOKING_LEAD_SELECT = "id, client_id, pessoa_id, endereco, bairro, zip_code, city, regiao, maps_url, contact_phone, contact_email, category, empresa_nome, company, title, contact_name, pessoa:pessoas(nome, email, telefone, whatsapp)";
+const BOOKING_LEAD_SELECT = "id, stage, description, place_id, client_id, pessoa_id, endereco, bairro, zip_code, city, regiao, maps_url, contact_phone, contact_email, category, empresa_nome, company, title, contact_name, pessoa:pessoas(nome, email, telefone, whatsapp)";
 
 async function loadBookingLead(supabase: ReturnType<typeof getClient>, leadId?: string, interactionId?: string): Promise<BookingLead | null> {
   if (!leadId && !interactionId) return null;
@@ -926,6 +926,8 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     pessoa = data;
   }
   const name = currentContactName(params.nome_contato, pessoa?.nome ?? candidate?.pessoa?.nome);
+  const emailText = productSearchText(params.email);
+  const currentEmail = emailText && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailText) ? emailText : null;
   const matches = (lead: any) => lead && !["fechado_ganho", "fechado_perdido"].includes(lead.stage) &&
     (!pessoa || lead.pessoa_id === pessoa.id) &&
     (!company || normalizedEstablishment(lead.empresa_nome ?? lead.company) === normalizedEstablishment(company)) &&
@@ -933,7 +935,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     (!params.place_id || !lead.place_id || params.place_id === lead.place_id);
   let lead = matches(candidate) ? candidate : null;
   if (!lead && pessoa) {
-    const { data, error } = await supabase.from("leads").select(`${BOOKING_LEAD_SELECT}, stage, description, place_id, canal_origem, instagram_handle`)
+    const { data, error } = await supabase.from("leads").select(`${BOOKING_LEAD_SELECT}, canal_origem, instagram_handle`)
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id)
       .order("created_at", { ascending: false }).limit(100);
     if (error) throw new Error(dbFail("consultar leads da pessoa", error));
@@ -951,7 +953,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     const { data, error } = await supabase.from("leads").insert({
       organization_id: NITSCLEAN_ORG_ID, pessoa_id: pessoa?.id ?? null,
       contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
-      contact_email: productSearchText(params.email), title: company ? `${name} — ${company}` : name,
+      contact_email: currentEmail, title: company ? `${name} — ${company}` : name,
       company, empresa_nome: company, city: params.cidade ?? null, category: productSearchText(params.produto_interesse),
       endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
       maps_url: params.maps_url ?? null, place_id: params.place_id ?? null, regiao: params.regiao ?? null,
@@ -960,7 +962,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
       assigned_to: await floraDefaultOwner(supabase), interaction_id: params.interaction_id ?? String(Date.now()),
       gptmaker_chat_id: params.chat_id ?? null, instagram_handle: pessoa?.instagram_handle ?? null,
       position: 0, created_by_flora: true,
-    }).select(`${BOOKING_LEAD_SELECT}, stage, description, canal_origem, instagram_handle`).single();
+    }).select(`${BOOKING_LEAD_SELECT}, canal_origem, instagram_handle`).single();
     if (error || !data) throw new Error(dbFail("registrar lead atual", error));
     lead = data; created = true;
   }
@@ -970,8 +972,8 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
     maps_url: params.maps_url ?? null, category: productSearchText(params.produto_interesse),
     contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
-    contact_email: productSearchText(params.email), pessoa: { nome: name } };
-  return { lead, pessoa, created, snapshot, params: { ...params, nome_contato: name, empresa: company,
+    contact_email: currentEmail, pessoa: { nome: name } };
+  return { lead, pessoa, created, snapshot, params: { ...params, email: currentEmail, nome_contato: name, empresa: company,
     produto_interesse: snapshot.category, __current_establishment: true } };
 }
 
