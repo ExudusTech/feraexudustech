@@ -195,7 +195,7 @@ async function resolvePessoa(
 ): Promise<{ pessoa: PessoaRecord | null; error?: string }> {
   const channelFields = pessoaChannelFields(params);
   const lookups: [keyof PessoaRecord, string][] = [];
-  for (const key of ["whatsapp", "instagram_user_id", "messenger_id"] as const) {
+  for (const key of ["whatsapp", "telefone", "instagram_user_id", "messenger_id"] as const) {
     const value = channelFields[key];
     if (typeof value === "string" && value) lookups.push([key, value]);
   }
@@ -460,7 +460,7 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
     const result = await query.maybeSingle();
     if (!result.error && result.data) { lead = result.data; leadId = result.data.id; }
   }
-  const message = notificationText(event, params, lead, leadId, scheduleId);
+  const message = notificationText(event, params, params.__current_establishment ? null : lead, leadId, scheduleId);
   for (const recipient of recipients) {
     let status = "FAILED";
     let errorMessage: string | null = null;
@@ -875,6 +875,104 @@ async function loadBookingLead(supabase: ReturnType<typeof getClient>, leadId?: 
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(dbFail("consultar dados do lead", error));
   return data as BookingLead | null;
+}
+
+/** Current chat context only; a selected candidate is confirmed by the current company/place. */
+async function currentEstablishment(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const current = { ...params };
+  const company = productSearchText(params.empresa ?? params.empresa_nome);
+  if (!params.chat_id || !company) return current;
+  const { data, error } = await supabase.from("mcp_request_log").select("response")
+    .eq("method", "localizar_estabelecimento").eq("success", true)
+    .contains("params", { chat_id: params.chat_id })
+    .gte("created_at", new Date(Date.now() - 86400000).toISOString())
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(dbFail("consultar estabelecimento atual", error));
+  let response = data?.response;
+  if (typeof response === "string") { try { response = JSON.parse(response); } catch { return current; } }
+  const candidates = response?.result?.data?.candidatos;
+  if (!Array.isArray(candidates)) return current;
+  const matches = candidates.filter((c: Record<string, unknown>) =>
+    normalizedEstablishment(c.nome) === normalizedEstablishment(company) &&
+    (!params.cidade || normalizedEstablishment(c.cidade) === normalizedEstablishment(params.cidade)) &&
+    (!params.place_id || c.place_id === params.place_id));
+  if (matches.length !== 1) return current;
+  for (const key of ["endereco", "bairro", "cidade", "cep", "maps_url", "place_id", "regiao", "latitude", "longitude"]) {
+    if (normalizeParamValue(current[key]) == null) current[key] = matches[0][key] ?? null;
+  }
+  return current;
+}
+
+function currentContactName(supplied: unknown, stored: unknown): string {
+  const name = productSearchText(supplied);
+  const full = productSearchText(stored);
+  if (full && full !== "Contato" && (!name || name.length <= 3 || name.split(/\s+/).length === 1)) return full;
+  return name ?? full ?? "Contato";
+}
+
+/** Candidate IDs never override the current establishment identity. */
+async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, candidate: any) {
+  const company = productSearchText(params.empresa ?? params.empresa_nome);
+  const personResult = await resolvePessoa(supabase, { ...params, nome: params.nome_contato,
+    telefone: params.telefone ?? (resolveChannelFromChatId(params.chat_id)?.canal === "WHATSAPP"
+      ? resolveChannelFromChatId(params.chat_id)?.identificador : undefined) }, false);
+  if (personResult.error) throw new Error(personResult.error);
+  let pessoa = personResult.pessoa;
+  // An explicit tenant-validated lead may identify the person, never the new company.
+  if (!pessoa && candidate?.pessoa_id) {
+    const { data, error } = await supabase.from("pessoas").select("id, nome, email, telefone, whatsapp, instagram_handle, chat_ids")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", candidate.pessoa_id).maybeSingle();
+    if (error) throw new Error(dbFail("consultar pessoa", error));
+    pessoa = data;
+  }
+  const name = currentContactName(params.nome_contato, pessoa?.nome ?? candidate?.pessoa?.nome);
+  const matches = (lead: any) => lead && !["fechado_ganho", "fechado_perdido"].includes(lead.stage) &&
+    (!pessoa || lead.pessoa_id === pessoa.id) &&
+    (!company || normalizedEstablishment(lead.empresa_nome ?? lead.company) === normalizedEstablishment(company)) &&
+    (!params.cidade || !lead.city || normalizedEstablishment(lead.city) === normalizedEstablishment(params.cidade)) &&
+    (!params.place_id || !lead.place_id || params.place_id === lead.place_id);
+  let lead = matches(candidate) ? candidate : null;
+  if (!lead && pessoa) {
+    const { data, error } = await supabase.from("leads").select(`${BOOKING_LEAD_SELECT}, stage, description, place_id, canal_origem, instagram_handle`)
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id)
+      .order("created_at", { ascending: false }).limit(100);
+    if (error) throw new Error(dbFail("consultar leads da pessoa", error));
+    lead = (Array.isArray(data) ? data : []).find(matches) ?? null;
+  }
+  let created = false;
+  if (!lead) {
+    if (!pessoa) {
+      const resolved = await resolvePessoa(supabase, { ...params, nome: name,
+        telefone: params.telefone ?? (resolveChannelFromChatId(params.chat_id)?.canal === "WHATSAPP" ? resolveChannelFromChatId(params.chat_id)?.identificador : undefined) }, true);
+      if (resolved.error) throw new Error(resolved.error);
+      pessoa = resolved.pessoa;
+    }
+    const channel = resolveChannelFromChatId(params.chat_id)?.canal ?? "WHATSAPP";
+    const { data, error } = await supabase.from("leads").insert({
+      organization_id: NITSCLEAN_ORG_ID, pessoa_id: pessoa?.id ?? null,
+      contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
+      contact_email: productSearchText(params.email), title: company ? `${name} — ${company}` : name,
+      company, empresa_nome: company, city: params.cidade ?? null, category: productSearchText(params.produto_interesse),
+      endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
+      maps_url: params.maps_url ?? null, place_id: params.place_id ?? null, regiao: params.regiao ?? null,
+      latitude: params.latitude ?? null, longitude: params.longitude ?? null,
+      stage: "novo", source: channel.toLowerCase(), canal_origem: channel,
+      assigned_to: await floraDefaultOwner(supabase), interaction_id: params.interaction_id ?? String(Date.now()),
+      gptmaker_chat_id: params.chat_id ?? null, instagram_handle: pessoa?.instagram_handle ?? null,
+      position: 0, created_by_flora: true,
+    }).select(`${BOOKING_LEAD_SELECT}, stage, description, canal_origem, instagram_handle`).single();
+    if (error || !data) throw new Error(dbFail("registrar lead atual", error));
+    lead = data; created = true;
+  }
+  // Snapshot from current params, not the persisted lead. Missing current product/address stays neutral.
+  const snapshot = { id: lead.id, client_id: lead.client_id, pessoa_id: pessoa?.id ?? lead.pessoa_id,
+    empresa_nome: company, company, city: params.cidade ?? null,
+    endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
+    maps_url: params.maps_url ?? null, category: productSearchText(params.produto_interesse),
+    contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
+    contact_email: productSearchText(params.email), pessoa: { nome: name } };
+  return { lead, pessoa, created, snapshot, params: { ...params, nome_contato: name, empresa: company,
+    produto_interesse: snapshot.category, __current_establishment: true } };
 }
 
 function bookingLocation(lead: BookingLead | null, fallbackCity?: string): string | null {
@@ -1704,7 +1802,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
   if (leadId) {
     await supabase.from("leads")
       .update({ stage: "agendado", updated_at: new Date().toISOString() })
-      .eq("id", leadId);
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
 
@@ -1745,10 +1843,10 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   };
 
   if (!data_visita || !horario) return fail("data_visita e horario são obrigatórios");
-  if (!nome_contato) return fail("nome_contato é obrigatório");
   if (!cidade) return fail("cidade é obrigatória para validar a rota do consultor");
 
   const supabase = getClient();
+  params = await currentEstablishment(supabase, params);
   let validatedLead: BookingLead | null = null;
   if (lead_id) {
     try { validatedLead = await loadBookingLead(supabase, lead_id); }
@@ -1805,16 +1903,14 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     };
   }
 
-  // Resolver lead
-  let leadId = lead_id;
-  let bookingLead = validatedLead;
-  if (!leadId && interaction_id) {
-    bookingLead = await loadBookingLead(supabase, undefined, interaction_id);
-    leadId = bookingLead?.id;
-  }
-
-  const product = bookingProduct(bookingLead, produto_interesse);
-  const empresaLabel = bookingLead?.empresa_nome || bookingLead?.company || empresa || "empresa";
+  // Resolve identity only after all route/window checks, before operational writes.
+  if (!validatedLead && interaction_id) validatedLead = await loadBookingLead(supabase, undefined, interaction_id);
+  const current = await resolveCurrentLead(supabase, params, validatedLead);
+  params = current.params;
+  const leadId = current.lead.id;
+  const bookingLead = current.snapshot;
+  const product = bookingLead.category;
+  const empresaLabel = params.empresa || "empresa";
   const title        = `Visita Comercial — ${empresaLabel} — ${cidade}${product ? ` [${product}]` : ""}`;
   const startTime    = `${horario}:00`;
   const endHour      = parseInt(horario.split(":")[0], 10) + 1;
@@ -1842,7 +1938,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (leadId) {
     await supabase.from("leads")
       .update({ stage: "agendado", updated_at: new Date().toISOString() })
-      .eq("id", leadId);
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
 
@@ -2103,56 +2199,25 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     if (value === false) return fail(`${key} inválido`);
     fields[key] = value;
   }
-  const urgencia = ["baixa", "media", "alta"].includes(fields.urgencia ?? "") ? fields.urgencia! : "media";
+  const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
   const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id";
 
-  // Pessoa via chat_id (same resolver as buscar_contato/criar_lead)
+  params = await currentEstablishment(supabase, params);
   const channel = resolveChannelFromChatId(fields.chat_id);
-  let pessoa: PessoaRecord | null = null;
-  if (channel) {
-    const resolved = await resolvePessoa(supabase, { ...params, nome: fields.nome_contato ?? undefined,
-      telefone: channel.canal === "WHATSAPP" ? channel.identificador : params.telefone }, true);
-    if (resolved.error) console.error("[solicitar_atendimento_humano] pessoa lookup failed");
-    pessoa = resolved.pessoa;
+  let candidate: Record<string, unknown> | null = null;
+  for (const [column, value] of [["id", fields.lead_id], ["interaction_id", fields.interaction_id], ["gptmaker_chat_id", fields.chat_id], ["contact_phone", digits(params.telefone)]] as const) {
+    if (!value || candidate) continue;
+    const { data, error } = await supabase.from("leads").select(`${leadSelect}, stage, city`)
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq(column, value)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) throw new Error(dbFail("consultar lead da transferência", error));
+    candidate = data;
   }
-
-  // Lead: lead_id → interaction_id → chat_id → pessoa
-  let lead: Record<string, unknown> | null = null;
-  const findOne = async (column: string, value: string) => {
-    const { data } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
-      .eq(column, value).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    return data as Record<string, unknown> | null;
-  };
-  if (fields.lead_id) lead = await findOne("id", fields.lead_id);
-  if (!lead && fields.interaction_id) lead = await findOne("interaction_id", fields.interaction_id);
-  if (!lead && fields.chat_id) lead = await findOne("gptmaker_chat_id", fields.chat_id);
-  if (!lead && pessoa) lead = await findOne("pessoa_id", pessoa.id);
-
-  let leadCriado = false;
-  if (!lead) {
-    const canal = channel?.canal ?? "WHATSAPP";
-    const nome = fields.nome_contato ?? (pessoa?.nome && pessoa.nome !== "Contato" ? pessoa.nome : null) ?? "Contato";
-    const phone = channel?.canal === "WHATSAPP" ? channel.identificador : (pessoa?.whatsapp ?? pessoa?.telefone ?? null);
-    const { data, error } = await supabase.from("leads").insert({
-      organization_id: NITSCLEAN_ORG_ID,
-      contact_name: nome,
-      contact_phone: phone,
-      title: fields.empresa ? `${nome} — ${fields.empresa}` : nome,
-      company: fields.empresa, empresa_nome: fields.empresa,
-      city: fields.cidade, category: fields.produto_interesse,
-      stage: "novo", source: canal.toLowerCase(), canal_origem: canal,
-      assigned_to: await floraDefaultOwner(supabase),
-      interaction_id: fields.interaction_id ?? String(Date.now()),
-      gptmaker_chat_id: fields.chat_id,
-      instagram_handle: pessoa?.instagram_handle ?? null,
-      pessoa_id: pessoa?.id ?? null,
-      position: 0, created_by_flora: true,
-    }).select(leadSelect).single();
-    if (error || !data) return fail(dbFail("registrar lead da transferência", error));
-    lead = data as Record<string, unknown>;
-    leadCriado = true;
-  }
+  const current = await resolveCurrentLead(supabase, params, candidate);
+  const { lead, pessoa } = current;
+  const leadCriado = current.created;
+  params = current.params;
   const leadId = String(lead.id);
 
   const note = transferNote(new Date(), fields.motivo, urgencia, fields.resumo);
@@ -2183,10 +2248,9 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
 
   if (notificado) {
     queueTeamNotification(supabase, event, {
-      empresa: fields.empresa ?? lead.empresa_nome ?? lead.company ?? null,
-      nome_contato: fields.nome_contato ?? lead.contact_name ?? pessoa?.nome ?? null,
-      cidade: fields.cidade ?? lead.city ?? null,
-      produto_interesse: fields.produto_interesse ?? lead.category ?? null,
+      ...params,
+      empresa: params.empresa, nome_contato: params.nome_contato,
+      cidade: params.cidade, produto_interesse: params.produto_interesse,
       resumo: fields.resumo, motivo: fields.motivo, urgencia,
       whatsapp_cliente: whatsapp, instagram_cliente: instagram,
       titulo: recent ? "⏰ Cliente cobrando retorno" : null,
@@ -2583,6 +2647,9 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["nome_contato", "data_visita", "horario", "cidade"],
       properties: {
+        chat_id: { type: "string", description: "Chat atual do GPT Maker; recupera o estabelecimento selecionado" },
+        endereco: { type: "string" }, bairro: { type: "string" },
+        maps_url: { type: "string" }, place_id: { type: "string" },
         lead_id:           { type: "string" },
         interaction_id:    { type: "string" },
         contato_id:        { type: "string", description: "UUID de client_contacts se lead já identificado" },
@@ -2683,6 +2750,9 @@ const TOOLS_MANIFEST = [
     parameters: {
       type: "object",
       properties: {
+        telefone: { type: "string" }, email: { type: "string" }, cep: { type: "string" },
+        endereco: { type: "string" }, bairro: { type: "string" },
+        maps_url: { type: "string" }, place_id: { type: "string" },
         lead_id:           { type: "string", description: "ID do lead, se já conhecido" },
         interaction_id:    { type: "string" },
         chat_id:           { type: "string", description: "chat_id do GPT Maker; identifica pessoa e canal" },
