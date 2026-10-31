@@ -46,7 +46,7 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
     queue: (event: string) => { context.event = event; vm.runInContext('queueTeamNotification(getClient(), event, {}, "lead")', context); },
     flush: async () => { await Promise.all(tasks); } };
 }
-const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Empresa", cidade: "Cabo Frio", data_visita: "2026-10-16", horario: "13:30", produto_interesse: "Produto" };
+const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Empresa", cidade: "Cabo Frio", data_visita: "2026-10-16", horario: "13:30", produto_interesse: "Produto", endereco: "Rua A, 10", bairro: "Centro", maps_url: "https://maps.google.com/example" };
 describe("MCP team WhatsApp notifications", () => {
   it.each(allEvents)("selects only active tenant recipients subscribed to %s", async event => {
     const h = harness(); h.queue(event); await h.flush();

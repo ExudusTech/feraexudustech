@@ -27,7 +27,7 @@ function harness(category: string | null = "Diversey", areas = [
         : table === "schedules" ? { id: "schedule", ...value } : null };
     };
     const chain: any = {
-      select: () => chain,
+      select: () => chain, limit: () => chain, order: () => chain, contains: () => chain,
       eq: (...args: any[]) => { filters.push(args); return chain; },
       ilike: (...args: any[]) => { filters.push(args); return chain; },
       or: (...args: any[]) => { filters.push(["or", ...args]); return chain; },
@@ -62,7 +62,8 @@ function harness(category: string | null = "Diversey", areas = [
   };
 }
 
-const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Empresa",
+const visit = { lead_id: "lead", nome_contato: "Contato", empresa: "Clínica Longevidade", produto_interesse: "Diversey",
+  endereco: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", bairro: "Vila Nova", cep: "28907350", maps_url: "https://maps.google.com/example", telefone: "5521999999999",
   cidade: "Cabo Frio", data_visita: "2026-10-12", horario: "13:30", interaction_id: "test" };
 
 describe("MCP visit scheduling", () => {
@@ -93,7 +94,7 @@ describe("MCP visit scheduling", () => {
     expect(schedule).toMatchObject({
       lead_id: "lead", location: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ", zip_code: "28907350",
     });
-    expect(schedule.notes).toBe("Empresa: Clínica Longevidade | Contato: Pessoa do lead | Telefone: 5521999999999 | E-mail: lead@example.com | Produto: Diversey | Mapa: https://maps.google.com/example");
+    expect(schedule.notes).toBe(`Empresa: Clínica Longevidade | Contato: Pessoa do lead | Telefone: 5521999999999${method === "agendar_visita" ? " | E-mail: lead@example.com" : ""} | Produto: Diversey | Mapa: https://maps.google.com/example`);
   });
   it("explicit product takes precedence without category lookup", async () => {
     const h = harness();
@@ -193,7 +194,7 @@ describe("MCP holidays and booking email", () => {
     const h = harness();
     expect((await h.route({ ...visit, email })).success).toBe(true);
     expect(h.writes.some(w => w.value?.contact_email)).toBe(false);
-    expect(h.writes.find(w => w.table === "schedules")?.value.notes).toContain("E-mail: lead@example.com");
+    expect(h.writes.find(w => w.table === "schedules")?.value.notes).not.toContain("E-mail:");
   });
   it("calendar read failure cannot create a booking", async () => {
     const h = harness("Diversey", undefined, [], null, true);

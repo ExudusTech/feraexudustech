@@ -41,7 +41,7 @@ function harness(existingB = false) {
     return chain;
   } };
   const context = vm.createContext({ createClient: () => client, Deno: { env: { get: (k: string) => ["GPTMAKER_API_TOKEN", "GPTMAKER_WHATSAPP_CHANNEL_ID"].includes(k) ? "mock" : undefined }, serve: () => {} },
-    EdgeRuntime: { waitUntil: (t: Promise<void>) => tasks.push(t) }, fetch, AbortSignal, Response, Request, URL, performance, crypto, console, Date });
+    EdgeRuntime: { waitUntil: (t: Promise<void>) => tasks.push(t) }, fetch, AbortSignal: { timeout: () => undefined }, Response, Request, URL, performance, crypto, console, Date });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
   return { writes, leads, fetch, async route(method: string, params: any) {
     context.method = method; context.params = params;
