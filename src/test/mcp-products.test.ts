@@ -11,6 +11,7 @@ const catalog = [
   { id: "d1", name: "Suma Break Up D3.5", brand: "DIVERSEY", category: "Desengordurante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengordurante cozinha", disponibilidade: "sob_encomenda", image_url: "org/NC-DIV-001.jpg", specifications: { segmentos: ["Cozinha industrial", "Hotelaria"] } },
   { id: "d2", name: "Clax Personril", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Lavanderia", "Hotelaria"] } },
   { id: "d3", name: "Taski Jontec", brand: "DIVERSEY", category: "Pisos", fornecedor: "DIVERSEY", unit: "GL", description: "Cera", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Hospitalar"] } },
+  { id: "d9", name: "SUMA GRILL D9", brand: "DIVERSEY", category: "Limpeza de chapas e fornos", fornecedor: "DIVERSEY", unit: "GL", description: "Limpador de fornos", disponibilidade: "sob_encomenda" },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -31,6 +32,36 @@ function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
   return { route: (m: string, p: any) => { context.m = m; context.p = p; return vm.runInContext("routeTool(m, p)", context); }, gte, inserts, fetchMock };
 }
 describe("consultar_produto", () => {
+  it.each(["limpeza profissional para cozinhas", "não informado", undefined, ""])("Suma Grill D9 remains total regardless of category: %s", async categoria => {
+    const r = await harness().route("consultar_produto", { termo: "Suma Grill D9", ...(categoria === undefined ? {} : { categoria }) });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("total");
+    expect(r.data.produtos.map((p: any) => p.id)).toEqual(["d9"]);
+    expect(r.data.mensagem_para_lead).toBeUndefined();
+  });
+  it.each(["limpeza profissional para cozinhas", "não informado", undefined, "", "Limpeza", "Aromatizador"])("Solv Fresh remains not found regardless of category: %s", async categoria => {
+    const r = await harness().route("consultar_produto", { termo: "Solv Fresh", ...(categoria === undefined ? {} : { categoria }) });
+    expect(r.data.encontrado).toBe(false);
+    expect(r.data.produtos).toEqual([]);
+    expect(r.data.mensagem_para_lead).toContain("não trabalha com o Solv Fresh.");
+  });
+  it("brand match is not excluded by an unrelated category", async () => {
+    const r = await harness().route("consultar_produto", { termo: "Diversey", categoria: "limpeza profissional para cozinhas" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("marca");
+    expect(r.data.produtos.length).toBeGreaterThan(0);
+  });
+  it("category suggests alternatives without inventing a term match", async () => {
+    const r = await harness().route("consultar_produto", { termo: "Xyzabc", categoria: "Limpeza de chapas e fornos" });
+    expect(r.data.encontrado).toBe(false);
+    expect(r.data.correspondencia).toBe("nenhuma");
+    expect(r.data.similares.map((p: any) => p.id)).toEqual(["d9"]);
+  });
+  it("category only ranks matching products without excluding the others", async () => {
+    const r = await harness().route("consultar_produto", { termo: "Diversey", categoria: "Pisos" });
+    expect(r.data.produtos[0].id).toBe("d3");
+    expect(r.data.produtos.map((p: any) => p.id)).toEqual(expect.arrayContaining(["d1", "d2", "d3", "d9"]));
+  });
   it("Solv Fresh is not found", async () => {
     const r = await harness().route("consultar_produto", { termo: "Solv Fresh" });
     expect(r.data.encontrado).toBe(false); expect(r.data.produtos).toEqual([]);
