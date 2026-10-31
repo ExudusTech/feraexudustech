@@ -81,6 +81,18 @@ describe("Current establishment integrity", () => {
     expect(log.event_type).toBe("transferencia"); expect(log.payload.message).toContain(company); expect(log.payload.message).toContain("Paulo Henrique"); expect(log.payload.message).toContain("Oxivir TB Pronto Uso"); expect(log.payload.message).not.toContain("Suma Grill");
     expect(h.writes.find(w => w.table === "leads" && w.operation === "update").value.precisa_humano).toBe(true);
   });
+  it("handoff found by phone cannot reuse A for B", async () => {
+    const h = harness(); const r = await h.route("solicitar_atendimento_humano", { ...visit, lead_id: undefined, telefone: "5521979047667", motivo: "Preço" });
+    expect(r.data.lead_id).toBe("B");
+    expect(h.leads.find(l => l.id === "B").pessoa_id).toBe("person");
+    expect(h.writes.filter(w => w.table === "leads" && w.operation === "insert")).toHaveLength(1);
+  });
+  it("explicit current address/maps wins over the lookup candidate", async () => {
+    const h = harness(true); await h.route("agendar_visita_tecnica", { ...visit, endereco: "Rua Atual, 42", maps_url: "https://maps.google.com/current" });
+    expect(h.writes.find(w => w.table === "schedules").value.location).toBe("Rua Atual, 42");
+    const message = JSON.parse(h.fetch.mock.calls[0]?.[1]?.body ?? "{}").message;
+    expect(message).toContain("https://maps.google.com/current"); expect(message).not.toContain(address);
+  });
   it("missing current product/address never falls back to stale A", async () => {
     const h = harness(); await h.route("agendar_visita_tecnica", { ...visit, chat_id: undefined, empresa: "Belisquê Restaurante", cidade: "Araruama", produto_interesse: undefined });
     const s = h.writes.find(w => w.table === "schedules").value;
