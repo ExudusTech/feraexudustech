@@ -966,6 +966,18 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     if (error || !data) throw new Error(dbFail("registrar lead atual", error));
     lead = data; created = true;
   }
+  if (!created) {
+    const updates: Record<string, unknown> = { contact_name: name, updated_at: new Date().toISOString() };
+    if (company) { updates.company = company; updates.empresa_nome = company; }
+    for (const [param, column] of [["cidade", "city"], ["produto_interesse", "category"], ["endereco", "endereco"],
+      ["bairro", "bairro"], ["maps_url", "maps_url"], ["place_id", "place_id"], ["regiao", "regiao"]]) {
+      if (productSearchText(params[param])) updates[column] = params[param];
+    }
+    if (validCep(params.cep)) updates.zip_code = validCep(params.cep);
+    if (pessoa && !lead.pessoa_id) updates.pessoa_id = pessoa.id;
+    const { error } = await supabase.from("leads").update(updates).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id);
+    if (error) throw new Error(dbFail("atualizar lead atual", error));
+  }
   // Snapshot from current params, not the persisted lead. Missing current product/address stays neutral.
   const snapshot = { id: lead.id, client_id: lead.client_id, pessoa_id: pessoa?.id ?? lead.pessoa_id,
     empresa_nome: company, company, city: params.cidade ?? null,
