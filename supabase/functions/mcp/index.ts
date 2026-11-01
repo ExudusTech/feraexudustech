@@ -1158,13 +1158,18 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     if (error) throw new Error(dbFail("atualizar lead atual", error));
   }
   // Address remains current-only; product includes the validated same-company/chat fallback.
+  // When the conversation gives no company/city, the validated resolved lead (same person,
+  // no conflicting company informed) supplies them for the snapshot and notifications.
+  const leadCompany = company ?? productSearchText(lead.empresa_nome ?? lead.company) ?? null;
+  const leadCity = productSearchText(params.cidade) ?? productSearchText(lead.city) ?? null;
   const snapshot = { id: lead.id, client_id: lead.client_id, pessoa_id: pessoa?.id ?? lead.pessoa_id,
-    empresa_nome: company, company, city: params.cidade ?? null,
+    empresa_nome: leadCompany, company: leadCompany, city: leadCity,
     endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
     maps_url: params.maps_url ?? null, category: productSearchText(params.produto_interesse),
     contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
     contact_email: currentEmail, pessoa: { nome: name } };
-  return { lead, pessoa, created, snapshot, params: { ...params, email: currentEmail, nome_contato: name, empresa: company,
+  return { lead, pessoa, created, snapshot, params: { ...params, email: currentEmail, nome_contato: name,
+    empresa: leadCompany, cidade: leadCity,
     produto_interesse: snapshot.category, __current_establishment: true } };
 }
 
