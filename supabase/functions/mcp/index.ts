@@ -934,8 +934,131 @@ async function knownContactName(supabase: ReturnType<typeof getClient>, chatId: 
 }
 
 async function withKnownContact(response: McpResponse, chatId: unknown): Promise<McpResponse> {
-  const contato_conhecido = await knownContactName(getClient(), chatId);
-  return { ...response, data: { ...response.data, contato_conhecido } };
+  const supabase = getClient();
+  const contato_conhecido = await knownContactName(supabase, chatId);
+  const contexto_anterior = await previousContext(supabase, chatId);
+  return { ...response, data: { ...response.data, contato_conhecido, contexto_anterior } };
+}
+
+// ─── Lead timeline: short summaries only (never transcripts), background writes ───
+
+type TimelineType = "resumo" | "criar_lead" | "agendamento" | "transferencia" | "fora_perfil" | "encerramento";
+const TIMELINE_DEDUP_MS = 10 * 60 * 1000;
+
+/** Removes contact data and bounds length; placeholders count as absent. */
+function timelineText(value: unknown, max: number): string | null {
+  const text = productSearchText(value);
+  if (!text) return null;
+  const masked = text.replace(/[\r\n\t]+/g, " ")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[e-mail]")
+    .replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, "[documento]")
+    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, "[documento]")
+    .replace(/\+?\(?\d[\d\s().-]{8,}\d/g, "[telefone]")
+    .replace(/\s{2,}/g, " ").trim();
+  if (!masked) return null;
+  return masked.length > max ? `${masked.slice(0, max - 1).trimEnd()}…` : masked;
+}
+
+function timelineSummary(generated: string, params: Record<string, unknown>): string {
+  const own = timelineText(params.resumo_conversa, 500);
+  const base = timelineText(generated, 500) ?? "Interação registrada";
+  return own ? timelineText(`${base}. ${own}`, 500)! : base;
+}
+
+async function writeTimeline(supabase: ReturnType<typeof getClient>, entry: {
+  leadId: string; pessoaId?: unknown; tipo: TimelineType; resumo: string; params: Record<string, unknown>; referenciaId?: unknown;
+}): Promise<void> {
+  const resumo = timelineSummary(entry.resumo, entry.params);
+  const since = new Date(Date.now() - TIMELINE_DEDUP_MS).toISOString();
+  const { data: dup } = await supabase.from("lead_timeline").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+    .eq("lead_id", entry.leadId).eq("tipo", entry.tipo).eq("resumo", resumo).gte("created_at", since).limit(1);
+  if (Array.isArray(dup) && dup.length > 0) return;
+  const chatId = productSearchText(entry.params.chat_id);
+  const { error } = await supabase.from("lead_timeline").insert({
+    organization_id: NITSCLEAN_ORG_ID, lead_id: entry.leadId,
+    pessoa_id: typeof entry.pessoaId === "string" && entry.pessoaId ? entry.pessoaId : null,
+    canal: resolveChannelFromChatId(chatId)?.canal ?? (productSearchText(entry.params.canal)?.toUpperCase() ?? null),
+    chat_id: chatId, tipo: entry.tipo, resumo, proximo_passo: timelineText(entry.params.proximo_passo, 200),
+    origem: "flora", referencia_id: typeof entry.referenciaId === "string" ? entry.referenciaId : null,
+  });
+  if (error) dbFail("gravar linha do tempo", error);
+}
+
+/** Timeline failures never change the tool response. */
+function queueTimeline(supabase: ReturnType<typeof getClient>, entry: Parameters<typeof writeTimeline>[1]): void {
+  try {
+    if (!entry.leadId) return;
+    const task = Promise.resolve().then(() => writeTimeline(supabase, entry))
+      .catch(() => { console.error("[lead_timeline] write failed"); });
+    const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (task: Promise<void>) => void } }).EdgeRuntime;
+    runtime?.waitUntil(task);
+  } catch { console.error("[lead_timeline] could not schedule write"); }
+}
+
+/** Person identified only by the trusted chat channel identifier (never name/e-mail). */
+async function chatPessoaId(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<string | null> {
+  const channel = resolveChannelFromChatId(chatId);
+  if (!channel) return null;
+  const fields = channel.canal === "WHATSAPP" ? ["whatsapp", "telefone"]
+    : channel.canal === "INSTAGRAM" ? ["instagram_user_id"] : channel.canal === "MESSENGER" ? ["messenger_id"] : [];
+  const value = channel.canal === "WHATSAPP" ? digits(channel.identificador) : channel.identificador;
+  if (!value) return null;
+  for (const field of fields) {
+    const { data, error } = await supabase.from("pessoas").select("id")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq(field, value).limit(1).maybeSingle();
+    if (error) { dbFail("consultar pessoa do contexto", error); return null; }
+    if (data?.id) return String(data.id);
+  }
+  return null;
+}
+
+const CHANNEL_LABEL: Record<string, string> = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", MESSENGER: "Messenger", WIDGET: "Site", TELEGRAM: "Telegram" };
+
+function formatPreviousContext(items: Array<Record<string, unknown>>, companies: Map<string, string>, max = 400): string | null {
+  const parts: string[] = [];
+  for (const item of items) {
+    const date = new Date(String(item.created_at));
+    const day = Number.isFinite(date.getTime())
+      ? date.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "";
+    const channel = CHANNEL_LABEL[String(item.canal ?? "")] ?? "";
+    const company = companies.get(String(item.lead_id)) ?? "";
+    const head = [day, channel].filter(Boolean).join(" ");
+    const body = [timelineText(item.resumo, 300), timelineText(item.proximo_passo, 120)].filter(Boolean).join(", próximo passo: ");
+    parts.push(`${head}${company ? ` — ${company}` : ""}: ${body.replace(/[.\s]+$/, "")}.`);
+  }
+  let text = "";
+  for (const part of parts) {
+    const next = text ? `${text} ${part}` : part;
+    if (next.length > max) {
+      if (!text) text = `${part.slice(0, max - 1).trimEnd()}…`;
+      break;
+    }
+    text = next;
+  }
+  return text || null;
+}
+
+async function previousContext(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<string | null> {
+  try {
+    const pessoaId = await chatPessoaId(supabase, chatId);
+    if (!pessoaId) return null;
+    const { data, error } = await supabase.from("lead_timeline").select("lead_id, canal, tipo, resumo, proximo_passo, created_at")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoaId)
+      .gte("created_at", new Date(Date.now() - 90 * 86400000).toISOString())
+      .order("created_at", { ascending: false }).limit(3);
+    if (error) { dbFail("consultar contexto anterior", error); return null; }
+    const items = Array.isArray(data) ? data : [];
+    if (items.length === 0) return null;
+    const ids = [...new Set(items.map((i: any) => String(i.lead_id)))];
+    const { data: leads } = await supabase.from("leads").select("id, empresa_nome, company")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("id", ids);
+    const companies = new Map<string, string>();
+    for (const lead of Array.isArray(leads) ? leads : []) {
+      const name = timelineText(lead.empresa_nome ?? lead.company, 80);
+      if (name) companies.set(String(lead.id), name);
+    }
+    return formatPreviousContext(items, companies);
+  } catch { console.error("[mcp] previous context lookup failed"); return null; }
 }
 
 /** Product fallback runs only after the candidate lead has passed company/person validation. */
