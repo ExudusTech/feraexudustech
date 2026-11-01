@@ -12,6 +12,11 @@ const catalog = [
   { id: "d2", name: "Clax Personril", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Lavanderia", "Hotelaria"] } },
   { id: "d3", name: "Taski Jontec", brand: "DIVERSEY", category: "Pisos", fornecedor: "DIVERSEY", unit: "GL", description: "Cera", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Hospitalar"] } },
   { id: "d9", name: "SUMA GRILL D9", brand: "DIVERSEY", category: "Limpeza de chapas e fornos", fornecedor: "DIVERSEY", unit: "GL", description: "Limpador de fornos", disponibilidade: "sob_encomenda" },
+  { id: "h1", name: "INSPIRACOES - AGUA DE CHEIRO / AGUA DE LENCOL 500ML E 5L", brand: "Inspiracoes", category: "Aromatizador", fornecedor: null, unit: "UN", description: "Ideal para hotel e hotelaria", image_url: "org/NC-INS-001.jpg" },
+  { id: "sc", name: "SOFT CARE DES-E", brand: "DIVERSEY", category: "Higiene das mãos", fornecedor: "DIVERSEY", unit: "GL", description: "Sabonete", image_url: "org/NC-DIV-050.jpg" },
+  { id: "ox", name: "OXIVIR TB PRONTO USO", brand: "DIVERSEY", category: "Desinfecção", fornecedor: "DIVERSEY", unit: "UN", description: "Desinfetante hospitalar", image_url: "org/NC-DIV-060.jpg" },
+  { id: "sm", name: "Dispenser Smart Autocorte", brand: "Nits", category: "Dispensers", fornecedor: null, unit: "UN", description: "Dispenser de papel", image_url: "org/NC-NIT-001.jpg" },
+  { id: "gh", name: "GUARD GRAND HOTEL CQT 90X50FLS", brand: "Guard", category: "Papel", fornecedor: null, unit: "CX", description: "Papel", image_url: "org/NC-GH-1.jpg" },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -154,5 +159,31 @@ describe("transfer dedup column", () => {
     const block = source.slice(source.indexOf('from("notification_logs").select("id")'));
     expect(block.slice(0, 400)).toContain('.gte("sent_at"');
     expect(block.slice(0, 400)).not.toContain('"created_at"');
+  });
+});
+describe("consultar_produto: total só pelo nome", () => {
+  it("produtos para hotel → sem imagem, não total", async () => {
+    const h = harness();
+    const r = await h.route("consultar_produto", { termo: "produtos para hotel", categoria: "higiene e limpeza profissional", chat_id: "whatsapp-1" });
+    expect(r.data.correspondencia).not.toBe("total");
+    expect(r.data.imagem_enviada).toBe(false); expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+  it.each([["Suma Grill D9", "d9"], ["Soft Care Des-E", "sc"], ["Oxivir TB pronto uso", "ox"], ["dispenser Smart Autocorte", "sm"]])("%s → total com 1 produto", async (termo, id) => {
+    const r = await harness().route("consultar_produto", { termo });
+    expect(r.data.correspondencia).toBe("total"); expect(r.data.produtos.map((p: any) => p.id)).toEqual([id]);
+  });
+  it.each(["limpeza de cozinha", "coisas para banheiro"])("%s → nunca total nem imagem", async (termo) => {
+    const h = harness();
+    const r = await h.route("consultar_produto", { termo, chat_id: "whatsapp-1" });
+    expect(r.data.correspondencia).not.toBe("total"); expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+  it("Diversey → marca, sem imagem", async () => {
+    const h = harness();
+    const r = await h.route("consultar_produto", { termo: "Diversey", chat_id: "whatsapp-1" });
+    expect(r.data.correspondencia).toBe("marca"); expect(r.data.imagem_enviada).toBe(false); expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+  it("match só na descrição nunca é total", async () => {
+    const r = await harness().route("consultar_produto", { termo: "limpador de fornos" });
+    expect(r.data.correspondencia).toBe("segmento");
   });
 });
