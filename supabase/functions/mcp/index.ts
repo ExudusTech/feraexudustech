@@ -906,7 +906,9 @@ async function currentEstablishment(supabase: ReturnType<typeof getClient>, para
 function currentContactName(supplied: unknown, stored: unknown): string {
   const name = productSearchText(supplied);
   const full = productSearchText(stored);
-  if (full && full !== "Contato" && (!name || name.length <= 3 || name.split(/\s+/).length === 1)) return full;
+  // A real supplied name (even a single first name) is kept; only missing values
+  // or short nicknames/initials (≤ 3 chars, e.g. "PH") fall back to the stored name.
+  if (full && full !== "Contato" && (!name || name.length <= 3)) return full;
   return name ?? full ?? "Contato";
 }
 
