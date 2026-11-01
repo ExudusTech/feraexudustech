@@ -1,25 +1,16 @@
 # Architecture rules
-- MCP request auditing is service-role-only and runs as background work so audit failures cannot change client responses.
-- Normalize MCP tool parameters centrally inside the router, leaving the received request untouched so auditing retains original input.
+- Subdirectories have their own AGENTS.md (e.g. supabase/functions/mcp); read it before changing files there.
 - Validate visit windows before writes; rejected bookings have no operational side effects.
-- Apply trusted chat-channel enrichment centrally after parameter normalization without mutating received requests, so all tools agree while auditing retains original input.
 - Resolve chat participants as tenant-scoped people and reuse only an open lead for the same person and establishment, so one person can represent multiple companies without cross-linking opportunities.
 - Load shared and tenant holidays through one calendar helper before visit writes, and filter route candidates within the bounded lookahead so municipal exclusions stay city-specific; shared calendar edits require super-admin authority to prevent cross-tenant changes.
 - Capture booking email with a tenant-scoped conditional update after successful schedule creation so existing contact email is never overwritten.
-- Select MCP coverage centrally by exact region, narrowest matching CEP interval, then legacy city lookup so consultation and booking agree without broadening explicit selectors.
-- Keep establishment provider requests server-side, bounded, sequential and cached with graceful fallbacks so Google failures cannot interrupt Flora conversations; persist CEP in the existing lead zip_code column to avoid duplicate address fields.
-- Keep establishment name matching and short-address confirmation local to the lookup tool, and separate biased/unbiased cache entries, so shared parameter normalization and other tools remain unchanged.
 - Team notifications use organization/event subscriptions and guarded EdgeRuntime background delivery; notification failures never change MCP responses, and provider response bodies are never logged.
 - Notification links open only records returned under existing access policies, carry a validated same-origin destination through login and organization selection, and wait for profile hydration and successful organization switching; this prevents lost destinations and stale-tenant reads.
 - Schedules persist their origin and inherit the selected coverage area's optional tenant-validated consultant at creation; manager-wide Agenda views remain explicitly scoped to the selected organization so unassigned Flora visits are visible without cross-tenant leakage.
 - Flora booking/handoff validate company/person first; product priority: params → same-company lead → successful 24h chat lookup; location stays company-matched.
-- Product/location contact enrichment selects only tenant phone-matched nome without writing person records.
-- Coverage binding inference stays local to verificar_cobertura_regiao, and outside-coverage registration uses tenant-scoped select plus insert/update without global interaction uniqueness, so other tools and tenants remain unaffected.
-- Human handoff always resolves or creates a tenant-scoped lead, appends notes instead of overwriting, and deduplicates team alerts per lead over 30 minutes (except high urgency) so every transfer is visible without spamming the team.
 - Users are created only server-side (create-user sets organization and role); the signup trigger grants just 'visitante' and never reads user metadata, so self-signup cannot join a tenant or escalate.
 - Owner-or-privileged UPDATE policies plus an immutability trigger on organization_id/created_by protect leads, clients and schedules; service-role paths (mcp) bypass both.
 - Flora leads and visits fall back to the organization's flora_default_lead_owner (coverage consultant first for visits); bulk reassignment runs in a security-definer function that backs up rows first.
-- MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
 - Users may hold several roles; the app merges permissions as the union (src/lib/permissions.ts) and role changes go only through create-user/manage-user (shared rules in supabase/functions/_shared/roles.ts), so admin limits stay enforced server-side.
 - Role edits check backups before writes, add idempotently before removing old roles, and verify the saved set; failures expose only allowlisted messages and log stage/code without personal data.
 - Organization branding is applied at runtime from the organizations row (colors via injected CSS vars with WCAG-checked foregrounds, logo, favicon, manifest); legacy default colors count as "not customized" so other tenants keep the Exudus brand.
@@ -31,4 +22,3 @@
 - Visit alerts split into commercial/technical events; Flora notifies from mcp, Fera visits via notify-schedule (caller's access, notification_logs dedupe), keeping tenants isolated with no new secret.
 - Sync products.disponibilidade/is_active; MCP category ranks or suggests, never filters term matches.
 - Product images: storage paths in private product-images, signed 1h only at display/send so nothing expires; Flora sends ≤1 image per chat/product/24h (product_image_sends).
-- Lead timeline (lead_timeline) holds short masked summaries only, written by mcp in background on the company-isolated lead; context returned to Flora is built from the chat-identified person only (phone / instagram_user_id / messenger_id), so transcripts and other people's data never leave the Fera.
