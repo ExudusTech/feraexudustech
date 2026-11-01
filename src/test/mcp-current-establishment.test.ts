@@ -116,6 +116,14 @@ describe("Current establishment integrity", () => {
     const message = JSON.parse(h.fetch.mock.calls[0]?.[1]?.body ?? "{}").message;
     expect(message).toContain("https://maps.google.com/current"); expect(message).not.toContain(address);
   });
+  it("transfer without company/city completes the alert from the resolved lead", async () => {
+    const h = harness();
+    const r = await h.route("solicitar_atendimento_humano", { ...visit, empresa: undefined, cidade: undefined, motivo: "Pedido de preço" });
+    expect(r.data.lead_id).toBe("A"); expect(r.data.lead_criado).toBe(false);
+    const log = h.writes.find(w => w.table === "notification_logs").value;
+    expect(log.payload.message).toContain("Cliente: Belisquê Restaurante — Paulo Henrique");
+    expect(log.payload.message).toContain("Cidade: Araruama");
+  });
   it("missing product/address never falls back to another company's A", async () => {
     const h = harness(); await h.route("agendar_visita_tecnica", { ...visit, chat_id: undefined, produto_interesse: undefined });
     const s = h.writes.find(w => w.table === "schedules").value;
