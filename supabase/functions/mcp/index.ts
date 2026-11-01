@@ -1483,8 +1483,9 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     found = [];
     if (!found.length) {
       // 3. Segment
-      if (termFold.length >= 4) {
-        const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(termFold) || termFold.includes(s)));
+      const segTerm = sigWords.join(" ");
+      if (segTerm.length >= 4) {
+        const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
         if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
       found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
