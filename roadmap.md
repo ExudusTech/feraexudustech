@@ -1,4 +1,6 @@
 # Tasks
+- [x] Lote 7: lead timeline, resumo_conversa/proximo_passo, contexto_anterior, Histórico tab; 15-min follow-up alert limit; outside-coverage company/city isolation; 330 tests passed, mcp deployed.
+- [ ] Publish frontend for the Histórico tab (waits on user publishing).
 - [x] Flora: product fallback params → same-company lead → successful 24h chat lookup; name-only known contact; 307 tests passed, mcp deployed, four live read-only checks passed (no bookings/messages).
 - [x] Isolate current establishment in Flora booking/handoff, preserve person name; 296 tests passed and mcp deployed without changing existing production records.
 - [x] Corrigir categoria em consultar_produto; 288 testes e 10 consultas reais passaram; mcp publicada, sem envio de mensagens.

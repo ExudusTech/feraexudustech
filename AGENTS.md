@@ -31,3 +31,4 @@
 - Visit alerts split into commercial/technical events; Flora notifies from mcp, Fera visits via notify-schedule (caller's access, notification_logs dedupe), keeping tenants isolated with no new secret.
 - Sync products.disponibilidade/is_active; MCP category ranks or suggests, never filters term matches.
 - Product images: storage paths in private product-images, signed 1h only at display/send so nothing expires; Flora sends ≤1 image per chat/product/24h (product_image_sends).
+- Lead timeline (lead_timeline) holds short masked summaries only, written by mcp in background on the company-isolated lead; context returned to Flora is built from the chat-identified person only (phone / instagram_user_id / messenger_id), so transcripts and other people's data never leave the Fera.
