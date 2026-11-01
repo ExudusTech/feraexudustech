@@ -1340,6 +1340,8 @@ async function obterPromocaoVigente(_params: Record<string, unknown>): Promise<M
   );
 }
 
+const PRODUCT_GENERIC_WORDS = new Set(["produto", "produtos", "para", "de", "da", "do", "das", "dos", "linha", "e", "com", "o", "a", "os", "as", "um", "uma", "coisa", "coisas", "item", "itens", "algo", "tipo"]);
+const PRODUCT_GENERIC_TERM = /^(produtos?|coisas?|itens?|item|algo|opcoes|algum|alguma)\b/;
 const PRODUCT_SEARCH_FIELDS = ["name", "brand", "category", "fornecedor", "linha_produto", "description"] as const;
 
 function foldProductText(value: unknown): string {
@@ -1459,11 +1461,26 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     const byBrand = products.filter((p) => foldProductText(p.brand) === termFold || foldProductText(p.fornecedor) === termFold);
     if (byBrand.length) return respondFound("marca", pickVaried(rankByCategory(byBrand), 5), false);
   }
-  // 2. Text match
-  let correspondencia: "total" | "parcial" | "nenhuma" = "total";
+  // 2. Name match (only source of "total"): every significant term word in name (+brand/linha), at least one in the name.
+  const sigWords = termFold.split(" ").filter((w) => w.length >= 2 && !PRODUCT_GENERIC_WORDS.has(w));
+  const hasWord = (text: string, w: string) => ` ${text} `.includes(` ${w}`);
+  const genericTerm = PRODUCT_GENERIC_TERM.test(termFold);
+  if (sigWords.length) {
+    const byName = products.filter((p) => {
+      const name = foldProductText(p.name);
+      const full = `${name} ${foldProductText(p.brand)} ${foldProductText(p.linha_produto)}`;
+      return sigWords.every((w) => hasWord(full, w)) && sigWords.some((w) => hasWord(name, w));
+    });
+    if (byName.length) return respondFound("total", rankByCategory(byName).slice(0, 5), !genericTerm);
+  }
+  // 3. Description/category/segment matches are never "total" and never send images.
+  let correspondencia: "parcial" | "nenhuma" = "parcial";
   let found = products;
   if (words.length) {
-    found = products.filter((p) => { const h = haystack(p); return words.every((w) => h.includes(w)); });
+    const wide = sigWords.filter((w) => w.length >= 3);
+    const descMatch = wide.length ? products.filter((p) => { const h = haystack(p); return wide.every((w) => h.includes(w)); }) : [];
+    if (descMatch.length) return respondFound("segmento", pickVaried(rankByCategory(descMatch), 5), false);
+    found = [];
     if (!found.length) {
       // 3. Segment
       if (termFold.length >= 4) {
@@ -1477,7 +1494,6 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     found = [];
   }
   if (!found.length) correspondencia = "nenhuma";
-  if (correspondencia === "total") return respondFound("total", rankByCategory(found).slice(0, 5), true);
   const alternatives = found.length ? found : products.filter(matchesCategory);
   const similares = rankByCategory(alternatives).slice(0, 3).map((p) => fmt(p, new Map()));
   let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
