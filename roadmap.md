@@ -1,5 +1,5 @@
 # Tasks
-- [ ] Flora: product fallback params → same-company lead → successful chat product lookup within 24h; name-only known contact in product/location responses; test and deploy mcp.
+- [x] Flora: product fallback params → same-company lead → successful 24h chat lookup; name-only known contact; 307 tests passed, mcp deployed, four live read-only checks passed (no bookings/messages).
 - [x] Isolate current establishment in Flora booking/handoff, preserve person name; 296 tests passed and mcp deployed without changing existing production records.
 - [x] Corrigir categoria em consultar_produto; 288 testes e 10 consultas reais passaram; mcp publicada, sem envio de mensagens.
 - [x] Harden role saving with checked backups, idempotent additions and safe error messages; 224 app tests and 3 function tests passed, manage-user deployed.
