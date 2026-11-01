@@ -94,35 +94,7 @@ describe("coverage bindings", () => {
 describe("outside-coverage registration", () => {
   const params = { nome: "Teste cobertura", cidade: "São Paulo", estado: "SP", produto_interesse: "Higiene",
     chat_id: "3DF9D839DDCF463A3A350ADF91C40B89-5521999990000" };
-  it("registers the real WhatsApp input shape without ON CONFLICT or notification", async () => {
-    const h = harness();
-    const original = { ...params };
-    const result = await h.route("registrar_fora_cobertura", params);
-    expect(result).toMatchObject({ success: true, data: { registrado: true, lead_id: "inserted", vinculo: "SEM_COBERTURA" } });
-    const write = h.queries.find(q => q.operation === "insert");
-    expect(write.value).toMatchObject({ organization_id: org, contact_name: params.nome, contact_phone: "5521999990000",
-      category: "Higiene", gptmaker_chat_id: params.chat_id, stage: "fechado_perdido", canal_origem: "WHATSAPP", fora_cobertura: true });
-    expect(write.value.description).toContain("São Paulo — SP");
-    expect(h.queries.every(q => q.table === "leads")).toBe(true);
-    expect(params).toEqual(original);
-  });
-  it("updates a recent same-tenant chat lead instead of inserting again", async () => {
-    const h = harness({ existing: "recent" });
-    expect((await h.route("registrar_fora_cobertura", params)).success).toBe(true);
-    expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
-    expect(h.queries[0].filters).toContainEqual(["eq", "gptmaker_chat_id", params.chat_id]);
-    expect(h.queries[0].filters.some((f: any[]) => f[0] === "gte" && f[1] === "created_at")).toBe(true);
-    const write = h.queries.find(q => q.operation === "update");
-    expect(write.filters).toContainEqual(["eq", "id", "recent"]);
-    expect(write.filters).toContainEqual(["eq", "organization_id", org]);
-    expect(h.queries.some(q => q.operation === "insert")).toBe(false);
-  });
-  it("selects legacy interaction only within its tenant", async () => {
-    const h = harness({ existing: "legacy" });
-    await h.route("registrar_fora_cobertura", { cidade: "São Paulo", interaction_id: "legacy-input" });
-    expect(h.queries[0].filters).toContainEqual(["eq", "interaction_id", "legacy-input"]);
-    expect(h.queries[0].filters).toContainEqual(["eq", "organization_id", org]);
-  });
+  // Company/city isolation for outside-coverage leads is covered in mcp-lead-timeline.test.ts.
   it.each([{ readError: true }, { writeError: true }])("reports failures rather than pretending success %j", async options => {
     expect((await harness(options).route("registrar_fora_cobertura", params)).success).toBe(false);
   });

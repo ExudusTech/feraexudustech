@@ -56,7 +56,7 @@ describe("MCP team WhatsApp notifications", () => {
   });
   it("sends a successful booking with the exact endpoint, body and direct schedule link", async () => {
     const h = harness(); const result = await h.route("agendar_visita_tecnica", visit); await h.flush();
-    expect(result.success).toBe(true); expect(h.tasks).toHaveLength(1);
+    expect(result.success).toBe(true); expect(h.tasks).toHaveLength(2); // notification + timeline
     const [url, request] = h.fetchMock.mock.calls[0];
     expect(url).toBe("https://api.gptmaker.ai/v2/channel/channel/start-conversation");
     expect(request.method).toBe("POST"); expect(request.headers.Authorization).toBe("Bearer mock-private-token");
@@ -76,7 +76,7 @@ describe("MCP team WhatsApp notifications", () => {
   it("registers outside coverage without any team notification", async () => {
     const h = harness(); expect((await h.route("registrar_fora_cobertura", { nome: "Contato", cidade: "Cidade fora" })).success).toBe(true); await h.flush();
     expect(h.writes.some(w => w.table === "leads")).toBe(true);
-    expect(h.tasks).toHaveLength(0);
+    expect(h.tasks).toHaveLength(1); // timeline only
     expect(h.fetchMock).not.toHaveBeenCalled();
     expect(h.reads.some(r => r.table === "notification_recipients")).toBe(false);
     expect(h.writes.some(w => w.table === "notification_logs")).toBe(false);
@@ -116,13 +116,15 @@ describe("MCP team WhatsApp notifications", () => {
     expect(msg).toContain("WhatsApp: https://wa.me/5522988887777"); expect(msg).toContain("O que o cliente pediu: Quer preço de papel toalha");
     expect(msg).toContain("Urgência: media"); expect(msg).toContain("/leads?lead=new-lead");
   });
-  it("reuses the chat lead and appends the note without overwriting description", async () => {
+  it("reuses the chat lead, keeps description and records the note in the timeline", async () => {
     const h = harness({ lead: { id: "old-lead", description: "Descrição original", canal_origem: "WHATSAPP" } });
     const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço", resumo: "Quer tabela" });
     expect(r.data.lead_id).toBe("old-lead"); expect(r.data.lead_criado).toBe(false);
     const update = h.writes.find((w: any) => w.table === "leads" && w.operation === "update" && w.value.precisa_humano).value;
     expect(update.precisa_humano).toBe(true);
-    expect(update.description.startsWith("Descrição original\n[")).toBe(true); expect(update.description).toContain("Resumo: Quer tabela");
+    expect(update.description).toBeUndefined(); await h.flush();
+    const item = h.writes.find((w: any) => w.table === "lead_timeline").value;
+    expect(item).toMatchObject({ lead_id: "old-lead", tipo: "transferencia" }); expect(item.resumo).toContain("Quer tabela");
   });
   it("does not notify again within 30 minutes unless urgency is alta", async () => {
     const h = harness({ lead: { id: "old-lead", description: "" }, recent: true });

@@ -156,7 +156,7 @@ describe("consultar_produto lote 5/6", () => {
 });
 describe("transfer dedup column", () => {
   it("filters notification_logs by sent_at (real column), never created_at", () => {
-    const block = source.slice(source.indexOf('from("notification_logs").select("id")'));
+    const block = source.slice(source.indexOf('from("notification_logs").select("id, sent_at")'));
     expect(block.slice(0, 400)).toContain('.gte("sent_at"');
     expect(block.slice(0, 400)).not.toContain('"created_at"');
   });
