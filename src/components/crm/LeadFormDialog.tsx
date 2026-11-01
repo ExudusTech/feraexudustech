@@ -11,6 +11,8 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import LeadTimeline from "@/components/crm/LeadTimeline";
 import { useCreateLead, useUpdateLead, STAGE_CONFIG, PIPELINE_STAGES, type Lead, type LeadStage } from "@/hooks/use-leads";
 import { useConvertLeadToClient } from "@/hooks/use-lead-conversion";
 import { useProducts } from "@/hooks/use-products";
@@ -633,107 +635,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     );
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Editar Lead" : "Novo Lead"}</DialogTitle>
-        </DialogHeader>
-        {isEdit && lead && (
-          <ContactActions
-            phone={(lead as any).contact_phone}
-            whatsapp={(lead as any).pessoa?.whatsapp}
-            mapUrl={(lead as any).maps_url || mapsLink([(lead as any).address, (lead as any).city].filter(Boolean).join(", "))}
-          />
-        )}
-
-        {isEdit && (canConvert || canManageTest) && (
-          <>
-            <div className="flex flex-wrap gap-2">
-              {canManageTest && (
-                <Button type="button" size="sm" variant="secondary" onClick={() => setShowTestForm(!showTestForm)} disabled={isPending}>
-                  <FlaskConical className="h-4 w-4 mr-1" />{testActionLabel}
-                </Button>
-              )}
-              {canConvert && (
-                <Button type="button" size="sm" variant="secondary" onClick={handleConvert} disabled={isPending}>
-                  <UserPlus className="h-4 w-4 mr-1" />Converter em Cliente
-                </Button>
-              )}
-            </div>
-            <Separator />
-          </>
-        )}
-
-        {/* Show lead details summary when in edit mode */}
-        {isEdit && lead && !showTestForm && (
-          <div className="space-y-2 p-3 rounded-lg bg-muted/30 border text-sm">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-              {lead.category && (
-                <div className="sm:col-span-2">
-                  <span className="text-muted-foreground text-xs">Categorias:</span>
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {parseCategories(lead.category).map(cat => (
-                      <Badge key={cat} variant="secondary" className="text-xs">{cat}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {lead.contact_name && (
-                <div><span className="text-muted-foreground text-xs">Contato:</span> <span>{lead.contact_name}</span></div>
-              )}
-              {lead.pessoa && (
-                <div className="sm:col-span-2 space-y-1 rounded-md border p-2">
-                  <div><span className="text-muted-foreground text-xs">Pessoa:</span> <span>{lead.pessoa.nome}</span></div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    {(lead.pessoa.whatsapp || lead.pessoa.telefone) && (
-                      <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{lead.pessoa.whatsapp || lead.pessoa.telefone}</span>
-                    )}
-                    {(lead.pessoa.instagram_handle || lead.pessoa.instagram_user_id) && (
-                      <span className="flex items-center gap-1"><Instagram className="h-3 w-3" />{lead.pessoa.instagram_handle ? `@${lead.pessoa.instagram_handle.replace(/^@/, "")}` : lead.pessoa.instagram_user_id}</span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {lead.contact_phone && (
-                <div><span className="text-muted-foreground text-xs">Telefone:</span> <span>{lead.contact_phone}</span></div>
-              )}
-              {lead.contact_email && (
-                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Email:</span> <span>{lead.contact_email}</span></div>
-              )}
-              {lead.source && (
-                <div><span className="text-muted-foreground text-xs">Origem:</span> <span>{lead.source}</span></div>
-              )}
-              <div><span className="text-muted-foreground text-xs">Estágio:</span> <Badge variant="outline" className="text-xs ml-1">{STAGE_CONFIG[lead.stage].label}</Badge></div>
-              {lead.description && (
-                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Descrição:</span> <p className="text-xs mt-0.5">{lead.description}</p></div>
-              )}
-              <div className="sm:col-span-2">
-                <span className="text-muted-foreground text-xs">Criado em:</span> <span className="text-xs">{new Date(lead.created_at).toLocaleString("pt-BR")}</span>
-              </div>
-            </div>
-            {existingConsultantSchedule && (
-              <div className="mt-2 p-2 rounded border border-primary/20 bg-primary/5">
-                <p className="text-xs font-medium flex items-center gap-1"><FlaskConical className="h-3 w-3" /> Agendamento ativo</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Data: {existingConsultantSchedule.scheduled_date ? new Date(existingConsultantSchedule.scheduled_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
-                  {existingConsultantSchedule.start_time && ` às ${existingConsultantSchedule.start_time}`}
-                  {existingConsultantSchedule.location && ` — ${existingConsultantSchedule.location}`}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {showTestForm && (
-          <div className="space-y-3 p-3 rounded-lg border border-dashed bg-muted/30">
-            <p className="text-sm font-medium">
-              {existingConsultantSchedule ? "Visualizar / Editar Agendamento de Teste" : "Agendar Instalação de Teste (15 dias)"}
-            </p>
-            {renderScheduleForm()}
-          </div>
-        )}
-
+  const leadForm = (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -837,6 +739,119 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
             <Button type="submit" disabled={isPending}>{isPending ? "Salvando..." : "Salvar"}</Button>
           </div>
         </form>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg sm:max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Editar Lead" : "Novo Lead"}</DialogTitle>
+        </DialogHeader>
+        {isEdit && lead && (
+          <ContactActions
+            phone={(lead as any).contact_phone}
+            whatsapp={(lead as any).pessoa?.whatsapp}
+            mapUrl={(lead as any).maps_url || mapsLink([(lead as any).address, (lead as any).city].filter(Boolean).join(", "))}
+          />
+        )}
+
+        {isEdit && (canConvert || canManageTest) && (
+          <>
+            <div className="flex flex-wrap gap-2">
+              {canManageTest && (
+                <Button type="button" size="sm" variant="secondary" onClick={() => setShowTestForm(!showTestForm)} disabled={isPending}>
+                  <FlaskConical className="h-4 w-4 mr-1" />{testActionLabel}
+                </Button>
+              )}
+              {canConvert && (
+                <Button type="button" size="sm" variant="secondary" onClick={handleConvert} disabled={isPending}>
+                  <UserPlus className="h-4 w-4 mr-1" />Converter em Cliente
+                </Button>
+              )}
+            </div>
+            <Separator />
+          </>
+        )}
+
+        {/* Show lead details summary when in edit mode */}
+        {isEdit && lead && !showTestForm && (
+          <div className="space-y-2 p-3 rounded-lg bg-muted/30 border text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+              {lead.category && (
+                <div className="sm:col-span-2">
+                  <span className="text-muted-foreground text-xs">Categorias:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {parseCategories(lead.category).map(cat => (
+                      <Badge key={cat} variant="secondary" className="text-xs">{cat}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {lead.contact_name && (
+                <div><span className="text-muted-foreground text-xs">Contato:</span> <span>{lead.contact_name}</span></div>
+              )}
+              {lead.pessoa && (
+                <div className="sm:col-span-2 space-y-1 rounded-md border p-2">
+                  <div><span className="text-muted-foreground text-xs">Pessoa:</span> <span>{lead.pessoa.nome}</span></div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    {(lead.pessoa.whatsapp || lead.pessoa.telefone) && (
+                      <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3" />{lead.pessoa.whatsapp || lead.pessoa.telefone}</span>
+                    )}
+                    {(lead.pessoa.instagram_handle || lead.pessoa.instagram_user_id) && (
+                      <span className="flex items-center gap-1"><Instagram className="h-3 w-3" />{lead.pessoa.instagram_handle ? `@${lead.pessoa.instagram_handle.replace(/^@/, "")}` : lead.pessoa.instagram_user_id}</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {lead.contact_phone && (
+                <div><span className="text-muted-foreground text-xs">Telefone:</span> <span>{lead.contact_phone}</span></div>
+              )}
+              {lead.contact_email && (
+                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Email:</span> <span>{lead.contact_email}</span></div>
+              )}
+              {lead.source && (
+                <div><span className="text-muted-foreground text-xs">Origem:</span> <span>{lead.source}</span></div>
+              )}
+              <div><span className="text-muted-foreground text-xs">Estágio:</span> <Badge variant="outline" className="text-xs ml-1">{STAGE_CONFIG[lead.stage].label}</Badge></div>
+              {lead.description && (
+                <div className="sm:col-span-2"><span className="text-muted-foreground text-xs">Descrição:</span> <p className="text-xs mt-0.5">{lead.description}</p></div>
+              )}
+              <div className="sm:col-span-2">
+                <span className="text-muted-foreground text-xs">Criado em:</span> <span className="text-xs">{new Date(lead.created_at).toLocaleString("pt-BR")}</span>
+              </div>
+            </div>
+            {existingConsultantSchedule && (
+              <div className="mt-2 p-2 rounded border border-primary/20 bg-primary/5">
+                <p className="text-xs font-medium flex items-center gap-1"><FlaskConical className="h-3 w-3" /> Agendamento ativo</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Data: {existingConsultantSchedule.scheduled_date ? new Date(existingConsultantSchedule.scheduled_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}
+                  {existingConsultantSchedule.start_time && ` às ${existingConsultantSchedule.start_time}`}
+                  {existingConsultantSchedule.location && ` — ${existingConsultantSchedule.location}`}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showTestForm && (
+          <div className="space-y-3 p-3 rounded-lg border border-dashed bg-muted/30">
+            <p className="text-sm font-medium">
+              {existingConsultantSchedule ? "Visualizar / Editar Agendamento de Teste" : "Agendar Instalação de Teste (15 dias)"}
+            </p>
+            {renderScheduleForm()}
+          </div>
+        )}
+
+        {isEdit && lead ? (
+          <Tabs defaultValue="dados">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="dados">Dados</TabsTrigger>
+              <TabsTrigger value="historico">Histórico</TabsTrigger>
+            </TabsList>
+            <TabsContent value="historico"><LeadTimeline leadId={lead.id} /></TabsContent>
+            <TabsContent value="dados">{leadForm}</TabsContent>
+          </Tabs>
+        ) : leadForm}
       </DialogContent>
     </Dialog>
   );
