@@ -2559,8 +2559,7 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
       };
   const write = existingId
     ? supabase.from("leads").update(values).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", existingId)
-    : supabase.from("leads").insert({ ...values, interaction_id: interaction_id ?? String(Date.now()), position: 0,
-        assigned_to: await floraDefaultOwner(supabase) });
+    : supabase.from("leads").insert({ ...values, interaction_id: interaction_id ?? null });
   const { data: lead, error } = await write.select("id").single();
   if (error) {
     return fail(dbFail("registrar", error));
@@ -2807,6 +2806,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["nome", "canal", "interaction_id"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         nome:              { type: "string" },
         telefone:          { type: "string" },
         email:             { type: "string", description: "E-mail opcional; preenche lead e pessoa apenas se vazios" },
@@ -2841,6 +2842,8 @@ const TOOLS_MANIFEST = [
     parameters: {
       type: "object",
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         lead_id:           { type: "string" },
         interaction_id:    { type: "string" },
         nome:              { type: "string" },
@@ -2864,6 +2867,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["tipo", "notas"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         lead_id:        { type: "string" },
         interaction_id: { type: "string" },
         tipo:           { type: "string", enum: ["mensagem", "ligacao", "email", "reuniao", "demo", "outro"] },
@@ -2906,6 +2911,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["nome_contato", "data_visita", "horario", "cidade"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         chat_id: { type: "string", description: "Chat atual do GPT Maker; recupera o estabelecimento selecionado" },
         endereco: { type: "string" }, bairro: { type: "string" },
         maps_url: { type: "string" }, place_id: { type: "string" },
@@ -3009,6 +3016,8 @@ const TOOLS_MANIFEST = [
     parameters: {
       type: "object",
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         telefone: { type: "string" }, email: { type: "string" }, cep: { type: "string" },
         endereco: { type: "string" }, bairro: { type: "string" },
         maps_url: { type: "string" }, place_id: { type: "string" },
@@ -3032,6 +3041,9 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["cidade"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
+        empresa:         { type: "string", description: "Opcional: empresa/estabelecimento atual (isola o lead por empresa)" },
         nome:              { type: "string" },
         telefone:          { type: "string" },
         instagram_handle:  { type: "string" },
