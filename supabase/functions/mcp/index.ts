@@ -2511,40 +2511,62 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
   if (!cidade?.trim()) return fail("Cidade é obrigatória para registrar fora da cobertura");
 
   const supabase = getClient();
-  let existingId: string | undefined;
-  if (interaction_id || chat_id) {
-    let lookup = supabase.from("leads").select("id").eq("organization_id", NITSCLEAN_ORG_ID);
-    if (chat_id) lookup = lookup.eq("gptmaker_chat_id", chat_id)
-      .gte("created_at", new Date(Date.now() - 86400000).toISOString());
-    else lookup = lookup.eq("interaction_id", interaction_id);
-    const { data, error } = await lookup.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const empresa = productSearchText(params.empresa ?? params.empresa_nome);
+  const personResult = await resolvePessoa(supabase, { ...params, nome }, true);
+  if (personResult.error) return fail(personResult.error);
+  const pessoa = personResult.pessoa;
+  // Reuse only a lead of this same company, or (without company) this same outside-coverage city.
+  const companyKey = normalizedEstablishment(empresa);
+  const cityKey = normalizedEstablishment(cidade);
+  const sameTarget = (lead: Record<string, unknown>) => (pessoa ? lead.pessoa_id === pessoa.id : true) && (companyKey
+    ? normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
+    : !normalizedEstablishment(lead.empresa_nome ?? lead.company) && lead.fora_cobertura === true
+      && normalizedEstablishment(lead.city) === cityKey);
+  const candidates: Record<string, unknown>[] = [];
+  const leadSelect = "id, pessoa_id, empresa_nome, company, city, fora_cobertura, stage";
+  if (pessoa) {
+    const { data, error } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("pessoa_id", pessoa.id).order("created_at", { ascending: false }).limit(100);
     if (error) return fail(dbFail("consultar lead", error));
-    existingId = data?.id;
+    candidates.push(...(Array.isArray(data) ? data : []));
   }
+  if (interaction_id) {
+    const { data, error } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("interaction_id", interaction_id).limit(1).maybeSingle();
+    if (error) return fail(dbFail("consultar lead", error));
+    if (data) candidates.push(data);
+  }
+  const existingId = candidates.find(sameTarget)?.id as string | undefined;
   const values = {
         organization_id:  NITSCLEAN_ORG_ID,
-        contact_name:     nome ?? "Contato Anônimo",
-        contact_phone:    telefone          ?? null,
+        contact_name:     currentContactName(nome, pessoa?.nome),
+        contact_phone:    telefone ?? (resolveChannelFromChatId(chat_id)?.canal === "WHATSAPP" ? resolveChannelFromChatId(chat_id)!.identificador : null),
         instagram_handle: instagram_handle  ?? null,
-        title:            `Fora de cobertura — ${cidade}`,
+        title:            `Fora de cobertura — ${empresa ? `${empresa} — ` : ""}${cidade}${estado ? `/${estado}` : ""}`,
         stage:            "fechado_perdido",
         source:           canal?.toLowerCase() ?? "whatsapp",
-        canal_origem:     (canal ?? "WHATSAPP") as string,
-        interaction_id:   interaction_id   ?? null,
+        canal_origem:     (canal ?? resolveChannelFromChatId(chat_id)?.canal ?? "WHATSAPP") as string,
         gptmaker_chat_id:  chat_id ?? null,
+        pessoa_id:        pessoa?.id ?? null,
+        company:          empresa,
+        empresa_nome:     empresa,
+        city:             cidade.trim(),
         fora_cobertura:   true,
         vinculo:          "SEM_COBERTURA",
-        category:         produto_interesse ?? null,
+        category:         productSearchText(produto_interesse),
         description:      `Lead fora da área de cobertura. Cidade: ${cidade}${estado ? ` — ${estado}` : ""}`,
         created_by_flora: true,
       };
   const write = existingId
     ? supabase.from("leads").update(values).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", existingId)
-    : supabase.from("leads").insert(values);
+    : supabase.from("leads").insert({ ...values, interaction_id: interaction_id ?? String(Date.now()), position: 0,
+        assigned_to: await floraDefaultOwner(supabase) });
   const { data: lead, error } = await write.select("id").single();
   if (error) {
     return fail(dbFail("registrar", error));
   }
+  queueTimeline(supabase, { leadId: String(lead?.id ?? ""), pessoaId: pessoa?.id, tipo: "fora_perfil",
+    resumo: `Fora da área — ${empresa ? `${empresa}, ` : ""}${cidade}${estado ? `/${estado}` : ""}`, params });
 
   return ok(
     { registrado: true, cidade, lead_id: lead?.id, vinculo: "SEM_COBERTURA" },
