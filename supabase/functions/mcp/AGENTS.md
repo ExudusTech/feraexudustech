@@ -1,0 +1,12 @@
+# mcp (Flora) rules
+- MCP request auditing is service-role-only and runs as background work so audit failures cannot change client responses.
+- Normalize MCP tool parameters centrally inside the router, leaving the received request untouched so auditing retains original input.
+- Apply trusted chat-channel enrichment centrally after parameter normalization without mutating received requests, so all tools agree while auditing retains original input.
+- Select MCP coverage centrally by exact region, narrowest matching CEP interval, then legacy city lookup so consultation and booking agree without broadening explicit selectors.
+- Keep establishment provider requests server-side, bounded, sequential and cached with graceful fallbacks so Google failures cannot interrupt Flora conversations; persist CEP in the existing lead zip_code column to avoid duplicate address fields.
+- Keep establishment name matching and short-address confirmation local to the lookup tool, and separate biased/unbiased cache entries, so shared parameter normalization and other tools remain unchanged.
+- Product/location contact enrichment selects only tenant phone-matched nome without writing person records.
+- Coverage binding inference stays local to verificar_cobertura_regiao, and outside-coverage registration uses tenant-scoped select plus insert/update without global interaction uniqueness, so other tools and tenants remain unaffected.
+- Human handoff always resolves or creates a tenant-scoped lead, records the note in lead_timeline (description untouched), and alerts per lead at most once per 30 minutes, with high-urgency follow-ups limited to one per 15 minutes, so transfers stay visible without spamming the team.
+- MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
+- Lead timeline (lead_timeline) holds short masked summaries only, written by mcp in background on the company-isolated lead; context returned to Flora is built from the chat-identified person only (phone / instagram_user_id / messenger_id), so transcripts and other people's data never leave the Fera.

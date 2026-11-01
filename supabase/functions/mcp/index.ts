@@ -934,8 +934,131 @@ async function knownContactName(supabase: ReturnType<typeof getClient>, chatId: 
 }
 
 async function withKnownContact(response: McpResponse, chatId: unknown): Promise<McpResponse> {
-  const contato_conhecido = await knownContactName(getClient(), chatId);
-  return { ...response, data: { ...response.data, contato_conhecido } };
+  const supabase = getClient();
+  const contato_conhecido = await knownContactName(supabase, chatId);
+  const contexto_anterior = await previousContext(supabase, chatId);
+  return { ...response, data: { ...response.data, contato_conhecido, contexto_anterior } };
+}
+
+// ─── Lead timeline: short summaries only (never transcripts), background writes ───
+
+type TimelineType = "resumo" | "criar_lead" | "agendamento" | "transferencia" | "fora_perfil" | "encerramento";
+const TIMELINE_DEDUP_MS = 10 * 60 * 1000;
+
+/** Removes contact data and bounds length; placeholders count as absent. */
+function timelineText(value: unknown, max: number): string | null {
+  const text = productSearchText(value);
+  if (!text) return null;
+  const masked = text.replace(/[\r\n\t]+/g, " ")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, "[e-mail]")
+    .replace(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g, "[documento]")
+    .replace(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/g, "[documento]")
+    .replace(/\+?\(?\d[\d\s().-]{8,}\d/g, "[telefone]")
+    .replace(/\s{2,}/g, " ").trim();
+  if (!masked) return null;
+  return masked.length > max ? `${masked.slice(0, max - 1).trimEnd()}…` : masked;
+}
+
+function timelineSummary(generated: string, params: Record<string, unknown>): string {
+  const own = timelineText(params.resumo_conversa, 500);
+  const base = timelineText(generated, 500) ?? "Interação registrada";
+  return own ? timelineText(`${base}. ${own}`, 500)! : base;
+}
+
+async function writeTimeline(supabase: ReturnType<typeof getClient>, entry: {
+  leadId: string; pessoaId?: unknown; tipo: TimelineType; resumo: string; params: Record<string, unknown>; referenciaId?: unknown;
+}): Promise<void> {
+  const resumo = timelineSummary(entry.resumo, entry.params);
+  const since = new Date(Date.now() - TIMELINE_DEDUP_MS).toISOString();
+  const { data: dup } = await supabase.from("lead_timeline").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+    .eq("lead_id", entry.leadId).eq("tipo", entry.tipo).eq("resumo", resumo).gte("created_at", since).limit(1);
+  if (Array.isArray(dup) && dup.length > 0) return;
+  const chatId = productSearchText(entry.params.chat_id);
+  const { error } = await supabase.from("lead_timeline").insert({
+    organization_id: NITSCLEAN_ORG_ID, lead_id: entry.leadId,
+    pessoa_id: typeof entry.pessoaId === "string" && entry.pessoaId ? entry.pessoaId : null,
+    canal: resolveChannelFromChatId(chatId)?.canal ?? (productSearchText(entry.params.canal)?.toUpperCase() ?? null),
+    chat_id: chatId, tipo: entry.tipo, resumo, proximo_passo: timelineText(entry.params.proximo_passo, 200),
+    origem: "flora", referencia_id: typeof entry.referenciaId === "string" ? entry.referenciaId : null,
+  });
+  if (error) dbFail("gravar linha do tempo", error);
+}
+
+/** Timeline failures never change the tool response. */
+function queueTimeline(supabase: ReturnType<typeof getClient>, entry: Parameters<typeof writeTimeline>[1]): void {
+  try {
+    if (!entry.leadId) return;
+    const task = Promise.resolve().then(() => writeTimeline(supabase, entry))
+      .catch(() => { console.error("[lead_timeline] write failed"); });
+    const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (task: Promise<void>) => void } }).EdgeRuntime;
+    runtime?.waitUntil(task);
+  } catch { console.error("[lead_timeline] could not schedule write"); }
+}
+
+/** Person identified only by the trusted chat channel identifier (never name/e-mail). */
+async function chatPessoaId(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<string | null> {
+  const channel = resolveChannelFromChatId(chatId);
+  if (!channel) return null;
+  const fields = channel.canal === "WHATSAPP" ? ["whatsapp", "telefone"]
+    : channel.canal === "INSTAGRAM" ? ["instagram_user_id"] : channel.canal === "MESSENGER" ? ["messenger_id"] : [];
+  const value = channel.canal === "WHATSAPP" ? digits(channel.identificador) : channel.identificador;
+  if (!value) return null;
+  for (const field of fields) {
+    const { data, error } = await supabase.from("pessoas").select("id")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq(field, value).limit(1).maybeSingle();
+    if (error) { dbFail("consultar pessoa do contexto", error); return null; }
+    if (data?.id) return String(data.id);
+  }
+  return null;
+}
+
+const CHANNEL_LABEL: Record<string, string> = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", MESSENGER: "Messenger", WIDGET: "Site", TELEGRAM: "Telegram" };
+
+function formatPreviousContext(items: Array<Record<string, unknown>>, companies: Map<string, string>, max = 400): string | null {
+  const parts: string[] = [];
+  for (const item of items) {
+    const date = new Date(String(item.created_at));
+    const day = Number.isFinite(date.getTime())
+      ? date.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" }) : "";
+    const channel = CHANNEL_LABEL[String(item.canal ?? "")] ?? "";
+    const company = companies.get(String(item.lead_id)) ?? "";
+    const head = [day, channel].filter(Boolean).join(" ");
+    const body = [timelineText(item.resumo, 300), timelineText(item.proximo_passo, 120)].filter(Boolean).join(", próximo passo: ");
+    parts.push(`${head}${company ? ` — ${company}` : ""}: ${body.replace(/[.\s]+$/, "")}.`);
+  }
+  let text = "";
+  for (const part of parts) {
+    const next = text ? `${text} ${part}` : part;
+    if (next.length > max) {
+      if (!text) text = `${part.slice(0, max - 1).trimEnd()}…`;
+      break;
+    }
+    text = next;
+  }
+  return text || null;
+}
+
+async function previousContext(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<string | null> {
+  try {
+    const pessoaId = await chatPessoaId(supabase, chatId);
+    if (!pessoaId) return null;
+    const { data, error } = await supabase.from("lead_timeline").select("lead_id, canal, tipo, resumo, proximo_passo, created_at")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoaId)
+      .gte("created_at", new Date(Date.now() - 90 * 86400000).toISOString())
+      .order("created_at", { ascending: false }).limit(3);
+    if (error) { dbFail("consultar contexto anterior", error); return null; }
+    const items = Array.isArray(data) ? data : [];
+    if (items.length === 0) return null;
+    const ids = [...new Set(items.map((i: any) => String(i.lead_id)))];
+    const { data: leads } = await supabase.from("leads").select("id, empresa_nome, company")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("id", ids);
+    const companies = new Map<string, string>();
+    for (const lead of Array.isArray(leads) ? leads : []) {
+      const name = timelineText(lead.empresa_nome ?? lead.company, 80);
+      if (name) companies.set(String(lead.id), name);
+    }
+    return formatPreviousContext(items, companies);
+  } catch { console.error("[mcp] previous context lookup failed"); return null; }
 }
 
 /** Product fallback runs only after the candidate lead has passed company/person validation. */
@@ -1628,6 +1751,8 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     return normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
       && normalizedEstablishment(lead.city) === cityKey;
   });
+  if (matchingLead && productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(matchingLead.id),
+    pessoaId: personResult.pessoa.id, tipo: "resumo", resumo: `Conversa — ${empresaFinal ?? nome}`, params });
   if (matchingLead) return ok(
     { lead: matchingLead, criado: false, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
     `Lead já existe para ${empresaFinal}`,
@@ -1673,6 +1798,9 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   }
 
   await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
+  queueTimeline(supabase, { leadId: String(lead?.id ?? ""), pessoaId: personResult.pessoa.id, tipo: "criar_lead",
+    resumo: `Novo lead — ${empresaFinal ?? nome}${productSearchText(produto_interesse) ? `: ${produto_interesse}` : ""}`,
+    params: { ...params, canal: canalFinal } });
 
   return ok(
     { lead, criado: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
@@ -1682,7 +1810,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 }
 
 async function atualizarLead(params: Record<string, unknown>): Promise<McpResponse> {
-  const { lead_id, interaction_id, ...updates } = params as {
+  const { lead_id, interaction_id, resumo_conversa: _resumo, proximo_passo: _proximo, ...updates } = params as {
     lead_id?: string;
     interaction_id?: string;
     [key: string]: unknown;
@@ -1729,10 +1857,14 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
     .update(updatePayload)
     .eq("id", leadId)
     .eq("organization_id", NITSCLEAN_ORG_ID)
-    .select("id, contact_name, stage")
+    .select("id, contact_name, stage, pessoa_id")
     .single();
 
   if (error) return fail(dbFail("atualizar lead", error));
+  const changed = Object.keys(updates).filter((key) => key in allowedFields && key !== "telefone" && key !== "email");
+  if (changed.length > 0 || productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(lead!.id),
+    pessoaId: lead!.pessoa_id, tipo: "resumo",
+    resumo: changed.length > 0 ? `Lead atualizado: ${changed.map((key) => key.replace(/_/g, " ")).join(", ")}` : "Conversa", params });
 
   return ok({ lead }, `Lead atualizado: ${lead!.contact_name}`, "Continue o atendimento ou agende uma visita técnica");
 }
@@ -1769,6 +1901,12 @@ async function registrarInteracao(params: Record<string, unknown>): Promise<McpR
     payload:         { tipo, notas },
     response:        { registrado: true },
   });
+  const tipoText = productSearchText(tipo) ?? "interação";
+  const { data: interactionLead } = await supabase.from("leads").select("pessoa_id")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
+  queueTimeline(supabase, { leadId, pessoaId: interactionLead?.pessoa_id,
+    tipo: /encerr|finaliz/i.test(tipoText) ? "encerramento" : "resumo",
+    resumo: [tipoText.charAt(0).toUpperCase() + tipoText.slice(1), productSearchText(notas)].filter(Boolean).join(": "), params });
 
   return ok(
     { registrado: true, lead_id: leadId },
@@ -2033,6 +2171,9 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
 
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  queueTimeline(supabase, { leadId: String(leadId ?? ""), pessoaId: bookingLead?.pessoa_id, tipo: "agendamento",
+    referenciaId: schedule?.id, params,
+    resumo: `Visita comercial ${String(data_visita).slice(8, 10)}/${String(data_visita).slice(5, 7)} ${String(horario).slice(0, 5)}${product ? `, ${product}` : ""}` });
   queueTeamNotification(supabase, "agendamento_comercial", { ...params, produto_interesse: product,
     endereco: bookingLead?.endereco, bairro: bookingLead?.bairro, cidade: bookingLead?.city || cidade,
     maps_url: bookingLead?.maps_url }, leadId, schedule?.id);
@@ -2264,6 +2405,7 @@ async function adicionarTag(params: Record<string, unknown>): Promise<McpRespons
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TRANSFER_DEDUP_MS = 30 * 60 * 1000;
+const CHASE_COOLDOWN_MS = 15 * 60 * 1000;
 
 function transferNote(now: Date, motivo: string | null, urgencia: string, resumo: string | null): string {
   const stamp = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit",
@@ -2308,23 +2450,30 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   params = current.params;
   const leadId = String(lead.id);
 
-  const note = transferNote(new Date(), fields.motivo, urgencia, fields.resumo);
-  const previous = typeof lead.description === "string" && lead.description.trim() ? lead.description : "";
+  // Transfer notes now go to the lead timeline; existing description text is left untouched.
   await supabase.from("leads").update({
     precisa_humano: true,
-    description: previous ? `${previous}\n${note}` : note,
     updated_at: new Date().toISOString(),
   }).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
 
   const event: TeamEvent = fields.motivo && /MATRIZ/i.test(fields.motivo) ? "lead_matriz" : "transferencia";
-  let recent = false;
+  let recent = false, cooling = false;
   try {
-    const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+    const now = Date.now();
+    const { data } = await supabase.from("notification_logs").select("id, sent_at").eq("organization_id", NITSCLEAN_ORG_ID)
       .in("event_type", ["transferencia", "lead_matriz"]).contains("payload", { lead_id: leadId })
-      .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
-    recent = (data ?? []).length > 0;
+      .gte("sent_at", new Date(now - TRANSFER_DEDUP_MS).toISOString()).order("sent_at", { ascending: false }).limit(1);
+    const last = (data ?? [])[0];
+    recent = Boolean(last);
+    cooling = Boolean(last) && new Date(String(last.sent_at)).getTime() > now - CHASE_COOLDOWN_MS;
   } catch { console.error("[solicitar_atendimento_humano] dedup lookup failed"); }
-  const notificado = !recent || urgencia === "alta";
+  // A follow-up ("cobrando retorno") alerts at most once per CHASE_COOLDOWN_MS per lead.
+  const notificado = !recent || (urgencia === "alta" && !cooling);
+  const transferSummary = recent
+    ? `Cliente cobrou novamente (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`
+    : `Transferido p/ equipe (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`;
+  queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+    resumo: [transferSummary, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
 
   const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
     : (!channel && lead.canal_origem === "WHATSAPP" ? digits(lead.contact_phone) : null);
@@ -2362,40 +2511,61 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
   if (!cidade?.trim()) return fail("Cidade é obrigatória para registrar fora da cobertura");
 
   const supabase = getClient();
-  let existingId: string | undefined;
-  if (interaction_id || chat_id) {
-    let lookup = supabase.from("leads").select("id").eq("organization_id", NITSCLEAN_ORG_ID);
-    if (chat_id) lookup = lookup.eq("gptmaker_chat_id", chat_id)
-      .gte("created_at", new Date(Date.now() - 86400000).toISOString());
-    else lookup = lookup.eq("interaction_id", interaction_id);
-    const { data, error } = await lookup.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const empresa = productSearchText(params.empresa ?? params.empresa_nome);
+  const personResult = await resolvePessoa(supabase, { ...params, nome }, true);
+  if (personResult.error) return fail(personResult.error);
+  const pessoa = personResult.pessoa;
+  // Reuse only a lead of this same company, or (without company) this same outside-coverage city.
+  const companyKey = normalizedEstablishment(empresa);
+  const cityKey = normalizedEstablishment(cidade);
+  const sameTarget = (lead: Record<string, unknown>) => (pessoa ? lead.pessoa_id === pessoa.id : true) && (companyKey
+    ? normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
+    : !normalizedEstablishment(lead.empresa_nome ?? lead.company) && lead.fora_cobertura === true
+      && normalizedEstablishment(lead.city) === cityKey);
+  const candidates: Record<string, unknown>[] = [];
+  const leadSelect = "id, pessoa_id, empresa_nome, company, city, fora_cobertura, stage";
+  if (pessoa) {
+    const { data, error } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("pessoa_id", pessoa.id).order("created_at", { ascending: false }).limit(100);
     if (error) return fail(dbFail("consultar lead", error));
-    existingId = data?.id;
+    candidates.push(...(Array.isArray(data) ? data : []));
   }
+  if (interaction_id) {
+    const { data, error } = await supabase.from("leads").select(leadSelect).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("interaction_id", interaction_id).limit(1).maybeSingle();
+    if (error) return fail(dbFail("consultar lead", error));
+    if (data) candidates.push(data);
+  }
+  const existingId = candidates.find(sameTarget)?.id as string | undefined;
   const values = {
         organization_id:  NITSCLEAN_ORG_ID,
-        contact_name:     nome ?? "Contato Anônimo",
-        contact_phone:    telefone          ?? null,
+        contact_name:     currentContactName(nome, pessoa?.nome),
+        contact_phone:    telefone ?? (resolveChannelFromChatId(chat_id)?.canal === "WHATSAPP" ? resolveChannelFromChatId(chat_id)!.identificador : null),
         instagram_handle: instagram_handle  ?? null,
-        title:            `Fora de cobertura — ${cidade}`,
+        title:            `Fora de cobertura — ${empresa ? `${empresa} — ` : ""}${cidade}${estado ? `/${estado}` : ""}`,
         stage:            "fechado_perdido",
         source:           canal?.toLowerCase() ?? "whatsapp",
-        canal_origem:     (canal ?? "WHATSAPP") as string,
-        interaction_id:   interaction_id   ?? null,
+        canal_origem:     (canal ?? resolveChannelFromChatId(chat_id)?.canal ?? "WHATSAPP") as string,
         gptmaker_chat_id:  chat_id ?? null,
+        pessoa_id:        pessoa?.id ?? null,
+        company:          empresa,
+        empresa_nome:     empresa,
+        city:             cidade.trim(),
         fora_cobertura:   true,
         vinculo:          "SEM_COBERTURA",
-        category:         produto_interesse ?? null,
+        category:         productSearchText(produto_interesse),
         description:      `Lead fora da área de cobertura. Cidade: ${cidade}${estado ? ` — ${estado}` : ""}`,
         created_by_flora: true,
       };
   const write = existingId
     ? supabase.from("leads").update(values).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", existingId)
-    : supabase.from("leads").insert(values);
+    : supabase.from("leads").insert({ ...values, interaction_id: interaction_id ?? null });
   const { data: lead, error } = await write.select("id").single();
   if (error) {
     return fail(dbFail("registrar", error));
   }
+  queueTimeline(supabase, { leadId: String(lead?.id ?? ""), pessoaId: pessoa?.id, tipo: "fora_perfil",
+    resumo: `Fora da área — ${empresa ? `${empresa}, ` : ""}${cidade}${estado ? `/${estado}` : ""}`, params });
 
   return ok(
     { registrado: true, cidade, lead_id: lead?.id, vinculo: "SEM_COBERTURA" },
@@ -2636,6 +2806,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["nome", "canal", "interaction_id"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         nome:              { type: "string" },
         telefone:          { type: "string" },
         email:             { type: "string", description: "E-mail opcional; preenche lead e pessoa apenas se vazios" },
@@ -2670,6 +2842,8 @@ const TOOLS_MANIFEST = [
     parameters: {
       type: "object",
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         lead_id:           { type: "string" },
         interaction_id:    { type: "string" },
         nome:              { type: "string" },
@@ -2693,6 +2867,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["tipo", "notas"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         lead_id:        { type: "string" },
         interaction_id: { type: "string" },
         tipo:           { type: "string", enum: ["mensagem", "ligacao", "email", "reuniao", "demo", "outro"] },
@@ -2735,6 +2911,8 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["nome_contato", "data_visita", "horario", "cidade"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         chat_id: { type: "string", description: "Chat atual do GPT Maker; recupera o estabelecimento selecionado" },
         endereco: { type: "string" }, bairro: { type: "string" },
         maps_url: { type: "string" }, place_id: { type: "string" },
@@ -2838,6 +3016,8 @@ const TOOLS_MANIFEST = [
     parameters: {
       type: "object",
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
         telefone: { type: "string" }, email: { type: "string" }, cep: { type: "string" },
         endereco: { type: "string" }, bairro: { type: "string" },
         maps_url: { type: "string" }, place_id: { type: "string" },
@@ -2861,6 +3041,9 @@ const TOOLS_MANIFEST = [
       type: "object",
       required: ["cidade"],
       properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
+        empresa:         { type: "string", description: "Opcional: empresa/estabelecimento atual (isola o lead por empresa)" },
         nome:              { type: "string" },
         telefone:          { type: "string" },
         instagram_handle:  { type: "string" },
@@ -2920,7 +3103,11 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   switch (method) {
     // Block 1
     case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
-    case "buscar_contato":               return buscarContato(params);
+    case "buscar_contato": {
+      const found = await buscarContato(params);
+      if (!found.success || !params.chat_id) return found;
+      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id) } };
+    }
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
     case "obter_promocao_vigente":       return obterPromocaoVigente(params);

@@ -4154,6 +4154,73 @@ export type Database = {
           },
         ]
       }
+      lead_timeline: {
+        Row: {
+          canal: string | null
+          chat_id: string | null
+          created_at: string
+          id: string
+          lead_id: string
+          organization_id: string
+          origem: string
+          pessoa_id: string | null
+          proximo_passo: string | null
+          referencia_id: string | null
+          resumo: string
+          tipo: string
+        }
+        Insert: {
+          canal?: string | null
+          chat_id?: string | null
+          created_at?: string
+          id?: string
+          lead_id: string
+          organization_id: string
+          origem?: string
+          pessoa_id?: string | null
+          proximo_passo?: string | null
+          referencia_id?: string | null
+          resumo: string
+          tipo: string
+        }
+        Update: {
+          canal?: string | null
+          chat_id?: string | null
+          created_at?: string
+          id?: string
+          lead_id?: string
+          organization_id?: string
+          origem?: string
+          pessoa_id?: string | null
+          proximo_passo?: string | null
+          referencia_id?: string | null
+          resumo?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_timeline_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_timeline_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_timeline_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           assigned_to: string | null

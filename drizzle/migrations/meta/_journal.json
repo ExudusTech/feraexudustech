@@ -127,6 +127,13 @@
       "when": 1793400930033,
       "tag": "0017_product_disponibilidade_and_images",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793549895709,
+      "tag": "0018_lead_timeline",
+      "breakpoints": true
     }
   ]
 }
