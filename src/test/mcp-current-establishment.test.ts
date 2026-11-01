@@ -87,6 +87,16 @@ describe("Current establishment integrity", () => {
     expect(h.writes.find(w => w.table === "schedules").value.notes).toContain("Contato: Paulo Henrique");
     expect(JSON.parse(h.fetch.mock.calls[0]?.[1]?.body ?? "{}").message).toContain("Paulo Henrique");
   });
+  it("keeps a real single name like Carla instead of the registered person name", async () => {
+    const h = harness(); await h.route("solicitar_atendimento_humano", { ...visit, nome_contato: "Carla", motivo: "Pedido de preço" });
+    const message = h.writes.find(w => w.table === "notification_logs").value.payload.message;
+    expect(message).toContain("Carla"); expect(message).not.toContain("Paulo Henrique");
+    expect(h.writes.find(w => w.table === "leads" && w.operation === "insert").value.contact_name).toBe("Carla");
+    const visit2 = harness(); const r2 = await visit2.route("agendar_visita_tecnica", { ...visit, nome_contato: "Carla" });
+    expect(r2.success).toBe(true);
+    expect(visit2.writes.find(w => w.table === "schedules").value.notes).toContain("Contato: Carla");
+    expect(JSON.parse(visit2.fetch.mock.calls[0]?.[1]?.body ?? "{}").message).toContain("Carla");
+  });
   it("handoff with stale A ID resolves B and keeps transfer event", async () => {
     const h = harness(); const r = await h.route("solicitar_atendimento_humano", { ...visit, motivo: "Pedido de preço" });
     expect(r.data.lead_id).toBe("B"); expect(r.data.lead_criado).toBe(true);

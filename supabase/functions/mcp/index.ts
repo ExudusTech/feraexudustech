@@ -906,8 +906,13 @@ async function currentEstablishment(supabase: ReturnType<typeof getClient>, para
 function currentContactName(supplied: unknown, stored: unknown): string {
   const name = productSearchText(supplied);
   const full = productSearchText(stored);
-  if (full && full !== "Contato" && (!name || name.length <= 3 || name.split(/\s+/).length === 1)) return full;
-  return name ?? full ?? "Contato";
+  // A real supplied name (even a single first name) is kept; only missing values,
+  // generic placeholders or short nicknames/initials (≤ 3 chars, e.g. "PH")
+  // fall back to the stored name.
+  const generic = name ? name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : null;
+  const realName = generic && !["contato", "cliente"].includes(generic) ? name : null;
+  if (full && full !== "Contato" && (!realName || realName.length <= 3)) return full;
+  return realName ?? full ?? "Contato";
 }
 
 /** Read-only name disclosure, scoped to the trusted WhatsApp phone and tenant. */
