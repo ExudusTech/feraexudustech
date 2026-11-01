@@ -1,7 +1,7 @@
 # Architecture rules
 - MCP request auditing is service-role-only and runs as background work so audit failures cannot change client responses.
 - Normalize MCP tool parameters centrally inside the router, leaving the received request untouched so auditing retains original input.
-- Resolve visit products with tenant-scoped lead reads and validate technical visit windows before operational writes so rejected bookings have no side effects.
+- Validate visit windows before writes; rejected bookings have no operational side effects.
 - Apply trusted chat-channel enrichment centrally after parameter normalization without mutating received requests, so all tools agree while auditing retains original input.
 - Resolve chat participants as tenant-scoped people and reuse only an open lead for the same person and establishment, so one person can represent multiple companies without cross-linking opportunities.
 - Load shared and tenant holidays through one calendar helper before visit writes, and filter route candidates within the bounded lookahead so municipal exclusions stay city-specific; shared calendar edits require super-admin authority to prevent cross-tenant changes.
@@ -12,7 +12,8 @@
 - Team notifications use organization/event subscriptions and guarded EdgeRuntime background delivery; notification failures never change MCP responses, and provider response bodies are never logged.
 - Notification links open only records returned under existing access policies, carry a validated same-origin destination through login and organization selection, and wait for profile hydration and successful organization switching; this prevents lost destinations and stale-tenant reads.
 - Schedules persist their origin and inherit the selected coverage area's optional tenant-validated consultant at creation; manager-wide Agenda views remain explicitly scoped to the selected organization so unassigned Flora visits are visible without cross-tenant leakage.
-- Flora booking/handoff validate leads against current company/person, enrich from the latest chat lookup candidate matched by company/city, and notify from current snapshots, never stale lead fields.
+- Flora booking/handoff validate company/person first; product priority: params → same-company lead → successful 24h chat lookup; location stays company-matched.
+- Product/location contact enrichment selects only tenant phone-matched nome without writing person records.
 - Coverage binding inference stays local to verificar_cobertura_regiao, and outside-coverage registration uses tenant-scoped select plus insert/update without global interaction uniqueness, so other tools and tenants remain unaffected.
 - Human handoff always resolves or creates a tenant-scoped lead, appends notes instead of overwriting, and deduplicates team alerts per lead over 30 minutes (except high urgency) so every transfer is visible without spamming the team.
 - Users are created only server-side (create-user sets organization and role); the signup trigger grants just 'visitante' and never reads user metadata, so self-signup cannot join a tenant or escalate.
