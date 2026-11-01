@@ -1341,7 +1341,8 @@ async function obterPromocaoVigente(_params: Record<string, unknown>): Promise<M
 }
 
 const PRODUCT_GENERIC_WORDS = new Set(["produto", "produtos", "para", "de", "da", "do", "das", "dos", "linha", "e", "com", "o", "a", "os", "as", "um", "uma", "coisa", "coisas", "item", "itens", "algo", "tipo"]);
-const PRODUCT_GENERIC_TERM = /^(produtos?|coisas?|itens?|item|algo|opcoes|algum|alguma)\b/;
+// Generic need/segment phrasing ("produtos para hotel", "limpeza de cozinha", "coisas para banheiro") never counts as a named product.
+const PRODUCT_GENERIC_TERM = /^(produtos?|coisas?|itens?|item|algo|opcoes|algum|alguma|material|materiais)\b|^limpeza (de|da|do|para)\b|\bpara (o |a |os |as )?(hotel|hoteis|hotelaria|cozinhas?|banheiros?|restaurantes?|lavanderias?|hospita\w*|clinicas?|escritorios?|pisos?|limpeza)\b/;
 const PRODUCT_SEARCH_FIELDS = ["name", "brand", "category", "fornecedor", "linha_produto", "description"] as const;
 
 function foldProductText(value: unknown): string {
@@ -1465,13 +1466,13 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   const sigWords = termFold.split(" ").filter((w) => w.length >= 2 && !PRODUCT_GENERIC_WORDS.has(w));
   const hasWord = (text: string, w: string) => ` ${text} `.includes(` ${w}`);
   const genericTerm = PRODUCT_GENERIC_TERM.test(termFold);
-  if (sigWords.length) {
+  if (sigWords.length && !genericTerm) {
     const byName = products.filter((p) => {
       const name = foldProductText(p.name);
       const full = `${name} ${foldProductText(p.brand)} ${foldProductText(p.linha_produto)}`;
       return sigWords.every((w) => hasWord(full, w)) && sigWords.some((w) => hasWord(name, w));
     });
-    if (byName.length) return respondFound("total", rankByCategory(byName).slice(0, 5), !genericTerm);
+    if (byName.length) return respondFound("total", rankByCategory(byName).slice(0, 5), true);
   }
   // 3. Description/category/segment matches are never "total" and never send images.
   let correspondencia: "parcial" | "nenhuma" = "parcial";

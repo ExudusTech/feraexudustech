@@ -16,6 +16,7 @@ const catalog = [
   { id: "sc", name: "SOFT CARE DES-E", brand: "DIVERSEY", category: "Higiene das mãos", fornecedor: "DIVERSEY", unit: "GL", description: "Sabonete", image_url: "org/NC-DIV-050.jpg" },
   { id: "ox", name: "OXIVIR TB PRONTO USO", brand: "DIVERSEY", category: "Desinfecção", fornecedor: "DIVERSEY", unit: "UN", description: "Desinfetante hospitalar", image_url: "org/NC-DIV-060.jpg" },
   { id: "sm", name: "Dispenser Smart Autocorte", brand: "Nits", category: "Dispensers", fornecedor: null, unit: "UN", description: "Dispenser de papel", image_url: "org/NC-NIT-001.jpg" },
+  { id: "gh", name: "GUARD GRAND HOTEL CQT 90X50FLS", brand: "Guard", category: "Papel", fornecedor: null, unit: "CX", description: "Papel", image_url: "org/NC-GH-1.jpg" },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -170,6 +171,11 @@ describe("consultar_produto: total só pelo nome", () => {
   it.each([["Suma Grill D9", "d9"], ["Soft Care Des-E", "sc"], ["Oxivir TB pronto uso", "ox"], ["dispenser Smart Autocorte", "sm"]])("%s → total com 1 produto", async (termo, id) => {
     const r = await harness().route("consultar_produto", { termo });
     expect(r.data.correspondencia).toBe("total"); expect(r.data.produtos.map((p: any) => p.id)).toEqual([id]);
+  });
+  it.each(["limpeza de cozinha", "coisas para banheiro"])("%s → nunca total nem imagem", async (termo) => {
+    const h = harness();
+    const r = await h.route("consultar_produto", { termo, chat_id: "whatsapp-1" });
+    expect(r.data.correspondencia).not.toBe("total"); expect(h.fetchMock).not.toHaveBeenCalled();
   });
   it("Diversey → marca, sem imagem", async () => {
     const h = harness();
