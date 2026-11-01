@@ -910,6 +910,55 @@ function currentContactName(supplied: unknown, stored: unknown): string {
   return name ?? full ?? "Contato";
 }
 
+/** Read-only name disclosure, scoped to the trusted WhatsApp phone and tenant. */
+async function knownContactName(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<{ nome: string } | null> {
+  const channel = resolveChannelFromChatId(chatId);
+  if (channel?.canal !== "WHATSAPP") return null;
+  const phone = digits(channel.identificador);
+  if (!phone) return null;
+  try {
+    for (const field of ["whatsapp", "telefone"]) {
+      const { data, error } = await supabase.from("pessoas").select("nome")
+        .eq("organization_id", NITSCLEAN_ORG_ID).eq(field, phone).limit(1).maybeSingle();
+      if (error) { dbFail("consultar nome do contato", error); return null; }
+      const nome = productSearchText(data?.nome);
+      if (nome) return { nome };
+    }
+  } catch { console.error("[mcp] known contact lookup failed"); }
+  return null;
+}
+
+async function withKnownContact(response: McpResponse, chatId: unknown): Promise<McpResponse> {
+  const contato_conhecido = await knownContactName(getClient(), chatId);
+  return { ...response, data: { ...response.data, contato_conhecido } };
+}
+
+/** Product fallback runs only after the candidate lead has passed company/person validation. */
+async function currentConversationProduct(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, lead: any): Promise<string | null> {
+  const supplied = productSearchText(params.produto_interesse);
+  if (supplied) return supplied;
+  const company = normalizedEstablishment(params.empresa ?? params.empresa_nome);
+  const sameCompany = company && company === normalizedEstablishment(lead?.empresa_nome ?? lead?.company);
+  const stored = sameCompany ? productSearchText(lead?.category) : null;
+  if (stored) return stored;
+  const chatId = productSearchText(params.chat_id);
+  if (!chatId) return null;
+  try {
+    const now = new Date();
+    const { data, error } = await supabase.from("mcp_request_log").select("response")
+      .eq("method", "consultar_produto").eq("success", true).contains("params", { chat_id: chatId })
+      .contains("response", { result: { data: { encontrado: true } } })
+      .gte("created_at", new Date(now.getTime() - 86400000).toISOString()).lte("created_at", now.toISOString())
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) { dbFail("consultar produto recente", error); return null; }
+    const result = data?.response?.result?.data;
+    if (result?.encontrado !== true) return null;
+    const products = result.produtos;
+    return Array.isArray(products) && products.length === 1
+      ? productSearchText(products[0]?.nome) : productSearchText(result.produto_citado);
+  } catch { console.error("[mcp] recent product lookup failed"); return null; }
+}
+
 /** Candidate IDs never override the current establishment identity. */
 async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, candidate: any) {
   const company = productSearchText(params.empresa ?? params.empresa_nome);
@@ -942,6 +991,8 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     lead = (Array.isArray(data) ? data : []).find(matches) ?? null;
   }
   let created = false;
+  const product = await currentConversationProduct(supabase, params, lead);
+  params = { ...params, produto_interesse: product };
   if (!lead) {
     if (!pessoa) {
       const resolved = await resolvePessoa(supabase, { ...params, nome: name,
@@ -978,7 +1029,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     const { error } = await supabase.from("leads").update(updates).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id);
     if (error) throw new Error(dbFail("atualizar lead atual", error));
   }
-  // Snapshot from current params, not the persisted lead. Missing current product/address stays neutral.
+  // Address remains current-only; product includes the validated same-company/chat fallback.
   const snapshot = { id: lead.id, client_id: lead.client_id, pessoa_id: pessoa?.id ?? lead.pessoa_id,
     empresa_nome: company, company, city: params.cidade ?? null,
     endereco: params.endereco ?? null, bairro: params.bairro ?? null, zip_code: validCep(params.cep),
@@ -2845,12 +2896,12 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   params = applyChatChannel(method, params);
   switch (method) {
     // Block 1
-    case "localizar_estabelecimento":    return localizarEstabelecimento(params);
+    case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
     case "buscar_contato":               return buscarContato(params);
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
     case "obter_promocao_vigente":       return obterPromocaoVigente(params);
-    case "consultar_produto":            return consultarProduto(params);
+    case "consultar_produto":            return withKnownContact(await consultarProduto(params), params.chat_id);
     // Block 2
     case "criar_lead":                   return criarLead(params);
     case "atualizar_lead":               return atualizarLead(params);
