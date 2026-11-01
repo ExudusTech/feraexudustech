@@ -1751,6 +1751,8 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     return normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
       && normalizedEstablishment(lead.city) === cityKey;
   });
+  if (matchingLead && productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(matchingLead.id),
+    pessoaId: personResult.pessoa.id, tipo: "resumo", resumo: `Conversa — ${empresaFinal ?? nome}`, params });
   if (matchingLead) return ok(
     { lead: matchingLead, criado: false, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
     `Lead já existe para ${empresaFinal}`,
@@ -1796,6 +1798,9 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   }
 
   await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
+  queueTimeline(supabase, { leadId: String(lead?.id ?? ""), pessoaId: personResult.pessoa.id, tipo: "criar_lead",
+    resumo: `Novo lead — ${empresaFinal ?? nome}${productSearchText(produto_interesse) ? `: ${produto_interesse}` : ""}`,
+    params: { ...params, canal: canalFinal } });
 
   return ok(
     { lead, criado: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
@@ -1805,7 +1810,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 }
 
 async function atualizarLead(params: Record<string, unknown>): Promise<McpResponse> {
-  const { lead_id, interaction_id, ...updates } = params as {
+  const { lead_id, interaction_id, resumo_conversa: _resumo, proximo_passo: _proximo, ...updates } = params as {
     lead_id?: string;
     interaction_id?: string;
     [key: string]: unknown;
@@ -1852,10 +1857,14 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
     .update(updatePayload)
     .eq("id", leadId)
     .eq("organization_id", NITSCLEAN_ORG_ID)
-    .select("id, contact_name, stage")
+    .select("id, contact_name, stage, pessoa_id")
     .single();
 
   if (error) return fail(dbFail("atualizar lead", error));
+  const changed = Object.keys(updates).filter((key) => key in allowedFields && key !== "telefone" && key !== "email");
+  if (changed.length > 0 || productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(lead!.id),
+    pessoaId: lead!.pessoa_id, tipo: "resumo",
+    resumo: changed.length > 0 ? `Lead atualizado: ${changed.map((key) => key.replace(/_/g, " ")).join(", ")}` : "Conversa", params });
 
   return ok({ lead }, `Lead atualizado: ${lead!.contact_name}`, "Continue o atendimento ou agende uma visita técnica");
 }
@@ -1892,6 +1901,12 @@ async function registrarInteracao(params: Record<string, unknown>): Promise<McpR
     payload:         { tipo, notas },
     response:        { registrado: true },
   });
+  const tipoText = productSearchText(tipo) ?? "interação";
+  const { data: interactionLead } = await supabase.from("leads").select("pessoa_id")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
+  queueTimeline(supabase, { leadId, pessoaId: interactionLead?.pessoa_id,
+    tipo: /encerr|finaliz/i.test(tipoText) ? "encerramento" : "resumo",
+    resumo: [tipoText.charAt(0).toUpperCase() + tipoText.slice(1), productSearchText(notas)].filter(Boolean).join(": "), params });
 
   return ok(
     { registrado: true, lead_id: leadId },
@@ -2156,6 +2171,9 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   await logInteraction(supabase, "agendar_visita_tecnica", params, ok(schedule), leadId, undefined, interaction_id);
 
   const dataFmt = visitDate.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" });
+  queueTimeline(supabase, { leadId: String(leadId ?? ""), pessoaId: bookingLead?.pessoa_id, tipo: "agendamento",
+    referenciaId: schedule?.id, params,
+    resumo: `Visita comercial ${String(data_visita).slice(8, 10)}/${String(data_visita).slice(5, 7)} ${String(horario).slice(0, 5)}${product ? `, ${product}` : ""}` });
   queueTeamNotification(supabase, "agendamento_comercial", { ...params, produto_interesse: product,
     endereco: bookingLead?.endereco, bairro: bookingLead?.bairro, cidade: bookingLead?.city || cidade,
     maps_url: bookingLead?.maps_url }, leadId, schedule?.id);
@@ -2387,6 +2405,7 @@ async function adicionarTag(params: Record<string, unknown>): Promise<McpRespons
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TRANSFER_DEDUP_MS = 30 * 60 * 1000;
+const CHASE_COOLDOWN_MS = 15 * 60 * 1000;
 
 function transferNote(now: Date, motivo: string | null, urgencia: string, resumo: string | null): string {
   const stamp = now.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit",
@@ -2431,23 +2450,30 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   params = current.params;
   const leadId = String(lead.id);
 
-  const note = transferNote(new Date(), fields.motivo, urgencia, fields.resumo);
-  const previous = typeof lead.description === "string" && lead.description.trim() ? lead.description : "";
+  // Transfer notes now go to the lead timeline; existing description text is left untouched.
   await supabase.from("leads").update({
     precisa_humano: true,
-    description: previous ? `${previous}\n${note}` : note,
     updated_at: new Date().toISOString(),
   }).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
 
   const event: TeamEvent = fields.motivo && /MATRIZ/i.test(fields.motivo) ? "lead_matriz" : "transferencia";
-  let recent = false;
+  let recent = false, cooling = false;
   try {
-    const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+    const now = Date.now();
+    const { data } = await supabase.from("notification_logs").select("id, sent_at").eq("organization_id", NITSCLEAN_ORG_ID)
       .in("event_type", ["transferencia", "lead_matriz"]).contains("payload", { lead_id: leadId })
-      .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
-    recent = (data ?? []).length > 0;
+      .gte("sent_at", new Date(now - TRANSFER_DEDUP_MS).toISOString()).order("sent_at", { ascending: false }).limit(1);
+    const last = (data ?? [])[0];
+    recent = Boolean(last);
+    cooling = Boolean(last) && new Date(String(last.sent_at)).getTime() > now - CHASE_COOLDOWN_MS;
   } catch { console.error("[solicitar_atendimento_humano] dedup lookup failed"); }
-  const notificado = !recent || urgencia === "alta";
+  // A follow-up ("cobrando retorno") alerts at most once per CHASE_COOLDOWN_MS per lead.
+  const notificado = !recent || (urgencia === "alta" && !cooling);
+  const transferSummary = recent
+    ? `Cliente cobrou novamente (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`
+    : `Transferido p/ equipe (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`;
+  queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+    resumo: [transferSummary, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
 
   const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
     : (!channel && lead.canal_origem === "WHATSAPP" ? digits(lead.contact_phone) : null);
@@ -3043,7 +3069,11 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   switch (method) {
     // Block 1
     case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
-    case "buscar_contato":               return buscarContato(params);
+    case "buscar_contato": {
+      const found = await buscarContato(params);
+      if (!found.success || !params.chat_id) return found;
+      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id) } };
+    }
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
     case "obter_promocao_vigente":       return obterPromocaoVigente(params);
