@@ -196,3 +196,30 @@ describe("contexto_anterior", () => {
     expect(r.data.contexto_anterior.length).toBeLessThanOrEqual(400); expect(r.data.contexto_anterior.endsWith(".")).toBe(true);
   });
 });
+
+describe("scheduling disguised as handoff is blocked", () => {
+  const base = { leads: [{ id: "L", pessoa_id: "person", empresa_nome: "Brisa", city: "Cabo Frio", stage: "novo", gptmaker_chat_id: WA, canal_origem: "WHATSAPP" }] };
+  it("real 02/11 case returns acao_correta=agendar without atendimento, alert or queue", async () => {
+    const h = harness(structuredClone(base));
+    const r = await h.route("solicitar_atendimento_humano", { chat_id: WA, empresa: "Brisa", cidade: "Cabo Frio",
+      motivo: "agendamento de visita comercial para apresentação do Oxivir TB Pronto Uso", resumo: "escolheu uma visita sexta 06/11 14h" });
+    expect(r.success).toBe(false);
+    expect(r.data).toEqual({ acao_correta: "agendar" });
+    expect(r.next_action_hint).toContain("Não transfira para agendar");
+    expect(JSON.stringify(r)).not.toContain("mensagem_para_lead");
+    expect(h.db.atendimentos ?? []).toHaveLength(0);
+    expect(h.db.notification_logs).toHaveLength(0);
+    expect(h.fetch).not.toHaveBeenCalled();
+    expect(h.db.leads[0].precisa_humano).toBeUndefined();
+    expect(h.db.lead_timeline[0]).toMatchObject({ lead_id: "L", tipo: "transferencia" });
+    expect(h.db.lead_timeline[0].resumo).toContain("Transferência barrada: era agendamento");
+  });
+  for (const motivo of ["quero falar com uma pessoa", "quero desconto", "lead MATRIZ", "cliente cobrando retorno", "preciso comprar 10 caixas"]) {
+    it(`"${motivo}" still transfers`, async () => {
+      const h = harness(structuredClone(base));
+      const r = await h.route("solicitar_atendimento_humano", { chat_id: WA, empresa: "Brisa", cidade: "Cabo Frio", motivo });
+      expect(r.success).toBe(true);
+      expect(r.data.solicitado).toBe(true);
+    });
+  }
+});

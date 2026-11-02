@@ -2589,6 +2589,16 @@ function transferNote(now: Date, motivo: string | null, urgencia: string, resumo
   return `[${stamp}] Transferência — ${parts.join(" | ")}`;
 }
 
+const SCHEDULING_HANDOFF_HINT = "Não transfira para agendar. Peça o e-mail do cliente para enviar o convite e chame criar_lead e depois agendar_visita_tecnica com a data e hora escolhidas.";
+
+/** True when the handoff is really a visit booking and carries no genuine human-only request. */
+function isSchedulingHandoff(motivo: unknown, resumo: unknown): boolean {
+  const text = `${typeof motivo === "string" ? motivo : ""} ${typeof resumo === "string" ? resumo : ""}`
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (!/agendament|agendar|visita|escolheu|horario/.test(text)) return false;
+  return !/pessoa|humano|atendente|vendedor|reclama|insatisf|preco|valor|orcamento|cotacao|desconto|matriz|compra|comprar|pedido|cobrando|retorno|urgente/.test(text);
+}
+
 async function solicitarAtendimentoHumano(params: Record<string, unknown>): Promise<McpResponse> {
   const str = (key: string, max = 500): string | null | false => {
     const value = params[key];
@@ -2617,6 +2627,15 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (error) throw new Error(dbFail("consultar lead da transferência", error));
     candidate = data;
+  }
+  // Scheduling disguised as a handoff: no atendimento, alert or queue; Flora is told to book instead.
+  if (isSchedulingHandoff(fields.motivo, fields.resumo)) {
+    const candidateId = candidate && typeof candidate.id === "string" ? candidate.id : null;
+    if (candidateId) queueTimeline(supabase, { leadId: candidateId, pessoaId: candidate?.pessoa_id, tipo: "transferencia",
+      resumo: "Transferência barrada: era agendamento", params: { chat_id: fields.chat_id } });
+    const res: McpResponse = { success: false, data: { acao_correta: "agendar" }, message: SCHEDULING_HANDOFF_HINT, next_action_hint: SCHEDULING_HANDOFF_HINT };
+    await logInteraction(supabase, "solicitar_atendimento_humano", params, res, candidateId);
+    return res;
   }
   const current = await resolveCurrentLead(supabase, params, candidate);
   const { lead, pessoa } = current;
