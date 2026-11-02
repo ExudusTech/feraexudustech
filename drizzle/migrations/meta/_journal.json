@@ -134,6 +134,20 @@
       "when": 1793549895709,
       "tag": "0018_lead_timeline",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793632022411,
+      "tag": "0019_lote8_9_atendimentos",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793632173686,
+      "tag": "0020_queue_status_and_timeline_atendimento",
+      "breakpoints": true
     }
   ]
 }

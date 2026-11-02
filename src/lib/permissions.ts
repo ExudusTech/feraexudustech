@@ -44,7 +44,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/comodatos", "/manutencoes", "/inventario", "/equipamentos", "/financeiro", "/relatorios", "/areas-cobertura", "/configuracoes", "/suporte"],
+    routes: ["/dashboard", "/atendimentos", "/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/comodatos", "/manutencoes", "/inventario", "/equipamentos", "/financeiro", "/relatorios", "/areas-cobertura", "/configuracoes", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -54,7 +54,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   vendedor: {
-    routes: ["/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
+    routes: ["/agenda", "/atendimentos", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -85,7 +85,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   user: {
-    routes: ["/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
+    routes: ["/agenda", "/atendimentos", "/leads", "/clientes", "/propostas", "/produtos", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,

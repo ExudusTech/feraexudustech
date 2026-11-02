@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+// Handoff behaviour depends on human-service hours: pin a weekday 11h (America/Sao_Paulo).
+vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T14:00:00Z"));
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const allEvents = ["agendamento_comercial", "agendamento_tecnico", "transferencia", "lead_matriz"];
@@ -161,5 +163,69 @@ describe("Linked user recipients", () => {
     expect(phones(h)).toEqual(["5521977776666"]);
     const log = h.writes.find((w: any) => w.table === "notification_logs" && w.value.recipient_id === "user").value;
     expect(log.status).toBe("FAILED"); expect(log.error_message).toBe("INVALID_PHONE");
+  });
+});
+
+describe("Lote 8 — human service hours in solicitar_atendimento_humano", () => {
+  const wa = "3DF9D839DDCF463A3A350ADF91C40B89-5522988887777";
+  const at = (iso: string) => vi.setSystemTime(new Date(iso));
+  it("inside hours alerts at once and tells the client the team will answer soon", async () => {
+    at("2026-11-03T14:00:00Z");
+    const h = harness({ lead: { id: "old-lead", description: "" } });
+    const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço" }); await h.flush();
+    expect(r.data.em_horario).toBe(true);
+    expect(r.data.mensagem_para_lead).toBe("Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve.");
+    expect(h.fetchMock).toHaveBeenCalled();
+    expect(h.writes.find((w: any) => w.table === "notification_logs").value.status).toBe("SENT");
+  });
+  it("Sunday afternoon queues the alert for Monday 8h and is transparent with the client", async () => {
+    at("2026-11-08T18:00:00Z"); // domingo 15h
+    const h = harness({ lead: { id: "old-lead", description: "" } });
+    const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço" }); await h.flush();
+    expect(r.data.em_horario).toBe(false);
+    expect(r.data.retorno_previsto.quando).toBe("2026-11-09T11:00:00.000Z");
+    expect(r.data.mensagem_para_lead).toBe("Nossa equipe de atendimento retoma na segunda-feira, 09/11, a partir das 8h. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊");
+    expect(h.fetchMock).not.toHaveBeenCalled();
+    const log = h.writes.find((w: any) => w.table === "notification_logs").value;
+    expect(log.status).toBe("QUEUED"); expect(log.release_at).toBe("2026-11-09T11:00:00.000Z");
+    expect(log.payload.message).toContain("Recebido fora do horário em 08/11/2026 15:00");
+    const tl = h.writes.find((w: any) => w.table === "lead_timeline").value;
+    expect(tl.resumo).toContain("Transferência recebida fora do horário");
+  });
+  it("repeated chase outside hours only goes to the timeline and repeats the same return time", async () => {
+    at("2026-11-08T18:00:00Z");
+    const h = harness({ lead: { id: "old-lead", description: "" }, recent: true });
+    const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço" }); await h.flush();
+    expect(r.data.notificado).toBe(false);
+    expect(h.writes.some((w: any) => w.table === "notification_logs")).toBe(false);
+    expect(r.data.mensagem_para_lead).toContain("segunda-feira, 09/11, a partir das 8h");
+    expect(h.writes.find((w: any) => w.table === "lead_timeline").value.resumo).toContain("cobrou novamente fora do horário");
+  });
+  it("high urgency also waits by default", async () => {
+    at("2026-11-08T18:00:00Z");
+    const h = harness({ lead: { id: "old-lead", description: "" } });
+    const r = await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço", urgencia: "alta" }); await h.flush();
+    expect(r.data.em_horario).toBe(false); expect(h.fetchMock).not.toHaveBeenCalled();
+    expect(h.writes.find((w: any) => w.table === "notification_logs").value.status).toBe("QUEUED");
+  });
+  it("Matriz follows the same rule", async () => {
+    at("2026-11-08T18:00:00Z");
+    const h = harness({ lead: { id: "old-lead", description: "" } });
+    await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "MATRIZ encaminhou" }); await h.flush();
+    const log = h.writes.find((w: any) => w.table === "notification_logs").value;
+    expect(log.event_type).toBe("lead_matriz"); expect(log.status).toBe("QUEUED");
+  });
+  it("opens an atendimento owned by the lead owner", async () => {
+    at("2026-11-03T14:00:00Z");
+    const h = harness({ lead: { id: "old-lead", description: "", assigned_to: "owner-1" } });
+    await h.route("solicitar_atendimento_humano", { chat_id: wa, motivo: "Preço" }); await h.flush();
+    const ins = h.writes.find((w: any) => w.table === "atendimentos" && w.operation === "insert").value;
+    expect(ins).toMatchObject({ lead_id: "old-lead", responsavel_id: "owner-1", tipo: "transferencia", recebido_fora_horario: false });
+  });
+  it("visit bookings still alert immediately outside hours", async () => {
+    at("2026-11-08T18:00:00Z");
+    const h = harness();
+    expect((await h.route("agendar_visita_tecnica", visit)).success).toBe(true); await h.flush();
+    expect(h.fetchMock).toHaveBeenCalled();
   });
 });

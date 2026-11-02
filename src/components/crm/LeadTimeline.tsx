@@ -5,7 +5,7 @@ import { History } from "lucide-react";
 
 const TYPE_LABEL: Record<string, string> = {
   resumo: "Conversa", criar_lead: "Novo lead", agendamento: "Agendamento",
-  transferencia: "Transferência", fora_perfil: "Fora de cobertura", encerramento: "Encerramento",
+  transferencia: "Transferência", atendimento: "Atendimento", fora_perfil: "Fora de cobertura", encerramento: "Encerramento",
 };
 const CHANNEL_LABEL: Record<string, string> = {
   WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", MESSENGER: "Messenger", WIDGET: "Site", TELEGRAM: "Telegram", FERA: "Fera",

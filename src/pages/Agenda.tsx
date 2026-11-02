@@ -19,6 +19,7 @@ import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
+import PainelAgora from "@/components/atendimentos/PainelAgora";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
@@ -296,6 +297,7 @@ export default function Agenda() {
   return (
     <AppLayout>
       <div className="space-y-6">
+        <PainelAgora compact />
         {linkedId && !isLoading && !schedules.some(item => item.id === linkedId) && <p role="alert" className="text-muted-foreground">Agendamento não encontrado ou sem permissão de acesso.</p>}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">

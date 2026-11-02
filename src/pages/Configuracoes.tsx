@@ -12,6 +12,8 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeamNotifications from "@/components/settings/TeamNotifications";
 import FloraDefaultOwner from "@/components/settings/FloraDefaultOwner";
+import HumanHoursSettings from "@/components/settings/HumanHoursSettings";
+import LeadStagesSettings from "@/components/settings/LeadStagesSettings";
 import LogoUpload from "@/components/settings/LogoUpload";
 import { contrastRatio, readableForeground } from "@/lib/brand";
 
@@ -93,7 +95,9 @@ export default function Configuracoes() {
       }
     >
       <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl min-w-0">
-        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger></TabsList>
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger></TabsList>
+        <TabsContent value="horario"><HumanHoursSettings /></TabsContent>
+        <TabsContent value="etapas"><LeadStagesSettings /></TabsContent>
         <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>
         <TabsContent value="flora"><FloraDefaultOwner /></TabsContent>
         <TabsContent value="empresa"><div className="space-y-6">

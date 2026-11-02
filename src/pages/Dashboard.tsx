@@ -20,6 +20,10 @@ import { usePermissions } from "@/hooks/use-permissions";
 import ConsultantDashboard from "@/components/dashboard/ConsultantDashboard";
 import StartVisitDialog from "@/components/ekkoa/StartVisitDialog";
 import type { Schedule } from "@/hooks/use-schedules";
+import PainelAgora from "@/components/atendimentos/PainelAgora";
+import AgendaHoje from "@/components/atendimentos/AgendaHoje";
+import AtendimentoMetrics from "@/components/atendimentos/AtendimentoMetrics";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -30,6 +34,7 @@ export default function Dashboard() {
   if (role === "consultor_tecnico") {
     return (
       <AppLayout title="Dashboard" subtitle="Sua agenda e compromissos">
+        <div className="mb-6"><PainelAgora compact /></div>
         <ConsultantDashboard onStartVisit={(s) => setVisitSchedule(s)} />
         <StartVisitDialog
           open={!!visitSchedule}
@@ -102,6 +107,14 @@ function AdminDashboard() {
 
   return (
     <AppLayout title="Dashboard" subtitle="Visão geral do sistema">
+      <div className="space-y-6 mb-6">
+        <PainelAgora />
+        <AgendaHoje />
+      </div>
+      <Tabs defaultValue="geral">
+      <TabsList><TabsTrigger value="geral">Visão geral</TabsTrigger><TabsTrigger value="atendimentos">Atendimentos</TabsTrigger></TabsList>
+      <TabsContent value="atendimentos"><AtendimentoMetrics /></TabsContent>
+      <TabsContent value="geral">
       <div className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatsCard title="Total de Clientes" value={stats.totalClients} icon={Users} variant="primary" />
@@ -148,6 +161,8 @@ function AdminDashboard() {
           <StatsCard title="Ticket Médio" value={fmt(stats.avgTicket)} icon={DollarSign} variant="success" />
         </div>
       </div>
+      </TabsContent>
+      </Tabs>
     </AppLayout>
   );
 }

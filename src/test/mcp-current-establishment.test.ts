@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
+// Handoff behaviour depends on human-service hours: pin a weekday 11h (America/Sao_Paulo).
+vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T14:00:00Z"));
 
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const chat = "3DF9D839DDCF463A3A350ADF91C40B89-5521979047667";

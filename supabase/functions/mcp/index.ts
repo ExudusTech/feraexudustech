@@ -377,6 +377,145 @@ async function logInteraction(
   });
 }
 
+// ─── Human service hours (Lote 8) ───
+// BEGIN business-hours (pure; the mcp function embeds an identical copy — keep in sync, a test enforces it)
+interface HumanHoursConfig { days: number[]; start: string; end: string; timezone: string }
+interface ClosedDay { date: string; city: string | null }
+interface NextOpening { at: Date; date: string; label: string; labelComArtigo: string }
+
+const BH_DEFAULT: HumanHoursConfig = { days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00", timezone: "America/Sao_Paulo" };
+const BH_WEEKDAYS = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+
+function normalizeHumanHours(raw: unknown, timezone?: unknown): HumanHoursConfig {
+  const value = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const time = (v: unknown, fallback: string) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : fallback;
+  const days = Array.isArray(value.days) ? value.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6) : BH_DEFAULT.days;
+  const start = time(value.start, BH_DEFAULT.start);
+  let end = time(value.end, BH_DEFAULT.end);
+  if (bhMinutes(end) <= bhMinutes(start)) end = BH_DEFAULT.end;
+  return { days: days.length ? Array.from(new Set(days)).sort() : BH_DEFAULT.days, start, end,
+    timezone: typeof timezone === "string" && timezone ? timezone : BH_DEFAULT.timezone };
+}
+
+function bhMinutes(time: string): number { const [h, m] = time.split(":").map(Number); return h * 60 + m; }
+
+function bhParts(date: Date, timezone: string): { ymd: string; dow: number; minutes: number } {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short" }).formatToParts(date).map(p => [p.type, p.value]));
+  const ymd = `${parts.year}-${parts.month}-${parts.day}`;
+  const dow = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  return { ymd, dow, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+
+/** UTC instant for a wall-clock time in the given zone. */
+function bhZoned(ymd: string, minutes: number, timezone: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const guess = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
+  const local = bhParts(new Date(guess), timezone);
+  const [ly, lm, ld] = local.ymd.split("-").map(Number);
+  const offset = Date.UTC(ly, lm - 1, ld, Math.floor(local.minutes / 60), local.minutes % 60) - guess;
+  return new Date(guess - offset);
+}
+
+function bhAddDays(ymd: string, days: number): string {
+  return new Date(Date.parse(`${ymd}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function bhCityKey(value: string): string {
+  return value.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function isClosedDate(ymd: string, config: HumanHoursConfig, closed: ClosedDay[], city?: string | null): boolean {
+  const dow = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  if (!config.days.includes(dow)) return true;
+  return closed.some(day => day.date === ymd && (day.city === null || (typeof city === "string" && bhCityKey(day.city) === bhCityKey(city))));
+}
+
+function estaEmHorario(now: Date, config: HumanHoursConfig, closed: ClosedDay[], city?: string | null): boolean {
+  const local = bhParts(now, config.timezone);
+  if (isClosedDate(local.ymd, config, closed, city)) return false;
+  return local.minutes >= bhMinutes(config.start) && local.minutes < bhMinutes(config.end);
+}
+
+function bhLabel(ymd: string, start: string): { label: string; labelComArtigo: string } {
+  const dow = new Date(`${ymd}T12:00:00Z`).getUTCDay();
+  const [, mm, dd] = ymd.split("-");
+  const [h, m] = start.split(":");
+  const hour = `${Number(h)}h${m === "00" ? "" : m}`;
+  const label = `${BH_WEEKDAYS[dow]}, ${dd}/${mm}, a partir das ${hour}`;
+  return { label, labelComArtigo: `${dow === 0 || dow === 6 ? "no" : "na"} ${label}` };
+}
+
+/** Start of the next human-service period (now itself when currently open). */
+function proximoHorarioUtil(now: Date, config: HumanHoursConfig, closed: ClosedDay[], city?: string | null): NextOpening {
+  const local = bhParts(now, config.timezone);
+  const start = bhMinutes(config.start);
+  if (estaEmHorario(now, config, closed, city)) {
+    return { at: now, date: local.ymd, ...bhLabel(local.ymd, config.start) };
+  }
+  for (let i = 0; i < 400; i++) {
+    const ymd = bhAddDays(local.ymd, i);
+    if (isClosedDate(ymd, config, closed, city)) continue;
+    if (i === 0 && local.minutes >= start) continue;
+    return { at: bhZoned(ymd, start, config.timezone), date: ymd, ...bhLabel(ymd, config.start) };
+  }
+  const fallback = bhAddDays(local.ymd, 1);
+  return { at: bhZoned(fallback, start, config.timezone), date: fallback, ...bhLabel(fallback, config.start) };
+}
+
+/** Minutes between two instants that fall inside human-service windows. */
+function minutosUteis(from: Date, to: Date, config: HumanHoursConfig, closed: ClosedDay[], city?: string | null): number {
+  if (!(to.getTime() > from.getTime())) return 0;
+  let total = 0;
+  let ymd = bhParts(from, config.timezone).ymd;
+  const lastYmd = bhParts(to, config.timezone).ymd;
+  for (let guard = 0; guard < 800 && ymd <= lastYmd; guard++, ymd = bhAddDays(ymd, 1)) {
+    if (isClosedDate(ymd, config, closed, city)) continue;
+    const open = bhZoned(ymd, bhMinutes(config.start), config.timezone).getTime();
+    const close = bhZoned(ymd, bhMinutes(config.end), config.timezone).getTime();
+    const a = Math.max(open, from.getTime());
+    const b = Math.min(close, to.getTime());
+    if (b > a) total += (b - a) / 60_000;
+  }
+  return Math.floor(total);
+}
+
+function gravidade(minutos: number, amarelo = 15, vermelho = 60): "verde" | "amarelo" | "vermelho" {
+  return minutos > vermelho ? "vermelho" : minutos > amarelo ? "amarelo" : "verde";
+}
+// END business-hours
+
+interface HumanService { config: HumanHoursConfig; closed: ClosedDay[]; city: string | null; urgentBypass: boolean;
+  defaultOwner: string | null; }
+
+async function loadHumanService(supabase: ReturnType<typeof getClient>, now: Date): Promise<HumanService> {
+  let org: Record<string, unknown> | null = null;
+  try {
+    const { data } = await supabase.from("organizations").select("human_hours, human_timezone, human_urgent_bypass, city, flora_default_lead_owner")
+      .eq("id", NITSCLEAN_ORG_ID).maybeSingle();
+    org = data ?? null;
+  } catch { console.error("[human_hours] organization lookup failed"); }
+  let closed: ClosedDay[] = [];
+  try {
+    const from = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+    const to = new Date(now.getTime() + 400 * 86_400_000).toISOString().slice(0, 10);
+    closed = (await loadHolidays(supabase, from, to)).map(h => ({ date: h.date, city: h.city }));
+  } catch { console.error("[human_hours] holiday lookup failed"); }
+  return { config: normalizeHumanHours(org?.human_hours, org?.human_timezone), closed,
+    city: typeof org?.city === "string" ? org.city : null, urgentBypass: org?.human_urgent_bypass === true,
+    defaultOwner: typeof org?.flora_default_lead_owner === "string" ? org.flora_default_lead_owner : null };
+}
+
+function stampSaoPaulo(date: Date, timezone = "America/Sao_Paulo"): string {
+  return date.toLocaleString("pt-BR", { timeZone: timezone, day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit" }).replace(",", "");
+}
+
+const HUMAN_IN_HOURS_MESSAGE = "Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve.";
+function humanOutOfHoursMessage(next: NextOpening): string {
+  return `Nossa equipe de atendimento retoma ${next.labelComArtigo}. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊`;
+}
+
 // ─── Team notifications: isolated background work, tenant/event subscriptions ───
 
 type TeamEvent = "agendamento_comercial" | "transferencia" | "lead_matriz";
@@ -389,7 +528,9 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
   const contact = text(params.nome_contato) || text(params.nome) || text(lead?.contact_name);
   const client = [company, contact].filter(Boolean).join(" — ") || "Não informado";
   const city = text(params.cidade) || text(lead?.regiao);
+  const atendimentoId = text(params.atendimento_id);
   const link = scheduleId ? `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(scheduleId)}`
+    : atendimentoId ? `${FERA_NOTIFICATION_URL}/atendimentos?id=${encodeURIComponent(atendimentoId)}`
     : leadId ? `${FERA_NOTIFICATION_URL}/leads?lead=${encodeURIComponent(leadId)}` : `${FERA_NOTIFICATION_URL}/leads`;
   const lines: string[] = [];
   if (event === "agendamento_comercial") {
@@ -428,12 +569,14 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
     lines.push(`Motivo: ${text(params.motivo) || "Atendimento humano solicitado"}`);
     const urgency = text(params.urgencia);
     if (urgency) lines.push(`Urgência: ${urgency}`);
+    const outside = text(params.recebido_fora_em);
+    if (outside) lines.push(`Recebido fora do horário em ${outside}`);
   }
   return [...lines, `Ver no Fera: ${link}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
 
 async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
-  params: Record<string, unknown>, leadId?: string, scheduleId?: string): Promise<void> {
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): Promise<void> {
   const { data: recipients, error } = await supabase.from("notification_recipients")
     .select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
     .contains("eventos", [event]);
@@ -461,6 +604,20 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
     if (!result.error && result.data) { lead = result.data; leadId = result.data.id; }
   }
   const message = notificationText(event, params, params.__current_establishment ? null : lead, leadId, scheduleId);
+  const atendimentoId = typeof params.atendimento_id === "string" ? params.atendimento_id : null;
+  if (releaseAt) {
+    // Outside human-service hours: hold the alert; release-notification-queue sends it at the next opening.
+    for (const recipient of recipients) {
+      const { error: queueError } = await supabase.from("notification_logs").insert({
+        organization_id: NITSCLEAN_ORG_ID, event_type: event, recipient_id: recipient.id, recipient_name: recipient.nome,
+        channel: "WHATSAPP", destination: recipient.whatsapp,
+        payload: { lead_id: leadId ?? null, atendimento_id: atendimentoId, message },
+        status: "QUEUED", sent_at: null, queued_at: new Date().toISOString(), release_at: releaseAt,
+      });
+      if (queueError) console.error("[team_notifications] Queue insert failed");
+    }
+    return;
+  }
   for (const recipient of recipients) {
     let status = "FAILED";
     let errorMessage: string | null = null;
@@ -482,7 +639,7 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
     try {
       const { error: logError } = await supabase.from("notification_logs").insert({
         organization_id: NITSCLEAN_ORG_ID, event_type: event, recipient_id: recipient.id, recipient_name: recipient.nome,
-        channel: "WHATSAPP", destination: recipient.whatsapp, payload: { lead_id: leadId ?? null, schedule_id: scheduleId ?? null, message },
+        channel: "WHATSAPP", destination: recipient.whatsapp, payload: { lead_id: leadId ?? null, schedule_id: scheduleId ?? null, ...(atendimentoId ? { atendimento_id: atendimentoId } : {}), message },
         status, error_message: errorMessage,
       });
       if (logError) console.error("[team_notifications] Delivery log failed");
@@ -491,9 +648,9 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
 }
 
 function queueTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
-  params: Record<string, unknown>, leadId?: string, scheduleId?: string): void {
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): void {
   try {
-    const task = Promise.resolve().then(() => dispatchTeamNotification(supabase, event, params, leadId, scheduleId))
+    const task = Promise.resolve().then(() => dispatchTeamNotification(supabase, event, params, leadId, scheduleId, releaseAt))
       .catch(() => { console.error("[team_notifications] Background delivery failed"); });
     const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (task: Promise<void>) => void } }).EdgeRuntime;
     runtime?.waitUntil(task);
@@ -1985,6 +2142,14 @@ async function listarHorariosDisponiveis(params: Record<string, unknown>): Promi
   );
 }
 
+async function bookedStageId(supabase: ReturnType<typeof getClient>): Promise<string | null> {
+  try {
+    const { data } = await supabase.from("lead_stages").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("chave", "visita_agendada").eq("ativo", true).maybeSingle();
+    return typeof data?.id === "string" ? data.id : null;
+  } catch { console.error("[agendamento] stage lookup failed"); return null; }
+}
+
 async function agendarVisita(params: Record<string, unknown>): Promise<McpResponse> {
   const {
     lead_id, interaction_id, nome_contato, empresa, telefone,
@@ -2031,8 +2196,10 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
   if (error) return fail(dbFail("criar agendamento", error));
 
   if (leadId) {
+    // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
+    const stageId = await bookedStageId(supabase);
     await supabase.from("leads")
-      .update({ stage: "agendado", updated_at: new Date().toISOString() })
+      .update({ stage: "agendado", ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
@@ -2167,8 +2334,10 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   if (error) return fail(dbFail("criar agendamento", error));
 
   if (leadId) {
+    // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
+    const stageId = await bookedStageId(supabase);
     await supabase.from("leads")
-      .update({ stage: "agendado", updated_at: new Date().toISOString() })
+      .update({ stage: "agendado", ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
@@ -2436,7 +2605,7 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   }
   const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
-  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id";
+  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to";
 
   params = await currentEstablishment(supabase, params);
   const channel = resolveChannelFromChatId(fields.chat_id);
@@ -2462,7 +2631,14 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   }).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
 
   const event: TeamEvent = fields.motivo && /MATRIZ/i.test(fields.motivo) ? "lead_matriz" : "transferencia";
-  let recent = false, cooling = false;
+  const nowDate = new Date();
+  const service = await loadHumanService(supabase, nowDate);
+  const emHorario = estaEmHorario(nowDate, service.config, service.closed, service.city);
+  const proximo = proximoHorarioUtil(nowDate, service.config, service.closed, service.city);
+  // Outside hours alerts wait for the next opening; high urgency skips the wait only when the org enabled it.
+  const holdAlert = !emHorario && !(urgencia === "alta" && service.urgentBypass);
+
+  let recent = false, cooling = false, alreadyQueued = false;
   try {
     const now = Date.now();
     const { data } = await supabase.from("notification_logs").select("id, sent_at").eq("organization_id", NITSCLEAN_ORG_ID)
@@ -2472,20 +2648,61 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     recent = Boolean(last);
     cooling = Boolean(last) && new Date(String(last.sent_at)).getTime() > now - CHASE_COOLDOWN_MS;
   } catch { console.error("[solicitar_atendimento_humano] dedup lookup failed"); }
-  // A follow-up ("cobrando retorno") alerts at most once per CHASE_COOLDOWN_MS per lead.
-  const notificado = !recent || (urgencia === "alta" && !cooling);
-  const transferSummary = recent
-    ? `Cliente cobrou novamente (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`
-    : `Transferido p/ equipe (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`;
+  if (holdAlert) {
+    try {
+      const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+        .eq("status", "QUEUED").contains("payload", { lead_id: leadId }).limit(1);
+      alreadyQueued = Array.isArray(data) && data.length > 0;
+    } catch { console.error("[solicitar_atendimento_humano] queue lookup failed"); }
+  }
+
+  // One open atendimento per lead: follow-ups aggregate into it instead of opening another.
+  let atendimentoId: string | null = null;
+  let atendimentoAberto = false;
+  try {
+    const { data: open } = await supabase.from("atendimentos").select("id, cobrancas").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("lead_id", leadId).in("status", ["aberto", "em_atendimento"]).limit(1).maybeSingle();
+    if (open?.id) {
+      atendimentoId = String(open.id); atendimentoAberto = true;
+      await supabase.from("atendimentos").update({ cobrancas: Number(open.cobrancas ?? 0) + 1,
+        ultima_cobranca_em: nowDate.toISOString(), urgencia }).eq("id", atendimentoId).eq("organization_id", NITSCLEAN_ORG_ID);
+    } else {
+      const { data: created } = await supabase.from("atendimentos").insert({
+        organization_id: NITSCLEAN_ORG_ID, lead_id: leadId, pessoa_id: pessoa?.id ?? lead.pessoa_id ?? null,
+        empresa: productSearchText(params.empresa) ?? (lead.empresa_nome ?? lead.company ?? null),
+        contato_nome: productSearchText(params.nome_contato) ?? (lead.contact_name ?? null),
+        canal: channel?.canal ?? (typeof lead.canal_origem === "string" ? lead.canal_origem : null), chat_id: fields.chat_id,
+        tipo: event === "lead_matriz" ? "matriz" : "transferencia", motivo: fields.motivo, resumo: timelineText(fields.resumo, 1000),
+        urgencia, responsavel_id: (typeof lead.assigned_to === "string" ? lead.assigned_to : null) ?? service.defaultOwner,
+        relogio_inicia_em: (emHorario ? nowDate : proximo.at).toISOString(), recebido_fora_horario: !emHorario,
+      }).select("id").maybeSingle();
+      if (created?.id) atendimentoId = String(created.id);
+    }
+  } catch { console.error("[solicitar_atendimento_humano] atendimento write failed"); }
+  const cobranca = recent || atendimentoAberto;
+
+  // A follow-up ("cobrando retorno") alerts at most once per CHASE_COOLDOWN_MS per lead; outside hours only one alert waits.
+  const notificado = holdAlert ? !alreadyQueued : (!recent || (urgencia === "alta" && !cooling));
+  const foraLabel = emHorario ? "" : " fora do horário";
+  const transferSummary = cobranca
+    ? `Cliente cobrou novamente${foraLabel} (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`
+    : `${emHorario ? "Transferido p/ equipe" : "Transferência recebida fora do horário"} (urgência ${urgencia})${fields.motivo ? `: ${fields.motivo}` : ""}`;
   queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
-    resumo: [transferSummary, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
+    resumo: [transferSummary, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params, referenciaId: atendimentoId });
 
   const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
     : (!channel && lead.canal_origem === "WHATSAPP" ? digits(lead.contact_phone) : null);
   const instagram = (channel?.canal === "INSTAGRAM" || (!channel && lead.canal_origem === "INSTAGRAM"))
     ? (pessoa?.instagram_handle ?? (typeof lead.instagram_handle === "string" ? lead.instagram_handle : null)) : null;
+  if (atendimentoId && (whatsapp || instagram)) {
+    try {
+      await supabase.from("atendimentos").update({ whatsapp, instagram }).eq("id", atendimentoId).eq("organization_id", NITSCLEAN_ORG_ID);
+    } catch { console.error("[solicitar_atendimento_humano] atendimento contact update failed"); }
+  }
 
-  await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true, lead_id: leadId }),
+  const mensagem = holdAlert ? humanOutOfHoursMessage(proximo) : HUMAN_IN_HOURS_MESSAGE;
+  const retornoPrevisto = { quando: proximo.at.toISOString(), texto: proximo.label };
+  await logInteraction(supabase, "solicitar_atendimento_humano", params, ok({ solicitado: true, lead_id: leadId, em_horario: emHorario }),
     leadId, channel?.canal, fields.interaction_id ?? undefined);
 
   if (notificado) {
@@ -2495,11 +2712,52 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
       cidade: params.cidade, produto_interesse: params.produto_interesse,
       resumo: fields.resumo, motivo: fields.motivo, urgencia,
       whatsapp_cliente: whatsapp, instagram_cliente: instagram,
-      titulo: recent ? "⏰ Cliente cobrando retorno" : null,
-    }, leadId);
+      titulo: cobranca ? "⏰ Cliente cobrando retorno" : null,
+      atendimento_id: atendimentoId,
+      recebido_fora_em: emHorario ? null : stampSaoPaulo(nowDate, service.config.timezone),
+    }, leadId, undefined, holdAlert ? proximo.at.toISOString() : undefined);
   }
 
-  return ok({ solicitado: true, lead_id: leadId, lead_criado: leadCriado, notificado, urgencia });
+  return ok({ solicitado: true, lead_id: leadId, lead_criado: leadCriado, notificado, urgencia,
+    atendimento_id: atendimentoId, em_horario: emHorario, retorno_previsto: retornoPrevisto, mensagem_para_lead: mensagem });
+}
+
+// ─── Team assistant (read-only): what is pending now for a Fera user ───
+async function listarPendencias(params: Record<string, unknown>): Promise<McpResponse> {
+  const channel = resolveChannelFromChatId(params.chat_id);
+  const phone = digits(params.telefone) ?? (channel?.canal === "WHATSAPP" ? digits(channel.identificador) : null);
+  const empty = ok({ usuario: null, atendimentos: [], visitas_hoje: [] });
+  if (!phone || phone.length < 10) return empty;
+  const supabase = getClient();
+  const variants = Array.from(new Set([phone, phone.startsWith("55") ? phone.slice(2) : `55${phone}`]));
+  const { data: profile, error } = await supabase.from("profiles").select("user_id, name, is_active")
+    .eq("organization_id", NITSCLEAN_ORG_ID).in("phone", variants).limit(1).maybeSingle();
+  if (error) return fail(dbFail("consultar usuário", error));
+  if (!profile || profile.is_active === false) return empty;
+  const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", profile.user_id);
+  const privileged = (Array.isArray(roles) ? roles : []).some((r: { role: string }) => ["admin", "gestor", "super_admin"].includes(r.role));
+  let atQuery = supabase.from("atendimentos").select("id, empresa, contato_nome, status, urgencia, aberto_em, relogio_inicia_em, responsavel_id, assumido_por")
+    .eq("organization_id", NITSCLEAN_ORG_ID).in("status", ["aberto", "em_atendimento"]).order("relogio_inicia_em").limit(30);
+  if (!privileged) atQuery = atQuery.or(`responsavel_id.eq.${profile.user_id},assumido_por.eq.${profile.user_id}`);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  let visitQuery = supabase.from("schedules").select("id, title, start_time, location, status, assigned_to")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("scheduled_date", today).neq("status", "cancelado").order("start_time").limit(30);
+  if (!privileged) visitQuery = visitQuery.eq("assigned_to", profile.user_id);
+  const [{ data: ats }, { data: visits }] = await Promise.all([atQuery, visitQuery]);
+  const service = await loadHumanService(supabase, new Date());
+  const now = new Date();
+  return ok({
+    usuario: { nome: profile.name, visao: privileged ? "organizacao" : "propria" },
+    atendimentos: (Array.isArray(ats) ? ats : []).map((a: Record<string, unknown>) => {
+      const minutos = minutosUteis(new Date(String(a.relogio_inicia_em)), now, service.config, service.closed, service.city);
+      return { empresa: a.empresa ?? a.contato_nome ?? "Cliente", status: a.status, urgencia: a.urgencia,
+        espera_minutos_uteis: minutos, gravidade: gravidade(minutos),
+        link: `${FERA_NOTIFICATION_URL}/atendimentos?id=${encodeURIComponent(String(a.id))}` };
+    }),
+    visitas_hoje: (Array.isArray(visits) ? visits : []).map((v: Record<string, unknown>) => ({ titulo: v.title,
+      horario: typeof v.start_time === "string" ? v.start_time.slice(0, 5) : null, local: v.location ?? null,
+      link: `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(String(v.id))}` })),
+  });
 }
 
 async function registrarForaCobertura(params: Record<string, unknown>): Promise<McpResponse> {
@@ -3016,6 +3274,17 @@ const TOOLS_MANIFEST = [
   },
   // ── Block 5: Routing / Exceptions ─────────────────────────────────────────
   {
+    name: "listar_pendencias",
+    description: "Somente leitura, para a equipe (Flora Equipe): lista os atendimentos em aberto e as visitas de hoje do usuário do Fera identificado pelo telefone. Vendedores veem só os próprios; gestor/admin, os da organização. Telefone desconhecido devolve listas vazias.",
+    parameters: {
+      type: "object",
+      properties: {
+        telefone: { type: "string", description: "WhatsApp do usuário do Fera (DDD + número)" },
+        chat_id:  { type: "string", description: "Opcional: chat_id do GPT Maker; o telefone após o '-' é usado quando telefone não vier" },
+      },
+    },
+  },
+  {
     name: "solicitar_atendimento_humano",
     description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta).",
     parameters: {
@@ -3133,6 +3402,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "adicionar_tag":                return adicionarTag(params);
     // Block 5
     case "solicitar_atendimento_humano": return solicitarAtendimentoHumano(params);
+    case "listar_pendencias":            return listarPendencias(params);
     case "registrar_fora_cobertura":     return registrarForaCobertura(params);
     // Block 6
     case "enviar_codigo_otp":            return enviarCodigoOtp(params);

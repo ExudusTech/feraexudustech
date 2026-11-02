@@ -14,6 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
+      atendimentos: {
+        Row: {
+          aberto_em: string
+          alerta_nivel: string
+          assumido_em: string | null
+          assumido_por: string | null
+          canal: string | null
+          chat_id: string | null
+          cobrancas: number
+          contato_nome: string | null
+          created_at: string
+          empresa: string | null
+          humano_ativo: boolean
+          id: string
+          instagram: string | null
+          lead_id: string | null
+          motivo: string | null
+          organization_id: string
+          pessoa_id: string | null
+          recebido_fora_horario: boolean
+          relogio_inicia_em: string
+          resolucao: string | null
+          resolvido_em: string | null
+          resolvido_por: string | null
+          responsavel_id: string | null
+          resultado: string | null
+          resumo: string | null
+          status: string
+          tipo: string
+          ultima_cobranca_em: string | null
+          updated_at: string
+          urgencia: string
+          whatsapp: string | null
+        }
+        Insert: {
+          aberto_em?: string
+          alerta_nivel?: string
+          assumido_em?: string | null
+          assumido_por?: string | null
+          canal?: string | null
+          chat_id?: string | null
+          cobrancas?: number
+          contato_nome?: string | null
+          created_at?: string
+          empresa?: string | null
+          humano_ativo?: boolean
+          id?: string
+          instagram?: string | null
+          lead_id?: string | null
+          motivo?: string | null
+          organization_id: string
+          pessoa_id?: string | null
+          recebido_fora_horario?: boolean
+          relogio_inicia_em?: string
+          resolucao?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          responsavel_id?: string | null
+          resultado?: string | null
+          resumo?: string | null
+          status?: string
+          tipo?: string
+          ultima_cobranca_em?: string | null
+          updated_at?: string
+          urgencia?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          aberto_em?: string
+          alerta_nivel?: string
+          assumido_em?: string | null
+          assumido_por?: string | null
+          canal?: string | null
+          chat_id?: string | null
+          cobrancas?: number
+          contato_nome?: string | null
+          created_at?: string
+          empresa?: string | null
+          humano_ativo?: boolean
+          id?: string
+          instagram?: string | null
+          lead_id?: string | null
+          motivo?: string | null
+          organization_id?: string
+          pessoa_id?: string | null
+          recebido_fora_horario?: boolean
+          relogio_inicia_em?: string
+          resolucao?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          responsavel_id?: string | null
+          resultado?: string | null
+          resumo?: string | null
+          status?: string
+          tipo?: string
+          ultima_cobranca_em?: string | null
+          updated_at?: string
+          urgencia?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "atendimentos_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimentos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atendimentos_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -4154,6 +4278,50 @@ export type Database = {
           },
         ]
       }
+      lead_stages: {
+        Row: {
+          ativo: boolean
+          chave: string | null
+          cor: string | null
+          created_at: string
+          id: string
+          nome: string
+          ordem: number
+          organization_id: string
+          tipo: string
+        }
+        Insert: {
+          ativo?: boolean
+          chave?: string | null
+          cor?: string | null
+          created_at?: string
+          id?: string
+          nome: string
+          ordem?: number
+          organization_id: string
+          tipo?: string
+        }
+        Update: {
+          ativo?: boolean
+          chave?: string | null
+          cor?: string | null
+          created_at?: string
+          id?: string
+          nome?: string
+          ordem?: number
+          organization_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_stages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_timeline: {
         Row: {
           canal: string | null
@@ -4262,6 +4430,7 @@ export type Database = {
           regiao: string | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
+          stage_id: string | null
           title: string
           updated_at: string | null
           value: number | null
@@ -4308,6 +4477,7 @@ export type Database = {
           regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
+          stage_id?: string | null
           title: string
           updated_at?: string | null
           value?: number | null
@@ -4354,6 +4524,7 @@ export type Database = {
           regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
+          stage_id?: string | null
           title?: string
           updated_at?: string | null
           value?: number | null
@@ -4387,6 +4558,13 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "lead_stages"
             referencedColumns: ["id"]
           },
         ]
@@ -4601,8 +4779,10 @@ export type Database = {
           id: string
           organization_id: string
           payload: Json | null
+          queued_at: string | null
           recipient_id: string | null
           recipient_name: string | null
+          release_at: string | null
           sent_at: string | null
           status: string
         }
@@ -4614,8 +4794,10 @@ export type Database = {
           id?: string
           organization_id: string
           payload?: Json | null
+          queued_at?: string | null
           recipient_id?: string | null
           recipient_name?: string | null
+          release_at?: string | null
           sent_at?: string | null
           status?: string
         }
@@ -4627,8 +4809,10 @@ export type Database = {
           id?: string
           organization_id?: string
           payload?: Json | null
+          queued_at?: string | null
           recipient_id?: string | null
           recipient_name?: string | null
+          release_at?: string | null
           sent_at?: string | null
           status?: string
         }
@@ -4986,6 +5170,8 @@ export type Database = {
         Row: {
           accent_color: string | null
           address: string | null
+          atendimento_alerta_amarelo_min: number
+          atendimento_alerta_vermelho_min: number
           city: string | null
           cnpj: string | null
           created_at: string
@@ -4993,6 +5179,9 @@ export type Database = {
           flora_default_lead_owner: string | null
           has_ekkoa_access: boolean
           heading_font: string | null
+          human_hours: Json
+          human_timezone: string
+          human_urgent_bypass: boolean
           id: string
           is_active: boolean
           logo_url: string | null
@@ -5000,6 +5189,7 @@ export type Database = {
           name: string
           phone: string | null
           plan: string
+          ponto_facultativo_util: boolean
           primary_color: string | null
           secondary_color: string | null
           state: string | null
@@ -5012,6 +5202,8 @@ export type Database = {
         Insert: {
           accent_color?: string | null
           address?: string | null
+          atendimento_alerta_amarelo_min?: number
+          atendimento_alerta_vermelho_min?: number
           city?: string | null
           cnpj?: string | null
           created_at?: string
@@ -5019,6 +5211,9 @@ export type Database = {
           flora_default_lead_owner?: string | null
           has_ekkoa_access?: boolean
           heading_font?: string | null
+          human_hours?: Json
+          human_timezone?: string
+          human_urgent_bypass?: boolean
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -5026,6 +5221,7 @@ export type Database = {
           name: string
           phone?: string | null
           plan?: string
+          ponto_facultativo_util?: boolean
           primary_color?: string | null
           secondary_color?: string | null
           state?: string | null
@@ -5038,6 +5234,8 @@ export type Database = {
         Update: {
           accent_color?: string | null
           address?: string | null
+          atendimento_alerta_amarelo_min?: number
+          atendimento_alerta_vermelho_min?: number
           city?: string | null
           cnpj?: string | null
           created_at?: string
@@ -5045,6 +5243,9 @@ export type Database = {
           flora_default_lead_owner?: string | null
           has_ekkoa_access?: boolean
           heading_font?: string | null
+          human_hours?: Json
+          human_timezone?: string
+          human_urgent_bypass?: boolean
           id?: string
           is_active?: boolean
           logo_url?: string | null
@@ -5052,6 +5253,7 @@ export type Database = {
           name?: string
           phone?: string | null
           plan?: string
+          ponto_facultativo_util?: boolean
           primary_color?: string | null
           secondary_color?: string | null
           state?: string | null
