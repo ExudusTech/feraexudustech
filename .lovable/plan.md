@@ -1,78 +1,47 @@
-# Lote 7 — Contexto de conversa no Fera (plano)
+# Lote 8 — Horário de atendimento humano e feriados
 
-Objetivo: guardar um resumo curto por lead (não a transcrição) e devolver à Flora um contexto de até ~400 caracteres da mesma pessoa.
+## Situação atual (verificada)
+- Já existe a tabela `holidays` (data, nome, cidade, organization_id) com 28 feriados compartilhados (nacionais + RJ, 2026 e 2027). Hoje ela só é usada para pular dias em rotas/agendamentos.
+- Transferência e Matriz notificam a equipe na hora (`solicitar_atendimento_humano`, eventos `transferencia` / `lead_matriz`), com anti-dup de 30 min, exceto urgência alta.
+- Não existe horário de atendimento configurado nem fila de avisos.
 
-## Resposta à pergunta: quem escreve o resumo?
+## Recomendações de regra
+- **Agendamentos (comercial e técnico): continuam avisando na hora.** É informativo, a visita já tem data, e o consultor pode querer planejar no fim de semana. Nada muda neles.
+- **Transferência, Matriz e cobrança de retorno: seguem o horário humano** (fila fora do horário).
+- **Urgência alta:** padrão "também espera", com chave configurável "Urgência alta avisa na hora mesmo fora do horário" (desligada).
+- **Mensagem dentro do horário:** "Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve."
+- **Fora do horário:** "Nossa equipe de atendimento retoma na terça-feira, 03/11, a partir das 8h. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊"
 
-Recomendação: **híbrido, com o Fera garantindo o mínimo**.
-- **Item estruturado gerado pelo Fera (sempre):** cada ferramenta de escrita grava um item montado dos próprios params/resultado (empresa, produto, data da visita, urgência, motivo). Custo zero, 100% confiável e não depende do prompt da Flora.
-- **resumo_conversa da Flora (opcional):** quando vier, é saneado (lixo/"não informado" descartado, e-mail/telefone mascarados, cortado em 500) e anexado ao item. A Flora tende a mandar resumos irregulares (às vezes vazios, às vezes longos), por isso não pode ser a única fonte.
-- **Gerar com IA no Fera: não agora.** Custaria uma chamada por ferramenta, aumentaria o tempo de resposta e pode inventar fatos; o Fera também não tem a transcrição. Fica como opção futura (resumo por IA só no encerramento, em background).
+## 1. Banco
+- `organizations`: novos campos `human_hours` (dias da semana + início/fim, padrão seg–sex 08:00–18:00), `human_timezone` (padrão America/Sao_Paulo), `human_urgent_bypass` (padrão falso).
+- `holidays`: novo campo `scope` (`nacional` | `estadual_rj` | `municipal`); municipal exige cidade. Backfill dos 28 atuais (nacionais vs. estaduais RJ por data/nome). Os compartilhados continuam editáveis só por super admin; o admin da org cadastra os municipais e ajustes próprios (regra do AGENTS.md mantida). Conferir que os 28 cobrem 2026–2027 por completo e incluir os faltantes.
+- Fila: `notification_logs` ganha `status` `queued`, `queued_at` e `release_at`. Avisos fora do horário ficam `queued` com o payload pronto.
+- Backup `backup_20261102_*` das linhas alteradas antes da migração.
 
-## Banco
+## 2. Utilitário de horário (compartilhado)
+- `supabase/functions/_shared/business-hours.ts` (e cópia testável no front): `estaEmHorario(agora, config, feriados, cidade?)` e `proximoHorarioUtil(agora, ...)` → data/hora + texto "terça-feira, 03/11, a partir das 8h". Considera fuso, fins de semana, feriados nacionais/RJ e municipais da cidade da org. Antes do horário no mesmo dia útil → "hoje, a partir das 8h".
 
-Nova tabela `lead_timeline`:
-- organization_id, lead_id, pessoa_id (nullable), canal (WHATSAPP/INSTAGRAM/MESSENGER/WIDGET/TELEGRAM/FERA), chat_id, tipo (`resumo|criar_lead|agendamento|transferencia|fora_perfil|encerramento`, CHECK), resumo (≤500, CHECK de tamanho), proximo_passo (≤200), origem (`flora|fera`), referencia_id (agendamento, opcional), created_at.
-- Índices: (organization_id, pessoa_id, created_at desc) e (lead_id, created_at desc).
-- RLS: SELECT para usuários da mesma organização seguindo a mesma visibilidade dos leads (vendedor só vê os leads que vê hoje); super_admin vê tudo. Sem INSERT/UPDATE/DELETE pelo app: escrita só pelo service role (mcp). GRANT de SELECT para authenticated e ALL para service_role.
-- Nenhum backfill: `leads.description` fica como está.
+## 3. mcp — solicitar_atendimento_humano (transferência, Matriz, cobrança)
+- Calcula horário. Retorno ganha `em_horario` e `retorno_previsto` (ISO + texto) e a `mensagem_para_lead` acima.
+- Dentro: comportamento atual.
+- Fora: lead marcado precisa_humano normalmente; aviso entra na fila com `release_at` = próximo período útil; texto do aviso ganha "Recebido fora do horário em <data/hora>".
+- Repetições fora do horário com aviso já na fila para o mesmo lead: só linha do tempo, sem novo aviso, mesma mensagem/retorno.
+- Linha do tempo: "Transferência recebida fora do horário" na entrada; "encaminhada em <data/hora>" quando a fila envia.
+- Agendar, imagens, produto, categoria e demais ferramentas: sem mudança.
 
-## Função mcp
+## 4. Agendador
+- Nova função `release-notification-queue`: pega `queued` com `release_at <= agora`, envia pelo GPT Maker com o mesmo token já existente, marca `sent`/`failed`, grava a linha do tempo. Execução única por aviso (trava por linha).
+- Agendamento a cada 5 min (pg_cron + pg_net, habilitados se faltarem), protegido por um segredo interno gerado automaticamente — você não precisa configurar nada.
 
-Campos opcionais novos `resumo_conversa` (texto) e `proximo_passo` em:
+## 5. Telas (Configurações)
+- Nova aba "Horário de atendimento": dias, início/fim, chave de urgência alta, prévia "Se alguém pedir atendimento agora: ...".
+- Aba "Feriados": lista por ano, com abrangência; incluir/editar/remover (municipal pede cidade). Só admin/super admin.
+- Linha do lead mostra "Aguardando abertura — enviará em <data>" enquanto o aviso estiver na fila.
 
-| Ferramenta | tipo gravado | Texto gerado pelo Fera |
-|---|---|---|
-| criar_lead | criar_lead | "Novo lead — <empresa>: <produto>" |
-| atualizar_lead | resumo | campos alterados (etapa, produto) |
-| registrar_interacao | resumo (ou `encerramento` se o params indicar) | tipo/descrição da interação |
-| agendar_visita_tecnica | agendamento | "visita DD/MM HHh, <produto>" |
-| solicitar_atendimento_humano | transferencia | "transferido p/ equipe (urgência X): <motivo>" |
-| registrar_fora_cobertura | fora_perfil | "fora da área — <cidade>" |
+## 6. Testes
+- Utilitário: domingo à tarde → segunda 8h; 02/11/2026 (Finados, segunda) → terça 03/11 8h; sexta 19h → segunda; antes das 8h em dia útil → hoje 8h; feriado municipal só na cidade certa.
+- mcp: dentro do horário avisa na hora + mensagem; fora → fila, `em_horario=false`, retorno previsto correto; repetição fora → só timeline; urgência alta com chave ligada/desligada; Matriz segue a mesma regra; agendamento continua avisando na hora.
+- Fila: libera só após `release_at`, uma vez, grava timeline "encaminhada em".
 
-- O item vai para o lead resolvido pelo isolamento por empresa já existente (nunca o lead de outra empresa).
-- A transferência deixa de anexar nota em `leads.description` e passa à linha do tempo (description mantém o conteúdo atual).
-- Gravação em background, igual à auditoria: falha nunca muda a resposta.
-- Anti-repetição: mesmo lead + tipo + texto em 10 min não duplica.
-
-### contexto_anterior
-
-Devolvido junto com `contato_conhecido` em consultar_produto, localizar_estabelecimento e também em buscar_contato:
-- Fonte: 3 itens mais recentes da pessoa identificada pelo chat_id, últimos 90 dias, só da organização.
-- Formato: `"DD/MM Canal — Empresa: resumo[, próximo passo]."` concatenados, cortado em 400 caracteres no limite de frase.
-  Ex.: "01/11 WhatsApp — Restaurante Brisa: papel toalha, transferido p/ equipe (urgência alta). 01/11 — Smart Fit São Pedro: visita 04/11 10h, dispenser MOD Interfoliado."
-- `null` quando não há pessoa ou itens.
-- Texto passa por máscara de e-mail/telefone/CPF/CNPJ antes de sair.
-
-### Identificação por canal
-
-- WhatsApp: telefone do chat_id (como hoje).
-- Instagram/Messenger: o identificador do chat_id é comparado com `pessoas.instagram_user_id` / `messenger_id` (já gravados na criação). Sem match → contato_conhecido e contexto_anterior nulos.
-- Nunca por nome ou e-mail (evita misturar pessoas).
-- Unificação de canais: só quando a mesma pessoa já tiver os dois identificadores no cadastro; não unir automaticamente por nome.
-
-## Tela
-
-- Detalhe do lead (Leads): nova aba "Histórico" com cartões em ordem decrescente: data/hora, selo do canal, selo do tipo, resumo, próximo passo, "Flora" ou "Fera". Uma coluna no celular, sem rolagem lateral.
-- Vazio: "Nenhuma conversa registrada ainda".
-
-## Testes
-
-- Cada ferramenta de escrita grava 1 item com o tipo certo no lead da empresa atual (A→B não grava em A).
-- resumo_conversa vazio/"não informado" → só o texto gerado; longo → cortado em 500; e-mail/telefone mascarados.
-- Falha ao gravar não altera a resposta.
-- contexto_anterior: 3 itens mais recentes, ≤400 chars, ignora >90 dias, nunca de outra pessoa/organização, `null` para desconhecido.
-- Instagram/Messenger por instagram_user_id/messenger_id.
-- Transferência não altera mais description.
-- Respostas existentes (encontrado, imagem_enviada, mensagem_para_lead) iguais.
-
-## Riscos
-
-- **LGPD:** resumo pode conter dados pessoais; mitigado por máscara, limite de tamanho, visibilidade por perfil e escopo por pessoa. Recomendo depois definir prazo de retenção (ex.: apagar itens com mais de 24 meses).
-- **Tamanho:** ~500 chars por item; mesmo com milhares de conversas é pequeno. A consulta usa índice e limite 3.
-- **Pessoa errada:** se dois contatos usam o mesmo telefone (ex.: recepção), o contexto mistura empresas; o texto sempre cita a empresa para a Flora confirmar.
-- **Confiança no resumo da Flora:** tratado como dado, não instrução; nunca muda etapa nem dados do lead.
-
-## Fora do escopo
-
-Transcrição completa, resumo por IA, migração do histórico antigo em description, autenticação e secrets.
+## O que você precisa fazer
+Nada a configurar. Depois de aplicado: publicar o site para as novas telas e revisar/incluir os feriados municipais.
