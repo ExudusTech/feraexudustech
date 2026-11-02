@@ -1,47 +1,66 @@
-# Lote 8 — Horário de atendimento humano e feriados
+# Lote 8 (revisado) — Horário de atendimento humano, com feriados vindos do Google Calendar
 
 ## Situação atual (verificada)
-- Já existe a tabela `holidays` (data, nome, cidade, organization_id) com 28 feriados compartilhados (nacionais + RJ, 2026 e 2027). Hoje ela só é usada para pular dias em rotas/agendamentos.
-- Transferência e Matriz notificam a equipe na hora (`solicitar_atendimento_humano`, eventos `transferencia` / `lead_matriz`), com anti-dup de 30 min, exceto urgência alta.
-- Não existe horário de atendimento configurado nem fila de avisos.
+- **Não há integração com Google Calendar no Fera hoje.** Nenhuma função ou tela do projeto chama o Google Calendar, e não existe conexão Google Calendar disponível neste workspace. O primeiro passo é conectar a conta flora.nitsclean@gmail.com (ver "O que você precisa fazer").
+- A tabela `holidays` tem 28 feriados (nacionais + RJ, 2026–2027) e é usada por `consultar_rota` e `agendar_visita_tecnica` para pular dias.
+- Transferência e Matriz avisam a equipe na hora; não há horário de atendimento nem fila.
 
-## Recomendações de regra
-- **Agendamentos (comercial e técnico): continuam avisando na hora.** É informativo, a visita já tem data, e o consultor pode querer planejar no fim de semana. Nada muda neles.
-- **Transferência, Matriz e cobrança de retorno: seguem o horário humano** (fila fora do horário).
-- **Urgência alta:** padrão "também espera", com chave configurável "Urgência alta avisa na hora mesmo fora do horário" (desligada).
-- **Mensagem dentro do horário:** "Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve."
-- **Fora do horário:** "Nossa equipe de atendimento retoma na terça-feira, 03/11, a partir das 8h. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊"
+## 1. Fonte dos feriados: Google Calendar (só leitura)
+- **(a) Agenda pública "Feriados no Brasil"** (`pt.brazilian#holiday@group.v.calendar.google.com`), eventos de dia inteiro.
+  - O Google marca cada evento na descrição: "Feriado público", "Observância" ou similar. **Feriado público** = sem atendimento. **Observância/data comemorativa** (Dia das Mães, Dia do Professor...) = ignorada.
+  - **Ponto facultativo** (Carnaval, Quarta de Cinzas, Corpus Christi...): chave configurável. **Recomendação: padrão = dia útil (atende).** O ponto facultativo vale para o serviço público, não para empresa privada. Quando a NitsClean não for atender (ex.: Carnaval), o Arilson bloqueia o dia na agenda própria (b), e fica explícito.
+  - Feriados estaduais do RJ: a agenda pública nem sempre traz todos os estaduais (ex.: São Jorge 23/04, Consciência Negra varia). Eles ficam garantidos pela agenda (b). Na implantação, comparo com os 28 atuais e listo o que faltar para o Arilson cadastrar.
+- **(b) Agenda "Feriados e recessos NitsClean"** na mesma conta: feriados municipais, recessos e dias sem atendimento. Todo evento dessa agenda = dia sem atendimento.
+  - Municipal: o título ou a descrição leva a cidade no formato `[Cidade: Cabo Frio]`. Sem cidade = vale para todas (recesso geral). Assim a regra de "exclusão municipal só na cidade certa" das rotas continua valendo.
+  - Evento com horário (não dia inteiro), como "fechado a partir das 12h", bloqueia só aquele intervalo do atendimento humano.
+  - **Se a agenda não existir, o Fera não cria.** A tela mostra "Agenda NitsClean não encontrada" e o passo a passo abaixo.
 
-## 1. Banco
-- `organizations`: novos campos `human_hours` (dias da semana + início/fim, padrão seg–sex 08:00–18:00), `human_timezone` (padrão America/Sao_Paulo), `human_urgent_bypass` (padrão falso).
-- `holidays`: novo campo `scope` (`nacional` | `estadual_rj` | `municipal`); municipal exige cidade. Backfill dos 28 atuais (nacionais vs. estaduais RJ por data/nome). Os compartilhados continuam editáveis só por super admin; o admin da org cadastra os municipais e ajustes próprios (regra do AGENTS.md mantida). Conferir que os 28 cobrem 2026–2027 por completo e incluir os faltantes.
-- Fila: `notification_logs` ganha `status` `queued`, `queued_at` e `release_at`. Avisos fora do horário ficam `queued` com o payload pronto.
-- Backup `backup_20261102_*` das linhas alteradas antes da migração.
+**Como criar a agenda (b)** — Arilson, no Google Agenda logado como flora.nitsclean@gmail.com: "Outras agendas" → "+" → "Criar nova agenda" → nome exato "Feriados e recessos NitsClean" → Criar. Cadastrar eventos de dia inteiro; municipais com `[Cidade: Nome]`.
 
-## 2. Utilitário de horário (compartilhado)
-- `supabase/functions/_shared/business-hours.ts` (e cópia testável no front): `estaEmHorario(agora, config, feriados, cidade?)` e `proximoHorarioUtil(agora, ...)` → data/hora + texto "terça-feira, 03/11, a partir das 8h". Considera fuso, fins de semana, feriados nacionais/RJ e municipais da cidade da org. Antes do horário no mesmo dia útil → "hoje, a partir das 8h".
+## 2. Cache (somente leitura)
+- Nova tabela `calendar_holidays_cache` por organização: data, fim, nome, origem (`google_brasil` | `nitsclean`), tipo (`feriado` | `ponto_facultativo` | `recesso`), cidade, intervalo de horário opcional, `google_event_id`, `synced_at`. Usuários só leem; escrita só pelo servidor.
+- Tabela `calendar_sync_status` por org: último sucesso, último erro (código, sem dados pessoais), agenda NitsClean encontrada ou não.
+- **Sincronia:** nova função `sync-holidays`, 1x por dia (madrugada) e sob demanda quando o cache tiver mais de 26h. Janela: hoje até +400 dias. Troca o conteúdo da org só depois de buscar as duas agendas com sucesso (nunca deixa o cache meio vazio).
+- **Falhas:** Google falhou → usa o último cache válido, mesmo vencido. Sem cache nenhum → só fins de semana contam como não úteis, e o painel mostra um aviso.
 
-## 3. mcp — solicitar_atendimento_humano (transferência, Matriz, cobrança)
-- Calcula horário. Retorno ganha `em_horario` e `retorno_previsto` (ISO + texto) e a `mensagem_para_lead` acima.
-- Dentro: comportamento atual.
-- Fora: lead marcado precisa_humano normalmente; aviso entra na fila com `release_at` = próximo período útil; texto do aviso ganha "Recebido fora do horário em <data/hora>".
-- Repetições fora do horário com aviso já na fila para o mesmo lead: só linha do tempo, sem novo aviso, mesma mensagem/retorno.
-- Linha do tempo: "Transferência recebida fora do horário" na entrada; "encaminhada em <data/hora>" quando a fila envia.
-- Agendar, imagens, produto, categoria e demais ferramentas: sem mudança.
+## 3. Uma só verdade para rotas e agendamentos
+- O helper único de calendário (o mesmo da regra do AGENTS.md) passa a ler `calendar_holidays_cache` em `consultar_rota`, `agendar_visita_tecnica` e no horário humano.
+- Para rotas e visitas, ponto facultativo segue a mesma chave.
+- A tabela `holidays` fica intacta como backup e marcada DEPRECATED. Ela só é usada se o cache estiver totalmente vazio, para não piorar o que funciona hoje enquanto a primeira sincronia não roda.
 
-## 4. Agendador
-- Nova função `release-notification-queue`: pega `queued` com `release_at <= agora`, envia pelo GPT Maker com o mesmo token já existente, marca `sent`/`failed`, grava a linha do tempo. Execução única por aviso (trava por linha).
-- Agendamento a cada 5 min (pg_cron + pg_net, habilitados se faltarem), protegido por um segredo interno gerado automaticamente — você não precisa configurar nada.
+## 4. Horário de atendimento humano (mantido do plano anterior)
+- `organizations`: `human_hours` (padrão seg–sex 08:00–18:00), fuso America/Sao_Paulo, `human_urgent_bypass` (padrão desligado = urgência alta também espera), `ponto_facultativo_util` (padrão ligado).
+- Utilitário `_shared/business-hours.ts`: `estaEmHorario(agora)` e `proximoHorarioUtil(agora)` → "terça-feira, 03/11, a partir das 8h". Considera fins de semana, feriados, recessos e bloqueios parciais do cache.
 
-## 5. Telas (Configurações)
-- Nova aba "Horário de atendimento": dias, início/fim, chave de urgência alta, prévia "Se alguém pedir atendimento agora: ...".
-- Aba "Feriados": lista por ano, com abrangência; incluir/editar/remover (municipal pede cidade). Só admin/super admin.
-- Linha do lead mostra "Aguardando abertura — enviará em <data>" enquanto o aviso estiver na fila.
+## 5. mcp (mantido)
+- `solicitar_atendimento_humano`, Matriz e cobrança de retorno devolvem `em_horario` e `retorno_previsto`.
+- **Dentro do horário:** aviso na hora + "Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve."
+- **Fora do horário:** o aviso vai para a fila (`notification_logs` com `queued`/`release_at`), com "Recebido fora do horário em <data/hora>". O cliente recebe "Nossa equipe de atendimento retoma na <próximo período útil real>, a partir das 8h. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊"
+- **Repetição fora do horário:** só entra na linha do tempo; o cliente recebe a mesma informação de retorno.
+- **Linha do tempo:** "Transferência recebida fora do horário"; ao liberar, "encaminhada em <data/hora>".
+- **Agendamentos continuam avisando na hora** (recomendação mantida: é informativo e a visita já tem data). As demais ferramentas não mudam.
 
-## 6. Testes
-- Utilitário: domingo à tarde → segunda 8h; 02/11/2026 (Finados, segunda) → terça 03/11 8h; sexta 19h → segunda; antes das 8h em dia útil → hoje 8h; feriado municipal só na cidade certa.
-- mcp: dentro do horário avisa na hora + mensagem; fora → fila, `em_horario=false`, retorno previsto correto; repetição fora → só timeline; urgência alta com chave ligada/desligada; Matriz segue a mesma regra; agendamento continua avisando na hora.
-- Fila: libera só após `release_at`, uma vez, grava timeline "encaminhada em".
+## 6. Agendador
+- `release-notification-queue` a cada 5 min: envia os avisos da fila com `release_at` vencido, uma vez cada, e grava a linha do tempo.
+- `sync-holidays` 1x por dia. Os dois rodam por agendamento no servidor, protegidos por um segredo interno gerado automaticamente.
+
+## 7. Tela (Configurações → Horário de atendimento)
+- Editável pelo admin: dias, horários, chave de urgência alta, chave de ponto facultativo, prévia "Se alguém pedir atendimento agora: ...".
+- **Próximos feriados (vindos do Google):** lista só leitura com data, nome, origem, cidade, além de "Última sincronia em ...", botão "Sincronizar agora" e aviso se a agenda NitsClean não existir ou se o Google falhar.
+- Nenhum cadastro de feriados no Fera.
+
+## 8. Testes
+- **Leitura dos eventos:** feriado público entra; observância é ignorada; ponto facultativo segue a chave; `[Cidade: X]` vale só em X; bloqueio parcial funciona.
+- **Cache:** Google falhou → último cache; sem cache → só fins de semana; a troca do cache é atômica.
+- **Horário:** domingo à tarde → segunda 8h; 02/11/2026 → terça 03/11 8h; sexta 19h → segunda; antes das 8h → hoje 8h.
+- **mcp:** dentro → aviso na hora; fora → fila + retorno correto; repetição → só linha do tempo; urgência alta com a chave ligada e desligada; Matriz segue a mesma regra; agendamento avisa na hora; rotas usam o cache.
+- **Fila:** libera uma vez, depois do `release_at`.
+
+## Permissões do Google
+- **Necessário:** só leitura. Escopo `https://www.googleapis.com/auth/calendar.readonly`, que cobre a lista de agendas assinadas (incluindo "Feriados no Brasil") e os eventos da agenda própria. Alternativa mínima: `calendar.calendarlist.readonly` + `calendar.events.readonly`. Nenhum escopo de escrita: o Fera nunca cria nem edita eventos.
+- **Sobre "o token atual já cobre?":** não encontrei token nem conexão do Google Calendar neste projeto ou workspace, então ainda não há o que conferir. Depois que a conexão for criada, eu verifico os escopos concedidos antes de implementar.
 
 ## O que você precisa fazer
-Nada a configurar. Depois de aplicado: publicar o site para as novas telas e revisar/incluir os feriados municipais.
+1. Conectar o Google Calendar como flora.nitsclean@gmail.com, com permissão de leitura: https://lovable.dev/connectors/google_calendar/connect?workspace=DyRIWqbAituV33j9ol8o
+2. Pedir ao Arilson que crie a agenda "Feriados e recessos NitsClean" (passo a passo acima), ou me autorizar a seguir sem ela por enquanto.
+3. Confirmar a recomendação: ponto facultativo = dia útil por padrão.
