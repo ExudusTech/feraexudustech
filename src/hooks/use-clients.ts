@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
-import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 
 export interface Client {
@@ -26,22 +25,30 @@ export interface Client {
 
 export type ClientInsert = Omit<Client, "id" | "created_at" | "updated_at" | "assigned_user_id"> & { assigned_user_id?: string | null };
 
+/** Visibility (created_by / assigned_user_id / privileged) is enforced by RLS; don't narrow it client-side. */
+export function buildClientInsert(
+  input: Omit<ClientInsert, "organization_id" | "created_by">,
+  user: { id: string; organization_id: string },
+) {
+  return {
+    ...input,
+    assigned_user_id: input.assigned_user_id || user.id,
+    organization_id: user.organization_id,
+    created_by: user.id,
+  };
+}
+
 export function useClients() {
   const { user } = useAuth();
-  const { isAdmin, role } = usePermissions();
 
   return useQuery({
-    queryKey: ["clients", user?.organization_id, role],
+    queryKey: ["clients", user?.organization_id, user?.id],
     queryFn: async () => {
       let query = supabase
         .from("clients")
         .select("*")
         .order("created_at", { ascending: false });
-
-      // User role: only see clients assigned to them
-      if (!isAdmin && role !== "gestor") {
-        query = query.eq("assigned_user_id", user!.id);
-      }
+      if (user?.organization_id) query = query.eq("organization_id", user.organization_id);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -60,7 +67,7 @@ export function useCreateClient() {
       if (!user?.organization_id) throw new Error("Sem organização");
       const { data, error } = await supabase
         .from("clients")
-        .insert({ ...input, organization_id: user.organization_id, created_by: user.id })
+        .insert(buildClientInsert(input, { id: user.id, organization_id: user.organization_id }))
         .select()
         .single();
       if (error) throw error;
