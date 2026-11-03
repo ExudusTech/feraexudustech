@@ -54,3 +54,44 @@ export function calcularMetricas(items: MetricItem[], svc: Service, schedules: A
     comAgendamentoDepois: comAgendamento,
   };
 }
+
+export type FiltroDim = "status" | "gravidade" | "resultado" | "motivo" | "canal" | "atraso";
+export interface FiltroAtendimento { dim: FiltroDim; valor: string; label: string; desde?: string; owner?: string }
+type FiltroItem = MetricItem & { responsavel_id?: string | null; assumido_por?: string | null };
+
+/** Same keys as calcularMetricas, so a clicked row shows exactly the counted items. */
+export function aplicaFiltro<T extends FiltroItem>(items: T[], f: FiltroAtendimento | null, svc: Service, now = new Date()): T[] {
+  if (!f) return items;
+  return items.filter((i) => {
+    if (f.desde && i.aberto_em < f.desde) return false;
+    if (f.owner && i.responsavel_id !== f.owner && i.assumido_por !== f.owner) return false;
+    switch (f.dim) {
+      case "status": return i.status === f.valor;
+      case "gravidade": return nivel(i, svc, now) === f.valor;
+      case "resultado": return i.resultado === f.valor;
+      case "motivo": return i.tipo === f.valor;
+      case "canal": return (i.canal ?? "—") === f.valor;
+      case "atraso": return (i.status === "aberto" || i.status === "em_atendimento") && nivel(i, svc, now) !== "verde";
+    }
+  });
+}
+
+export interface MensagemConversa { autor: string; texto: string; quando: string | null }
+const AVISOS = ["📅 Nova visita", "👤 Atendimento transferido", "⏰ Cliente cobrando", "🏢 Lead recebido"];
+
+/** Relabel non-client messages: team sends registered by Fera (timeline "X respondeu pelo Fera", ±2 min) and system alerts. */
+export function rotularAutores(msgs: MensagemConversa[], envios: Array<{ quem: string; quando: string }>, janelaMs = 120_000): MensagemConversa[] {
+  const livres = envios.map((e) => ({ ...e, t: new Date(e.quando).getTime(), usado: false }));
+  return msgs.map((m) => {
+    if (m.autor === "Cliente") return m;
+    const texto = (m.texto ?? "").trimStart();
+    if (AVISOS.some((p) => texto.startsWith(p))) return { ...m, autor: "Aviso do sistema" };
+    if (!m.quando) return m;
+    const t = new Date(m.quando).getTime();
+    let best: (typeof livres)[number] | null = null;
+    for (const e of livres) if (!e.usado && Math.abs(e.t - t) <= janelaMs && (!best || Math.abs(e.t - t) < Math.abs(best.t - t))) best = e;
+    if (!best) return m;
+    best.usado = true;
+    return { ...m, autor: best.quem };
+  });
+}

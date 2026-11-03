@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Hand, CheckCircle2, MessageCircle, Undo2, Send, ExternalLink, XCircle } from "lucide-react";
+import { Hand, CheckCircle2, MessageCircle, Undo2, Send, ExternalLink, XCircle, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import PainelAgora, { NIVEL_STYLE, formatEspera } from "@/components/atendimentos/PainelAgora";
 import AtendimentoMetrics from "@/components/atendimentos/AtendimentoMetrics";
 import ResolveDialog from "@/components/atendimentos/ResolveDialog";
@@ -15,7 +17,7 @@ import LeadTimeline from "@/components/crm/LeadTimeline";
 import { RESULTADO_LABEL, STATUS_LABEL, useAtendimentoAction, useAtendimentos, useConversa, type Atendimento } from "@/hooks/use-atendimentos";
 import { useHumanService } from "@/hooks/use-human-service";
 import { useOrganizationUsers } from "@/hooks/use-users";
-import { esperaMinutos, nivel } from "@/lib/atendimento-metrics";
+import { aplicaFiltro, esperaMinutos, nivel, rotularAutores, type FiltroAtendimento } from "@/lib/atendimento-metrics";
 import { cn } from "@/lib/utils";
 
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
@@ -28,6 +30,15 @@ function Detail({ a, onResolve }: { a: Atendimento; onResolve: () => void }) {
   const open = a.status === "aberto" || a.status === "em_atendimento";
   const name = (id: string | null) => users.find((u) => u.user_id === id)?.name ?? "—";
   const wa = a.whatsapp?.replace(/\D/g, "");
+  const { data: envios = [] } = useQuery({
+    queryKey: ["atendimento-envios", a.id, a.lead_id], enabled: !!a.lead_id && !!a.chat_id, refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data } = await supabase.from("lead_timeline").select("resumo, created_at").eq("lead_id", a.lead_id!)
+        .eq("origem", "fera").like("resumo", "% respondeu pelo Fera").order("created_at", { ascending: true }).limit(200);
+      return (data ?? []).map((r: any) => ({ quem: String(r.resumo).replace(/ respondeu pelo Fera$/, ""), quando: r.created_at as string }));
+    },
+  });
+  const mensagens = useMemo(() => rotularAutores(conversa?.mensagens ?? [], envios), [conversa, envios]);
   const send = async () => { await action.mutateAsync({ id: a.id, action: "enviar", mensagem: msg.trim() }); setMsg(""); };
 
   return (
@@ -58,9 +69,9 @@ function Detail({ a, onResolve }: { a: Atendimento; onResolve: () => void }) {
           <div className="max-h-80 overflow-y-auto rounded-lg border border-border p-2 space-y-2 bg-card/40">
             {isLoading ? <p className="text-sm text-muted-foreground">Carregando conversa…</p>
               : !conversa?.disponivel ? <p className="text-sm text-muted-foreground">Não foi possível buscar a conversa agora.</p>
-              : conversa.mensagens.length === 0 ? <p className="text-sm text-muted-foreground">Sem mensagens.</p>
-              : conversa.mensagens.map((m, i) => (
-                <div key={i} className={cn("rounded-lg px-3 py-2 text-sm max-w-[85%]", m.autor === "Cliente" ? "bg-muted" : "bg-primary/10 ml-auto")}>
+              : mensagens.length === 0 ? <p className="text-sm text-muted-foreground">Sem mensagens.</p>
+              : mensagens.map((m, i) => (
+                <div key={i} className={cn("rounded-lg px-3 py-2 text-sm max-w-[85%]", m.autor === "Cliente" ? "bg-muted" : m.autor === "Aviso do sistema" ? "bg-accent/40 mx-auto italic" : "bg-primary/10 ml-auto")}>
                   <p className="text-[11px] text-muted-foreground">{m.autor}{m.quando ? ` · ${when(m.quando)}` : ""}</p>
                   <p className="whitespace-pre-wrap">{m.texto}</p>
                 </div>
@@ -84,6 +95,9 @@ export default function Atendimentos() {
   const [params, setParams] = useSearchParams();
   const { data = [] } = useAtendimentos();
   const svc = useHumanService();
+  const [tab, setTab] = useState("agora");
+  const [filtro, setFiltro] = useState<FiltroAtendimento | null>(null);
+  const lista = useMemo(() => aplicaFiltro(data, filtro, svc), [data, filtro, svc]);
   const [resolving, setResolving] = useState<Atendimento | null>(null);
   const selectedId = params.get("id");
   const selected = useMemo(() => data.find((a) => a.id === selectedId) ?? null, [data, selectedId]);
@@ -92,14 +106,21 @@ export default function Atendimentos() {
 
   return (
     <AppLayout title="Atendimentos" subtitle="Pedidos de atendimento humano vindos da Flora">
-      <Tabs defaultValue="agora">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList><TabsTrigger value="agora">Agora</TabsTrigger><TabsTrigger value="todos">Todos</TabsTrigger><TabsTrigger value="metricas">Métricas</TabsTrigger></TabsList>
         <TabsContent value="agora"><PainelAgora /></TabsContent>
         <TabsContent value="todos">
           <Card><CardContent className="pt-4">
-            {data.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum atendimento ainda.</p> : (
+            {filtro && (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Badge variant="secondary" className="gap-1 pr-1 text-sm">{filtro.label}{filtro.desde ? ` · desde ${when(filtro.desde).slice(0, 5)}` : ""}
+                  <button type="button" aria-label="Remover filtro" className="rounded-full p-1 hover:bg-muted" onClick={() => setFiltro(null)}><X className="h-3.5 w-3.5" /></button></Badge>
+                <span className="text-xs text-muted-foreground">{lista.length} atendimento(s)</span>
+              </div>
+            )}
+            {lista.length === 0 ? <p className="text-sm text-muted-foreground">{filtro ? "Nenhum atendimento com este filtro." : "Nenhum atendimento ainda."}</p> : (
               <ul className="divide-y divide-border">
-                {data.map((a) => {
+                {lista.map((a) => {
                   const lvl = nivel(a, svc);
                   return (
                     <li key={a.id}>
@@ -117,7 +138,7 @@ export default function Atendimentos() {
             )}
           </CardContent></Card>
         </TabsContent>
-        <TabsContent value="metricas"><AtendimentoMetrics /></TabsContent>
+        <TabsContent value="metricas"><AtendimentoMetrics onDrill={(f) => { setFiltro(f); setTab("todos"); }} /></TabsContent>
       </Tabs>
       <Sheet open={!!selected} onOpenChange={(o) => !o && closeDetail()}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
