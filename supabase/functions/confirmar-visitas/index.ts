@@ -125,8 +125,8 @@ Deno.serve(async () => {
       for (const s of hoje ?? []) { const k = `${s.organization_id}|${s.assigned_to}`; byUser.set(k, [...(byUser.get(k) ?? []), s]); }
       for (const [k, list] of byUser) {
         const [orgId, uid] = k.split("|");
-        const { data: oc } = await admin.from("ocorrencias_ponto").select("item_descricao, quantidade, clients(name)").eq("organization_id", orgId)
-          .in("client_id", list.map((s) => s.client_id).filter(Boolean)).in("status", ["aberta", "separada"]);
+        const { data: oc } = await admin.from("maintenance_schedule").select("item_descricao, quantidade, clients(name)").eq("organization_id", orgId).eq("tipo_os", "substituicao")
+          .in("client_id", list.map((s) => s.client_id).filter(Boolean)).in("status", ["agendada", "em_andamento"]);
         const { data: pr } = await admin.from("profiles").select("name").eq("user_id", uid).maybeSingle();
         await teamAlert(admin, orgId, "manutencao_do_dia", manutencaoDoDiaMessage(pr?.name ?? "", list.map((s) => ({ hora: s.start_time ?? "", cliente: s.clients?.name ?? "" })),
           (oc ?? []).map((o: any) => `${o.quantidade}x ${o.item_descricao ?? "item"} (${o.clients?.name ?? ""})`)), { dia_usuario: `${today}|${uid}` },
@@ -151,13 +151,6 @@ Deno.serve(async () => {
         if (paths.length) {
           await admin.storage.from("visit-photos").remove(paths);
           await admin.from("schedule_evidencias").update({ foto_path: null }).in("id", (old ?? []).map((e: any) => e.id));
-        }
-        const { data: oldAv } = await admin.from("ponto_avaliacoes").select("id, foto_path").eq("organization_id", o.id).lt("created_at", photoCut).not("foto_path", "is", null).limit(200);
-        const avPaths = (oldAv ?? []).map((e: any) => e.foto_path);
-        if (avPaths.length) {
-          await admin.storage.from("visit-photos").remove(avPaths);
-          await admin.from("ponto_avaliacoes").update({ foto_path: null }).in("id", (oldAv ?? []).map((e: any) => e.id));
-          paths.push(...avPaths);
         }
         const n = (ck?.length ?? 0) + paths.length;
         if (n) { out.limpeza += n; await admin.from("audit_logs").insert({ organization_id: o.id, action: "RETENTION_CLEANUP", entity_type: "schedule_execution",
