@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Headset, CalendarDays, Target, Users, Handshake, Wrench, Menu, LogOut, Sun, Moon, UserCircle } from "lucide-react";
+import { Headset, CalendarDays, ListChecks, Target, Users, Handshake, Wrench, Menu, LogOut, Sun, Moon, UserCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { mainNavItems, bottomNavItems } from "./AppSidebar";
 
 const PRIMARY = [
+  { icon: ListChecks, label: "Hoje", path: "/hoje" },
   { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: Headset, label: "Atendimentos", path: "/atendimentos" },
   { icon: Target, label: "Leads", path: "/leads" },
