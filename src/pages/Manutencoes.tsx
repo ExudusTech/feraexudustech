@@ -51,6 +51,7 @@ export default function Manutencoes() {
       subtitle="Ordens de serviço: instalação, teste, manutenção e retirada"
       actions={canEdit && <Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Nova ordem de serviço</Button>}
     >
+      <div className="mb-4"><EmergencyRequests /></div>
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

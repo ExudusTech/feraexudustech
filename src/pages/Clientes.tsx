@@ -11,41 +11,29 @@ import ClientBaseDialog from "@/components/crm/ClientBaseDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ClientFormDialog from "@/components/crm/ClientFormDialog";
-import ClientVisitFormDialog from "@/components/crm/ClientVisitFormDialog";
 import { useClients, useDeleteClient, type Client } from "@/hooks/use-clients";
-import { useClientVisits, useDeleteClientVisit, type ClientVisit } from "@/hooks/use-client-visits";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Users, CalendarCheck } from "lucide-react";
 
 export default function Clientes() {
   const [baseClient, setBaseClient] = useState<{ id: string; name: string } | null>(null);
   const { data: clients = [], isLoading } = useClients();
-  const { data: visits = [], isLoading: visitsLoading } = useClientVisits();
   const deleteClient = useDeleteClient();
-  const deleteVisit = useDeleteClientVisit();
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState("clientes");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [visitDialogOpen, setVisitDialogOpen] = useState(false);
-  const [selectedVisit, setSelectedVisit] = useState<ClientVisit | null>(null);
   const [deleteId, setDeleteId] = useState<{ type: string; id: string } | null>(null);
 
   const s = search.toLowerCase();
   const filtered = clients.filter((c) =>
     [c.name, c.email, c.phone, c.company].some((f) => f?.toLowerCase().includes(s))
   );
-  const filteredVisits = visits.filter((v) =>
-    [v.subject, v.visit_type, v.outcome].some((f) => f?.toLowerCase().includes(s))
-  );
 
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name || "—";
 
   const handleNew = () => {
-    if (tab === "visitas") {
-      setSelectedVisit(null);
-      setVisitDialogOpen(true);
-    } else {
+    {
       setSelectedClient(null);
       setDialogOpen(true);
     }
@@ -120,12 +108,11 @@ export default function Clientes() {
         </TabsContent>
 
         <TabsContent value="visitas">
-          <ClientSchedulesList clientName={(id) => clientName(id as string)} search={search} />
+          <ClientSchedulesList clientName={(id) => (id ? clientName(id) : "—")} search={search} />
         </TabsContent>
       </Tabs>
 
       <ClientFormDialog open={dialogOpen} onOpenChange={setDialogOpen} client={selectedClient} />
-      <ClientVisitFormDialog open={visitDialogOpen} onOpenChange={setVisitDialogOpen} visit={selectedVisit} />
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
@@ -137,7 +124,6 @@ export default function Clientes() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               if (deleteId?.type === "client") deleteClient.mutate(deleteId.id);
-              else if (deleteId?.type === "visit") deleteVisit.mutate(deleteId.id);
               setDeleteId(null);
             }}>Excluir</AlertDialogAction>
           </AlertDialogFooter>
