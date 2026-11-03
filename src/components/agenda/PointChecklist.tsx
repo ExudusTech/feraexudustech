@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Loader2, Plus, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useProducts } from "@/hooks/use-products";
+import { useProductImageUrls } from "@/hooks/use-product-images";
 import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, pontosPendentes, uploadVisitPhoto } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 
@@ -46,9 +47,10 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
   const pontos = data?.pontos ?? [];
   const avaliados = (data?.avaliacoes ?? []).map((a) => a.comodato_id);
   const pend = pontosPendentes(pontos, avaliados).length;
-  onPendingChange?.(pend);
+  useEffect(() => { onPendingChange?.(pend); }, [pend, onPendingChange]);
   const nameOf = (id?: string | null) => products.find((p) => p.id === id)?.name;
-  const imageOf = (id?: string | null) => products.find((p) => p.id === id)?.image_url;
+  const { data: signed } = useProductImageUrls(pontos.map((p) => products.find((x) => x.id === p.product_id)?.image_url));
+  const imageOf = (id?: string | null) => { const path = products.find((p) => p.id === id)?.image_url; return path ? (signed as any)?.[path] ?? null : null; };
 
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
