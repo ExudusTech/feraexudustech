@@ -18,6 +18,7 @@ import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInte
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
+import { useClients } from "@/hooks/use-clients";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
 import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
 import { CONFIRMACAO_LABEL } from "@/lib/visit-exec";
@@ -36,6 +37,8 @@ export default function Agenda() {
   const { data: users = [] } = useOrganizationUsers();
   const { data: leads = [] } = useLeads();
   const deleteSchedule = useDeleteSchedule();
+  const { data: clientsList = [] } = useClients();
+  const clientMap = useMemo(() => new Map(clientsList.map((c) => [c.id, c.company || c.name])), [clientsList]);
 
   const [viewMode, setViewMode] = useState<ViewMode>(canViewAll ? "todas" : "minhas");
   useEffect(() => { setViewMode(canViewAll ? "todas" : "minhas"); }, [canViewAll, user?.organization_id]);
@@ -427,7 +430,7 @@ export default function Agenda() {
                 <TableRow>
                   <TableHead>Título</TableHead>
                   <TableHead>Subtipo</TableHead>
-                  <TableHead>Lead</TableHead>
+                  <TableHead>Cliente/Lead</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead>Horário</TableHead>
                   <TableHead>Status</TableHead>
@@ -451,7 +454,7 @@ export default function Agenda() {
                           </span>
                         ) : "—"}
                       </TableCell>
-                      <TableCell>{s.lead_id ? (leadMap.get(s.lead_id) ?? "—") : "—"}</TableCell>
+                      <TableCell>{s.client_id ? <><Badge variant="outline" className="mr-1">Cliente</Badge>{clientMap.get(s.client_id) ?? "—"}</> : s.lead_id ? <><Badge variant="outline" className="mr-1">Lead</Badge>{leadMap.get(s.lead_id) ?? "—"}</> : <span className="text-destructive">Sem vínculo</span>}</TableCell>
                       <TableCell>{format(parseISO(s.scheduled_date), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{s.start_time?.slice(0, 5) || "—"}</TableCell>
                       <TableCell>{getStatusBadge(s.status)}{s.status === "agendado" && s.confirmacao_status && ["confirmado", "remarcar", "sem_resposta"].includes(s.confirmacao_status) && <Badge variant="outline" className="ml-1">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}</TableCell>
