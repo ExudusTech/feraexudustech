@@ -47,3 +47,21 @@ describe("visit execution rules", () => {
     expect(lateMinutes(new Date("2026-11-06T17:16:00Z"), { scheduled_date: "2026-11-06", start_time: "14:00", status: "em_atendimento" })).toBe(0);
   });
 });
+
+import { attemptsFor, confirmationEligible, CONFIRMACAO_MAX_TENTATIVAS } from "../../supabase/functions/_shared/visit-exec";
+describe("client confirmation eligibility and retries", () => {
+  it("skips visits created before 03/11/2026 (São Paulo)", () => {
+    expect(confirmationEligible("2026-11-02T23:59:00-03:00", "chat1")).toBe(false);
+    expect(confirmationEligible("2026-11-03T00:00:00-03:00", "chat1")).toBe(true);
+  });
+  it("skips visits without a client chat", () => {
+    expect(confirmationEligible("2026-11-04T10:00:00Z", null)).toBe(false);
+  });
+  it("allows at most 3 attempts per step", () => {
+    expect(CONFIRMACAO_MAX_TENTATIVAS).toBe(3);
+    expect(attemptsFor("d1", 3, "d1: HTTP 500")).toBe(3);
+  });
+  it("a failed D-1 does not consume the same-day attempts", () => {
+    expect(attemptsFor("dia", 3, "d1: HTTP 500")).toBe(0);
+  });
+});
