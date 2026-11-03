@@ -3095,6 +3095,24 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261103_product_images: {
+        Row: {
+          id: string | null
+          image_url: string | null
+          sku: string | null
+        }
+        Insert: {
+          id?: string | null
+          image_url?: string | null
+          sku?: string | null
+        }
+        Update: {
+          id?: string | null
+          image_url?: string | null
+          sku?: string | null
+        }
+        Relationships: []
+      }
       backup_20261103_schedules: {
         Row: {
           assigned_to: string | null
