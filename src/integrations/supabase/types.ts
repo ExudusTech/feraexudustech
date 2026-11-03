@@ -6709,6 +6709,8 @@ export type Database = {
           confirmacao_d1_enviada_em: string | null
           confirmacao_dia_enviada_em: string | null
           confirmacao_status: string
+          confirmacao_tentativas: number
+          confirmacao_ultimo_erro: string | null
           confirmado_em: string | null
           created_at: string
           created_by: string | null
@@ -6746,6 +6748,8 @@ export type Database = {
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
+          confirmacao_tentativas?: number
+          confirmacao_ultimo_erro?: string | null
           confirmado_em?: string | null
           created_at?: string
           created_by?: string | null
@@ -6783,6 +6787,8 @@ export type Database = {
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
+          confirmacao_tentativas?: number
+          confirmacao_ultimo_erro?: string | null
           confirmado_em?: string | null
           created_at?: string
           created_by?: string | null

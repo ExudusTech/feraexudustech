@@ -1,0 +1,2 @@
+ALTER TABLE public.lead_timeline DROP CONSTRAINT lead_timeline_tipo_check;
+ALTER TABLE public.lead_timeline ADD CONSTRAINT lead_timeline_tipo_check CHECK (tipo = ANY (ARRAY['resumo','criar_lead','agendamento','transferencia','fora_perfil','encerramento','atendimento','visita']));

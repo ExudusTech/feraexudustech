@@ -2311,14 +2311,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
 
   if (error) return fail(dbFail("criar agendamento", error));
 
-  if (leadId && schedule?.id) {
-    // A visit the client asked to reschedule (via responder_confirmacao_visita) is replaced by this new booking.
-    try {
-      await supabase.from("schedules").update({ status: "cancelado", nao_realizado_motivo: "remarcado", notes: "Remarcado pelo cliente via Flora" })
-        .eq("organization_id", NITSCLEAN_ORG_ID).eq("lead_id", leadId).eq("confirmacao_status", "remarcar")
-        .in("status", ["agendado", "confirmado"]).neq("id", schedule.id);
-    } catch { console.error("[agendar] reschedule cleanup failed"); }
-  }
+  // A visit the client asked to reschedule is cancelled by the database trigger in the same transaction as this insert.
 
   if (leadId) {
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
@@ -2461,14 +2454,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
 
   if (error) return fail(dbFail("criar agendamento", error));
 
-  if (leadId && schedule?.id) {
-    // A visit the client asked to reschedule (via responder_confirmacao_visita) is replaced by this new booking.
-    try {
-      await supabase.from("schedules").update({ status: "cancelado", nao_realizado_motivo: "remarcado", notes: "Remarcado pelo cliente via Flora" })
-        .eq("organization_id", NITSCLEAN_ORG_ID).eq("lead_id", leadId).eq("confirmacao_status", "remarcar")
-        .in("status", ["agendado", "confirmado"]).neq("id", schedule.id);
-    } catch { console.error("[agendar] reschedule cleanup failed"); }
-  }
+  // A visit the client asked to reschedule is cancelled by the database trigger in the same transaction as this insert.
 
   if (leadId) {
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
