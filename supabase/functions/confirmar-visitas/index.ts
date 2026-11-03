@@ -152,6 +152,13 @@ Deno.serve(async () => {
           await admin.storage.from("visit-photos").remove(paths);
           await admin.from("schedule_evidencias").update({ foto_path: null }).in("id", (old ?? []).map((e: any) => e.id));
         }
+        const { data: oldAv } = await admin.from("ponto_avaliacoes").select("id, foto_path").eq("organization_id", o.id).lt("created_at", photoCut).not("foto_path", "is", null).limit(200);
+        const avPaths = (oldAv ?? []).map((e: any) => e.foto_path);
+        if (avPaths.length) {
+          await admin.storage.from("visit-photos").remove(avPaths);
+          await admin.from("ponto_avaliacoes").update({ foto_path: null }).in("id", (oldAv ?? []).map((e: any) => e.id));
+          paths.push(...avPaths);
+        }
         const n = (ck?.length ?? 0) + paths.length;
         if (n) { out.limpeza += n; await admin.from("audit_logs").insert({ organization_id: o.id, action: "RETENTION_CLEANUP", entity_type: "schedule_execution",
           new_data: { coordenadas: ck?.length ?? 0, fotos: paths.length } }).then(() => undefined, () => undefined); }
