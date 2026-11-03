@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 import { baseAction } from "@/lib/base-instalada";
 
@@ -13,8 +14,10 @@ import { baseAction } from "@/lib/base-instalada";
 export default function EmergencyRequests() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const { roles = [] } = usePermissions() as any;
+  const isManager = (roles as string[]).some((r) => ["admin", "gestor", "super_admin"].includes(r));
   const { data = [] } = useQuery({
-    queryKey: ["pedidos-emergenciais", user?.organization_id], enabled: !!user?.organization_id, refetchInterval: 60_000,
+    queryKey: ["pedidos-emergenciais", user?.organization_id], enabled: !!user?.organization_id && isManager, refetchInterval: 60_000,
     queryFn: async () => {
       const { data } = await (supabase as any).from("maintenance_schedule").select("id, title, description, created_at, clients(name, city)")
         .eq("organization_id", user!.organization_id).eq("urgente", true).eq("aprovacao_status", "pendente").order("created_at");
@@ -22,7 +25,7 @@ export default function EmergencyRequests() {
     },
   });
   const [form, setForm] = useState<Record<string, { data: string; hora: string; motivo: string }>>({});
-  if (!data.length) return null;
+  if (!isManager || !data.length) return null;
   const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
   const decide = async (id: string, aprovar: boolean) => {
     const f = form[id] ?? { data: tomorrow, hora: "09:00", motivo: "" };
