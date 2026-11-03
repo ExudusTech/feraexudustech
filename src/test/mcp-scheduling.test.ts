@@ -7,7 +7,7 @@ const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 
 function harness(category: string | null = "Diversey", areas = [
   { dia_semana: "2ª feira e 6ª feira", horario_inicio: "13:30:00", horario_fim: "16:30:00" },
-], holidays: { date: string; name: string; city: string | null }[] = [], existingEmail: string | null = null, holidayError = false) {
+], holidays: { date: string; name: string; city: string | null }[] = [], existingEmail: string | null = null, holidayError = false, schedules: any[] | null = null) {
   const writes: { table: string; operation: string; value: any }[] = [];
   const reads: { table: string; filters: any[] }[] = [];
   const tasks: Promise<void>[] = [];
@@ -24,10 +24,10 @@ function harness(category: string | null = "Diversey", areas = [
           bairro: "Vila Nova", zip_code: "28907350", city: "Cabo Frio", maps_url: "https://maps.google.com/example",
           contact_name: "Contato do lead", contact_phone: "5521999999999", contact_email: "lead@example.com",
           pessoa: { nome: "Pessoa do lead", email: "pessoa@example.com", telefone: null, whatsapp: "5521888888888" } }
-        : table === "schedules" ? { id: "schedule", ...value } : null };
+        : table === "schedules" ? (operation === "read" && schedules ? schedules : { id: "schedule", ...value }) : null };
     };
     const chain: any = {
-      select: () => chain, limit: () => chain, order: () => chain, contains: () => chain,
+      select: () => chain, in: (...args: any[]) => { filters.push(["in", ...args]); return chain; }, neq: () => chain, limit: () => chain, order: () => chain, contains: () => chain,
       eq: (...args: any[]) => { filters.push(args); return chain; },
       ilike: (...args: any[]) => { filters.push(args); return chain; },
       or: (...args: any[]) => { filters.push(["or", ...args]); return chain; },
@@ -151,7 +151,7 @@ describe("MCP holidays and booking email", () => {
     const result = await h.route({ cidade: "Cabo Frio", proximas_datas_count: 3 }, "consultar_rota_consultor");
     expect(result.data.proximas_datas.map((d: any) => d.data)).toEqual(["2026-10-16", "2026-10-19", "2026-10-23"]);
     expect(h.reads.find(r => r.table === "holidays")?.filters).toContainEqual(["or", "organization_id.is.null,organization_id.eq.7fd8333b-578a-4db8-b1be-fdcb8339d4e8"]);
-    expect(result.next_action_hint).toBe("Antes de responder, consulte os horários livres na agenda para estas datas e ofereça 3 opções prontas (dia + horário livre dentro da faixa). Não peça ao lead para sugerir horário.");
+    expect(result.next_action_hint).toBe("Ofereça ao lead exatamente as opções de opcoes_horario (use mensagem_para_lead). Não calcule outros horários nem peça ao lead para sugerir horário.");
   });
   it.each(["Cabo Frio", "Arraial do Cabo"])("municipal holiday applies only to its city (%s)", async (cidade) => {
     const h = harness("Diversey", undefined, [{ ...holiday, city: " cabo FRIO " }]);
@@ -238,5 +238,39 @@ describe("MCP parameter normalization and audit preservation", () => {
     await Promise.all(h.tasks);
     expect(h.writes).toHaveLength(1);
     expect(JSON.stringify(h.writes)).not.toContain("invalid-secret");
+  });
+});
+describe("consultar_rota_consultor ready-made time options", () => {
+  const buzios = [{ name: "Búzios", city: "Armação dos Búzios", dia_semana: "2ª feira e 6ª feira", horario_inicio: "09:00:00", horario_fim: "12:00:00", consultant_user_id: "c1" }];
+  it("Búzios returns 3 options on different days between 9h and 11h", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-03T11:30:00Z"));
+    const r = await harness("Diversey", buzios as any).route({ cidade: "Armação dos Búzios" }, "consultar_rota_consultor");
+    const o = r.data.opcoes_horario;
+    expect(o).toHaveLength(3);
+    expect(new Set(o.map((x: any) => x.data)).size).toBe(3);
+    for (const x of o) expect(x.hora >= "09:00" && x.hora <= "11:00").toBe(true);
+    expect(o[0]).toEqual({ data: "2026-11-06", hora: "09:00", texto: "Sexta-feira, 06/11, às 9h" });
+    expect(new Set(o.map((x: any) => x.hora)).size).toBeGreaterThan(1);
+    expect(r.data.mensagem_para_lead).toContain("Qual opção fica melhor para você?");
+    expect(r.data.mensagem_para_lead).toContain("1. Sexta-feira, 06/11, às 9h");
+  });
+  it("skips a slot taken by the consultant's existing visit", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-03T11:30:00Z"));
+    const taken = [{ scheduled_date: "2026-11-06", start_time: "09:00:00", end_time: "10:00:00", assigned_to: "c1" }];
+    const r = await harness("Diversey", buzios as any, [], null, false, taken).route({ cidade: "Armação dos Búzios" }, "consultar_rota_consultor");
+    expect(r.data.opcoes_horario[0]).toMatchObject({ data: "2026-11-06", hora: "10:00" });
+  });
+  it("skips a day fully booked", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-03T11:30:00Z"));
+    const taken = [{ scheduled_date: "2026-11-06", start_time: "09:00:00", end_time: "12:00:00", assigned_to: "c1" }];
+    const r = await harness("Diversey", buzios as any, [], null, false, taken).route({ cidade: "Armação dos Búzios" }, "consultar_rota_consultor");
+    expect(r.data.opcoes_horario[0].data).toBe("2026-11-09");
+  });
+  it("Cabo Frio without region returns precisa_localizar and no options", async () => {
+    const areas = [{ name: "Cabo Frio", city: "Cabo Frio", dia_semana: "2ª feira e 6ª feira", horario_inicio: "13:30", horario_fim: "16:30" },
+      { name: "Cabo Frio 2º Distrito", city: "Cabo Frio", dia_semana: "3ª feira e 5ª feira", horario_inicio: "15:00", horario_fim: "17:00" }];
+    const r = await harness("Diversey", areas as any).route({ cidade: "Cabo Frio" }, "consultar_rota_consultor");
+    expect(r.data.precisa_localizar).toBe(true);
+    expect(r.data.opcoes_horario).toBeUndefined();
   });
 });
