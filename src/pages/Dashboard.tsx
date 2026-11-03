@@ -23,6 +23,7 @@ import type { Schedule } from "@/hooks/use-schedules";
 import PainelAgora from "@/components/atendimentos/PainelAgora";
 import AgendaHoje from "@/components/atendimentos/AgendaHoje";
 import AtendimentoMetrics from "@/components/atendimentos/AtendimentoMetrics";
+import FieldOpsPanel from "@/components/dashboard/FieldOpsPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Dashboard() {
@@ -112,7 +113,8 @@ function AdminDashboard() {
         <AgendaHoje />
       </div>
       <Tabs defaultValue="geral">
-      <TabsList><TabsTrigger value="geral">Visão geral</TabsTrigger><TabsTrigger value="atendimentos">Atendimentos</TabsTrigger></TabsList>
+      <TabsList><TabsTrigger value="geral">Visão geral</TabsTrigger><TabsTrigger value="atendimentos">Atendimentos</TabsTrigger><TabsTrigger value="campo">Campo</TabsTrigger></TabsList>
+      <TabsContent value="campo"><FieldOpsPanel /></TabsContent>
       <TabsContent value="atendimentos"><AtendimentoMetrics /></TabsContent>
       <TabsContent value="geral">
       <div className="space-y-6">
