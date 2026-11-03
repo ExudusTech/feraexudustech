@@ -30,16 +30,13 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
   const { data } = useQuery({
     queryKey: ["client-base", client?.id], enabled: !!client?.id && open,
     queryFn: async () => {
-      const [pts, plano, avs] = await Promise.all([
+      const [pts, plano] = await Promise.all([
         (supabase as any).from("comodatos").select("id, localizacao_interna, product_id, refil_product_id, quantidade, estado_atual, status, ultima_manutencao, proxima_manutencao").eq("client_id", client!.id).order("created_at"),
         (supabase as any).from("planos_manutencao").select("*").eq("client_id", client!.id).eq("ativo", true).maybeSingle(),
-        (supabase as any).from("ponto_avaliacoes").select("id, estado, manutencoes, precisa_substituir, observacao, created_at, comodatos(localizacao_interna)")
-          .in("comodato_id", []).limit(0),
       ]);
       const ids = ((pts.data ?? []) as any[]).map((p) => p.id);
       const hist = ids.length ? await (supabase as any).from("ponto_avaliacoes").select("id, estado, manutencoes, precisa_substituir, observacao, created_at, comodatos(localizacao_interna)")
         .in("comodato_id", ids).order("created_at", { ascending: false }).limit(100) : { data: [] };
-      void avs;
       return { pontos: (pts.data ?? []) as any[], plano: plano.data as any, historico: (hist.data ?? []) as any[] };
     },
   });
