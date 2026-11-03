@@ -87,7 +87,7 @@ Deno.serve(async () => {
         }
         const n = (ck?.length ?? 0) + paths.length;
         if (n) { out.limpeza += n; await admin.from("audit_logs").insert({ organization_id: o.id, action: "RETENTION_CLEANUP", entity_type: "schedule_execution",
-          details: { coordenadas: ck?.length ?? 0, fotos: paths.length } }).then(() => undefined, () => undefined); }
+          new_data: { coordenadas: ck?.length ?? 0, fotos: paths.length } }).then(() => undefined, () => undefined); }
       }
     } catch { console.error("[confirmar-visitas] retention failed"); }
   }
