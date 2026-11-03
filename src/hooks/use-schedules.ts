@@ -67,6 +67,7 @@ export function useCreateSchedule() {
         ...(input.schedule_type ? { schedule_type: input.schedule_type } : {}),
         lead_id: input.lead_id ?? null,
         assigned_to: input.assigned_to ?? null, source: "manual",
+        latitude: (input as any).latitude ?? null, longitude: (input as any).longitude ?? null,
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;

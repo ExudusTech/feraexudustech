@@ -11,6 +11,7 @@ vi.mock("@/hooks/use-schedules", () => ({ useSchedules: () => ({ isLoading: fals
 vi.mock("@/components/agenda/VisitExecutionDialog", () => ({ default: () => null }));
 vi.mock("@/hooks/use-users", () => ({ useOrganizationUsers: () => ({ data: [] }) }));
 vi.mock("@/hooks/use-leads", () => ({ useLeads: () => ({ data: [] }) }));
+vi.mock("@/hooks/use-clients", () => ({ useClients: () => ({ data: [] }) }));
 vi.mock("@/components/ekkoa/ScheduleFormDialog", () => ({ default: ({ open, schedule }: any) => open ? <div role="dialog">{schedule?.title}</div> : null }));
 afterEach(() => { cleanup(); mocks.role = "super_admin"; });
 describe("Agenda and notification destinations", () => {
