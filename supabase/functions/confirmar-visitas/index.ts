@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
+import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
 
 const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "Content-Type": "application/json" } });
 
@@ -22,9 +23,9 @@ Deno.serve(async () => {
   const now = new Date();
   const today = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-  const out = { confirmacoes: 0, falhas: 0, sem_resposta: 0, atrasos: 0, limpeza: 0 };
+  const out = { confirmacoes: 0, falhas: 0, sem_resposta: 0, atrasos: 0, limpeza: 0, manutencoes_geradas: 0, avisos_manutencao: 0 };
   const { data: rows } = await admin.from("schedules")
-    .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
+    .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, plano_manutencao_id, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
   const orgCache = new Map<string, { open: boolean; d1: string; horas: number; atraso: number }>();
   for (const s of rows ?? []) {
@@ -41,7 +42,7 @@ Deno.serve(async () => {
       const { data: who } = s.assigned_to ? await admin.from("profiles").select("name").eq("user_id", s.assigned_to).maybeSingle() : { data: null };
       const info = { id: s.id, cliente, consultor: who?.name ?? "Sem responsável", tipo: "" };
 
-      const chat = lead?.gptmaker_chat_id as string | null;
+      const chat = (s as any).plano_manutencao_id ? null : lead?.gptmaker_chat_id as string | null;
       const due = confirmationEligible(s.created_at, chat) ? confirmationDue(now, { scheduled_date: s.scheduled_date, start_time: s.start_time, confirmacao_status: s.confirmacao_status,
         d1_sent: !!s.confirmacao_d1_enviada_em, dia_sent: !!s.confirmacao_dia_enviada_em, sem_resposta_alertado: !!s.sem_confirmacao_alertado_em },
         { d1_hora: cfg.d1, horas_antes: cfg.horas }, cfg.open) : null;
@@ -80,6 +81,59 @@ Deno.serve(async () => {
           { schedule_id: s.id }, { immediate: true }); }
       }
     } catch { console.error("[confirmar-visitas] row failed"); }
+  }
+
+  const spH = (now.getUTCHours() + 21) % 24;
+  // Maintenance plans: once a day (06:00–06:15 São Paulo) create the next visits inside each plan's horizon. Unique (plan, date) keeps reruns harmless.
+  if (spH === 6 && now.getUTCMinutes() < 15) {
+    try {
+      const { data: planos } = await admin.from("planos_manutencao").select("id, organization_id, client_id, frequencia, intervalo_dias, dia_semana, hora_inicio, duracao_min, consultor_id, data_inicio, horizonte_dias, clients(name, city, address, latitude, longitude, assigned_user_id)").eq("ativo", true).limit(1000);
+      for (const p of planos ?? []) {
+        const c: any = p.clients;
+        const horizon = Math.min(90, Number(p.horizonte_dias) || 30);
+        const end = new Date(Date.parse(`${today}T12:00:00Z`) + horizon * 86_400_000).toISOString().slice(0, 10);
+        const { data: hol } = await admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${p.organization_id}`).gte("date", today).lte("date", end);
+        const city = (c?.city ?? "").toLowerCase();
+        const blocked = new Set((hol ?? []).filter((h: any) => !h.city || h.city.toLowerCase() === city).map((h: any) => h.date));
+        const datas = proximasDatas(p, today, horizon, (d) => blocked.has(d));
+        const consultor = p.consultor_id ?? c?.assigned_user_id ?? null;
+        for (const d of datas) {
+          const { data: exists } = await admin.from("schedules").select("id").eq("plano_manutencao_id", p.id).eq("scheduled_date", d).maybeSingle();
+          if (exists) continue;
+          let hora = String(p.hora_inicio ?? "09:00").slice(0, 5);
+          if (consultor) {
+            const { data: busy } = await admin.from("schedules").select("start_time").eq("assigned_to", consultor).eq("scheduled_date", d).in("status", ["agendado", "confirmado", "em_atendimento"]);
+            const taken = new Set((busy ?? []).map((x: any) => String(x.start_time ?? "").slice(0, 5)));
+            const step = Math.max(30, Number(p.duracao_min) || 60);
+            let [h, m] = hora.split(":").map(Number);
+            while (taken.has(hora) && h < 18) { m += step; h += Math.floor(m / 60); m %= 60; hora = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
+          }
+          const { error } = await admin.from("schedules").insert({ organization_id: p.organization_id, client_id: p.client_id, plano_manutencao_id: p.id,
+            title: `Manutenção — ${c?.name ?? ""}`, scheduled_date: d, start_time: hora, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO",
+            source: "plano", assigned_to: consultor, location: c?.address ?? null, latitude: c?.latitude ?? null, longitude: c?.longitude ?? null, confirmacao_status: "nao_aplicavel" });
+          if (!error) out.manutencoes_geradas++;
+        }
+      }
+    } catch { console.error("[confirmar-visitas] plans failed"); }
+  }
+  // 07:00–07:15 São Paulo: each consultant gets the day's maintenance list and items to bring.
+  if (spH === 7 && now.getUTCMinutes() < 15) {
+    try {
+      const { data: hoje } = await admin.from("schedules").select("organization_id, assigned_to, start_time, client_id, clients(name)").eq("scheduled_date", today)
+        .eq("schedule_type", "manutencao").in("status", ["agendado", "confirmado"]).not("assigned_to", "is", null).order("start_time").limit(1000);
+      const byUser = new Map<string, any[]>();
+      for (const s of hoje ?? []) { const k = `${s.organization_id}|${s.assigned_to}`; byUser.set(k, [...(byUser.get(k) ?? []), s]); }
+      for (const [k, list] of byUser) {
+        const [orgId, uid] = k.split("|");
+        const { data: oc } = await admin.from("ocorrencias_ponto").select("item_descricao, quantidade, clients(name)").eq("organization_id", orgId)
+          .in("client_id", list.map((s) => s.client_id).filter(Boolean)).in("status", ["aberta", "separada"]);
+        const { data: pr } = await admin.from("profiles").select("name").eq("user_id", uid).maybeSingle();
+        await teamAlert(admin, orgId, "manutencao_do_dia", manutencaoDoDiaMessage(pr?.name ?? "", list.map((s) => ({ hora: s.start_time ?? "", cliente: s.clients?.name ?? "" })),
+          (oc ?? []).map((o: any) => `${o.quantidade}x ${o.item_descricao ?? "item"} (${o.clients?.name ?? ""})`)), { dia_usuario: `${today}|${uid}` },
+          { immediate: true, dedupeKey: "dia_usuario", extraUserIds: [uid] });
+        out.avisos_manutencao++;
+      }
+    } catch { console.error("[confirmar-visitas] daily maintenance failed"); }
   }
 
   // Retention: once a day (03:00–03:15 São Paulo) drop raw coordinates and old photos per organization settings.
