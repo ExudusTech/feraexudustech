@@ -5237,12 +5237,15 @@ export type Database = {
       maintenance_schedule: {
         Row: {
           actual_cost: number | null
+          aprovacao_status: string | null
           assigned_to: string | null
           client_id: string | null
           comodato_id: string | null
           completed_date: string | null
           created_at: string
           created_by: string
+          decidido_em: string | null
+          decidido_por: string | null
           description: string | null
           end_time: string | null
           estimated_cost: number | null
@@ -5250,27 +5253,38 @@ export type Database = {
           id: string
           installation_id: string | null
           inventory_item_id: string | null
+          item_descricao: string | null
+          item_product_id: string | null
           linha_produto: string | null
           maintenance_type: string
+          motivo_recusa: string | null
           motivo_retirada: string | null
           notes: string | null
           organization_id: string
+          origem_evidencia_id: string | null
+          quantidade: string
           recurrence: string | null
+          resolvida_schedule_id: string | null
+          schedule_id: string | null
           scheduled_date: string
           start_time: string | null
           status: string
           tipo_os: string
           title: string
           updated_at: string | null
+          urgente: boolean
         }
         Insert: {
           actual_cost?: number | null
+          aprovacao_status?: string | null
           assigned_to?: string | null
           client_id?: string | null
           comodato_id?: string | null
           completed_date?: string | null
           created_at?: string
           created_by: string
+          decidido_em?: string | null
+          decidido_por?: string | null
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
@@ -5278,27 +5292,38 @@ export type Database = {
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
+          item_descricao?: string | null
+          item_product_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_recusa?: string | null
           motivo_retirada?: string | null
           notes?: string | null
           organization_id: string
+          origem_evidencia_id?: string | null
+          quantidade?: string
           recurrence?: string | null
+          resolvida_schedule_id?: string | null
+          schedule_id?: string | null
           scheduled_date: string
           start_time?: string | null
           status?: string
           tipo_os?: string
           title: string
           updated_at?: string | null
+          urgente?: boolean
         }
         Update: {
           actual_cost?: number | null
+          aprovacao_status?: string | null
           assigned_to?: string | null
           client_id?: string | null
           comodato_id?: string | null
           completed_date?: string | null
           created_at?: string
           created_by?: string
+          decidido_em?: string | null
+          decidido_por?: string | null
           description?: string | null
           end_time?: string | null
           estimated_cost?: number | null
@@ -5306,18 +5331,26 @@ export type Database = {
           id?: string
           installation_id?: string | null
           inventory_item_id?: string | null
+          item_descricao?: string | null
+          item_product_id?: string | null
           linha_produto?: string | null
           maintenance_type?: string
+          motivo_recusa?: string | null
           motivo_retirada?: string | null
           notes?: string | null
           organization_id?: string
+          origem_evidencia_id?: string | null
+          quantidade?: string
           recurrence?: string | null
+          resolvida_schedule_id?: string | null
+          schedule_id?: string | null
           scheduled_date?: string
           start_time?: string | null
           status?: string
           tipo_os?: string
           title?: string
           updated_at?: string | null
+          urgente?: boolean
         }
         Relationships: [
           {
@@ -5349,10 +5382,38 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "maintenance_schedule_item_product_id_fkey"
+            columns: ["item_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "maintenance_schedule_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_origem_evidencia_id_fkey"
+            columns: ["origem_evidencia_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_evidencias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_resolvida_schedule_id_fkey"
+            columns: ["resolvida_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_schedule_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
             referencedColumns: ["id"]
           },
         ]
@@ -6961,33 +7022,39 @@ export type Database = {
           autor_id: string
           comodato_id: string | null
           created_at: string
+          estado: string | null
           foto_path: string | null
           id: string
           itens: string[]
           observacoes: string | null
           organization_id: string
+          precisa_substituir: boolean
           schedule_id: string
         }
         Insert: {
           autor_id: string
           comodato_id?: string | null
           created_at?: string
+          estado?: string | null
           foto_path?: string | null
           id?: string
           itens?: string[]
           observacoes?: string | null
           organization_id: string
+          precisa_substituir?: boolean
           schedule_id: string
         }
         Update: {
           autor_id?: string
           comodato_id?: string | null
           created_at?: string
+          estado?: string | null
           foto_path?: string | null
           id?: string
           itens?: string[]
           observacoes?: string | null
           organization_id?: string
+          precisa_substituir?: boolean
           schedule_id?: string
         }
         Relationships: [

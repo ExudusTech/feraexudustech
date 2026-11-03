@@ -35,7 +35,7 @@ export default function InstalledBasePanel() {
       const [c, p, o] = await Promise.all([
         sb.from("clients").select("id, name, city, latitude, longitude, status").eq("organization_id", user!.organization_id),
         sb.from("comodatos").select("id, client_id, product_id, estado_atual, proxima_manutencao, status").eq("organization_id", user!.organization_id),
-        sb.from("ocorrencias_ponto").select("id, client_id").eq("organization_id", user!.organization_id).in("status", ["aberta", "separada"]),
+        sb.from("maintenance_schedule").select("id, client_id").eq("organization_id", user!.organization_id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
       return { clients: (c.data ?? []) as any[], pontos: ((p.data ?? []) as any[]).filter((x) => (x.status ?? "ATIVO").toUpperCase() === "ATIVO"), ocorrencias: (o.data ?? []) as any[] };
     },

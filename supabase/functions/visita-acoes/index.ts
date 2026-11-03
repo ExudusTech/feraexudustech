@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
       let checklist = false;
       if (s.client_id && tecnico) {
         const { data: pts } = await admin.from("comodatos").select("id, status").eq("client_id", s.client_id).eq("organization_id", s.organization_id);
-        const { data: avs } = await admin.from("ponto_avaliacoes").select("comodato_id").eq("schedule_id", s.id);
+        const { data: avs } = await admin.from("schedule_evidencias").select("comodato_id").eq("schedule_id", s.id).not("estado", "is", null);
         const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id));
         if (pend.length) return json({ error: `Avalie todos os pontos antes de encerrar (${pend.length} pendente(s))` }, 400);
         checklist = (pts ?? []).some((p: any) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");

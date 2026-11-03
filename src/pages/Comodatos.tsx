@@ -13,6 +13,7 @@ import { useProducts } from "@/hooks/use-products";
 import ComodatoFormDialog from "@/components/ComodatoFormDialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { LINHA_PRODUTO_VALUES, linhaLabel, linhaBadgeClass } from "@/lib/linha-produto";
+import { ESTADO_CLASS, ESTADO_LABEL } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/hooks/use-permissions";
 import { FABRICANTES_SUGERIDOS } from "@/lib/fabricantes";
@@ -122,7 +123,7 @@ export default function Comodatos() {
                 <TableCell>{c.fabricante ?? "—"}</TableCell>
                 <TableCell>{c.product_id ? (prodMap.get(c.product_id) ?? "—") : "—"}</TableCell>
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", linhaBadgeClass(c.linha_produto))}>{linhaLabel(c.linha_produto)}</span></TableCell>
-                <TableCell>{c.localizacao_interna ?? c.endereco_instalacao ?? "—"}</TableCell>
+                <TableCell>{c.localizacao_interna ?? c.endereco_instalacao ?? "—"}{((c as any).refil_product_id || ((c as any).quantidade && (c as any).quantidade !== "1")) && <span className="block text-xs text-muted-foreground">{(c as any).refil_product_id ? `Refil: ${prodMap.get((c as any).refil_product_id) ?? "—"}` : ""} {(c as any).quantidade !== "1" ? `${(c as any).quantidade}x` : ""}</span>}{(c as any).estado_atual && <span className={cn("ml-1 px-2 py-0.5 rounded-full text-xs", ESTADO_CLASS[(c as any).estado_atual])}>{ESTADO_LABEL[(c as any).estado_atual]}</span>}</TableCell>
                 <TableCell>{c.consumo_minimo != null ? `${c.consumo_minimo} ${c.unidade_consumo ?? ""}` : "—"}</TableCell>
                 {canSeeRevenue && <TableCell>{BRL(c.valor_mensal)}</TableCell>}
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", COMODATO_STATUS_BADGE[c.status] ?? COMODATO_STATUS_BADGE.ENCERRADO)}>{c.status}</span></TableCell>

@@ -37,8 +37,8 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
     queryFn: async () => {
       const [pts, avs, ocs] = await Promise.all([
         (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id").eq("client_id", clientId).order("created_at"),
-        (supabase as any).from("ponto_avaliacoes").select("comodato_id, estado, manutencoes, precisa_substituir").eq("schedule_id", scheduleId),
-        (supabase as any).from("ocorrencias_ponto").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId).in("status", ["aberta", "separada"]),
+        (supabase as any).from("schedule_evidencias").select("comodato_id, estado, itens, precisa_substituir").eq("schedule_id", scheduleId).not("estado", "is", null),
+        (supabase as any).from("maintenance_schedule").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
       const pontos = ((pts.data ?? []) as any[]).filter((p) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");
       return { pontos, avaliacoes: (avs.data ?? []) as any[], ocorrencias: (ocs.data ?? []) as any[] };

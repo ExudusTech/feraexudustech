@@ -35,8 +35,8 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
         (supabase as any).from("planos_manutencao").select("*").eq("client_id", client!.id).eq("ativo", true).maybeSingle(),
       ]);
       const ids = ((pts.data ?? []) as any[]).map((p) => p.id);
-      const hist = ids.length ? await (supabase as any).from("ponto_avaliacoes").select("id, estado, manutencoes, precisa_substituir, observacao, created_at, comodatos(localizacao_interna)")
-        .in("comodato_id", ids).order("created_at", { ascending: false }).limit(100) : { data: [] };
+      const hist = ids.length ? await (supabase as any).from("schedule_evidencias").select("id, estado, itens, precisa_substituir, observacoes, created_at, comodatos(localizacao_interna)")
+        .in("comodato_id", ids).not("estado", "is", null).order("created_at", { ascending: false }).limit(100) : { data: [] };
       return { pontos: (pts.data ?? []) as any[], plano: plano.data as any, historico: (hist.data ?? []) as any[] };
     },
   });
@@ -105,8 +105,8 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
             {data?.historico.map((h) => (
               <div key={h.id} className="rounded-md border p-2 text-sm flex items-start gap-2">
                 <div className="flex-1"><strong>{h.comodatos?.localizacao_interna ?? "Ponto"}</strong> · {new Date(h.created_at).toLocaleDateString("pt-BR")}
-                  {h.manutencoes?.length > 0 && <span className="block text-xs">{h.manutencoes.map((m: string) => MANUTENCAO_LABEL[m]).join(", ")}</span>}
-                  {h.observacao && <span className="block text-xs text-muted-foreground">{h.observacao}</span>}</div>
+                  {h.itens?.length > 0 && <span className="block text-xs">{h.itens.map((m: string) => MANUTENCAO_LABEL[m] ?? m).join(", ")}</span>}
+                  {h.observacoes && <span className="block text-xs text-muted-foreground">{h.observacoes}</span>}</div>
                 <Badge className={ESTADO_CLASS[h.estado]}>{ESTADO_LABEL[h.estado]}</Badge>
                 {h.precisa_substituir && <Badge variant="outline">Substituir</Badge>}
               </div>))}
