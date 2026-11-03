@@ -24,7 +24,7 @@ Deno.serve(async () => {
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
   const out = { confirmacoes: 0, sem_resposta: 0, atrasos: 0, limpeza: 0 };
   const { data: rows } = await admin.from("schedules")
-    .select("id, organization_id, title, scheduled_date, start_time, status, assigned_to, confirmacao_status, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
+    .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, confirmacao_status, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
   const orgCache = new Map<string, { open: boolean; d1: string; horas: number; atraso: number }>();
   for (const s of rows ?? []) {
@@ -50,7 +50,7 @@ Deno.serve(async () => {
         const { data: claimed } = await admin.from("schedules").update({ [col]: now.toISOString() }).eq("id", s.id).is(col, null).select("id").maybeSingle();
         if (claimed && await sendToChat(chat!, confirmationMessage(due, s.scheduled_date, s.start_time!, lead?.empresa_nome || lead?.company))) {
           out.confirmacoes++;
-          await admin.from("lead_timeline").insert({ organization_id: org, lead_id: (s as any).lead_id ?? null, tipo: "visita", origem: "fera",
+          await admin.from("lead_timeline").insert({ organization_id: org, lead_id: s.lead_id, tipo: "visita", origem: "fera",
             resumo: due === "d1" ? "Confirmação D-1 enviada ao cliente" : "Confirmação do dia enviada ao cliente", referencia_id: s.id }).then(() => undefined, () => undefined);
         }
       } else if (due === "sem_resposta") {
