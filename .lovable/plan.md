@@ -1,160 +1,71 @@
-# Lote 8 (revisado) — Horário de atendimento humano, com feriados vindos do Google Calendar
+# Lote 10 — Execução da agenda em campo (PLANO)
 
-## Situação atual (verificada)
-- **Não há integração com Google Calendar no Fera hoje.** Nenhuma função ou tela do projeto chama o Google Calendar, e não existe conexão Google Calendar disponível neste workspace. O primeiro passo é conectar a conta flora.nitsclean@gmail.com (ver "O que você precisa fazer").
-- A tabela `holidays` tem 28 feriados (nacionais + RJ, 2026–2027) e é usada por `consultar_rota` e `agendar_visita_tecnica` para pular dias.
-- Transferência e Matriz avisam a equipe na hora; não há horário de atendimento nem fila.
+## O que já existe (verificado)
+- `schedules`: status em texto (hoje `agendado`, `em_andamento`, `concluido`, `cancelado`), `schedule_type/subtype`, `lead_id`, `assigned_to`, `source`, `zip_code`, `location`. **Sem** lat/long e sem campos de execução. Hoje não há nenhum agendamento gravado.
+- `leads`: já tem `latitude`, `longitude`, `endereco`, `maps_url`, `gptmaker_chat_id`, `stage_id`.
+- `lead_timeline` (tipo, resumo, proximo_passo, origem, referencia_id) — vai receber todos os eventos.
+- `comodatos.ultima_manutencao / proxima_manutencao / periodicidade_manut`; `maintenance_schedule` (OS) com `comodato_id`, `tipo_os`.
+- `notification_recipients.eventos[]`, fila QUEUED fora do horário humano, `release-notification-queue` (cron 5 min), `notify-schedule`, `atendimento-acoes` (envio GPT Maker com RLS do chamador).
+- Bucket privado `visit-photos` já existe (URLs assinadas como nas imagens de produto).
 
-## 1. Fonte dos feriados: Google Calendar (só leitura)
-- **(a) Agenda pública "Feriados no Brasil"** (`pt.brazilian#holiday@group.v.calendar.google.com`), eventos de dia inteiro.
-  - O Google marca cada evento na descrição: "Feriado público", "Observância" ou similar. **Feriado público** = sem atendimento. **Observância/data comemorativa** (Dia das Mães, Dia do Professor...) = ignorada.
-  - **Ponto facultativo** (Carnaval, Quarta de Cinzas, Corpus Christi...): padrão = dia útil (atende). Quando a NitsClean não for atender, o PH bloqueia o dia na agenda principal da Flora (b).
-  - Feriados estaduais/municipais que a agenda pública não trouxer: o PH bloqueia na agenda principal (b). Na implantação, comparo com os 28 atuais e listo o que faltar.
-- **(b) Agenda principal da conta flora.nitsclean@gmail.com** (não há agenda separada). O PH cria ali os bloqueios.
-  - **Evento de DIA INTEIRO** (ex.: "Feriado municipal", "Recesso", "Sem atendimento", "Ponto facultativo") = dia bloqueado, para o horário humano e para rotas/opcoes_horario. Municipal: título ou descrição com `[Cidade: Cabo Frio]`; sem cidade = vale para todas.
-  - **Evento com horário** = compromisso/visita: conta como ocupado no cálculo de opcoes_horario (não bloqueia o dia inteiro).
+## 1. Banco (migração, com backup `backup_<data>_schedules` das linhas alteradas)
+- `schedules`: novos campos `latitude`, `longitude` (copiados do lead na criação; editáveis), `confirmacao_status` (pendente | confirmado | remarcar | sem_resposta | nao_aplicavel), `confirmado_em`, `checkin_em`, `checkout_em`, `duracao_min` (calculada), `resultado`, `resumo_execucao`, `nao_realizado_motivo`.
+- Status passa a: `agendado → confirmado → em_atendimento → concluido | nao_realizado | cancelado`. Migração: `em_andamento → em_atendimento`. Gatilho de validação de transições (não pode encerrar sem próximo passo; não pode voltar de concluído).
+- Nova tabela `schedule_checkins` (1 por agendamento): hora, lat/long, precisão, distância calculada no servidor, `fora_do_raio`, `sem_permissao`, justificativa.
+- Nova tabela `schedule_evidencias`: foto (caminho no `visit-photos`), comodato_id opcional, observações, itens (refil reposto, problema encontrado — lista), autor.
+- Nova tabela `schedule_proximo_passo`: tipo (novo_agendamento | proposta | follow_up | perdido), data alvo, motivo de perda, referência criada (novo schedule / proposta).
+- `organizations`: `raio_checkin_m` (padrão 300), `confirmacao_d1_hora` (padrão 17:00), `confirmacao_dia_horas_antes` (padrão 2), `alerta_atraso_min` (padrão 15), `retencao_localizacao_dias`, `retencao_fotos_dias`.
+- Novos eventos de notificação: `checkin_fora_do_local`, `visita_concluida` (+ `visita_sem_confirmacao` para o consultor).
+- RLS: consultor lê/escreve só onde `assigned_to = auth.uid()`; gestor/admin vê toda a organização; tudo por `organization_id`. GRANTs para `authenticated` e `service_role`.
+- Realtime ligado em `schedules` e `schedule_checkins` para o painel do gestor.
 
-## 2. Cache (somente leitura)
-- Nova tabela `calendar_holidays_cache` por organização: data, fim, nome, origem (`google_brasil` | `flora_principal`), tipo (`feriado` | `bloqueio` | `compromisso`), cidade, início/fim de horário (compromissos), `google_event_id`, `synced_at`. Usuários só leem; escrita só pelo servidor.
-- Tabela `calendar_sync_status` por org: último sucesso, último erro (código, sem dados pessoais).
-- **Sincronia:** nova função `sync-holidays`, 1x por dia (madrugada) e sob demanda quando o cache tiver mais de 26h. Janela: hoje até +400 dias. Troca o conteúdo da org só depois de buscar as duas agendas com sucesso (nunca deixa o cache meio vazio).
-- **Falhas:** Google falhou → usa o último cache válido, mesmo vencido. Sem cache nenhum → só fins de semana contam como não úteis, e o painel mostra um aviso.
+## 2. Funções no servidor
+- **`visita-acoes`** (nova): check-in, evidência, check-out e não realizado. Lê o agendamento com o acesso de quem chama (mesmo padrão de `atendimento-acoes`), calcula distância (Haversine) no servidor, grava timeline, atualiza comodato (`ultima_manutencao = hoje`, `proxima_manutencao = hoje + periodicidade`), avança etapa do lead e dispara avisos em segundo plano. Duração calculada aqui.
+- **`confirmar-visitas`** (nova, cron 15 min): manda D-1 às 17h e no dia 2h antes, via GPT Maker no chat do lead, só se houver `gptmaker_chat_id`/WhatsApp; respeita horário humano (D-1 fora do horário vai para o próximo período útil antes da visita; se não couber, não envia). Visitas manuais sem contato → `nao_aplicavel`. Sem resposta até 1h antes → aviso ao consultor. Deduplicação em `notification_logs`.
+- **mcp (única mudança)**: nova ferramenta `responder_confirmacao_visita(chat_id, resposta: confirmo | remarcar)` — localiza o próximo agendamento desse chat/empresa; "confirmo" → status confirmado; "remarcar" → devolve `opcoes_horario` (mesma lógica de `consultar_rota_consultor`) e, após escolha, a Flora usa `agendar_visita_tecnica` normalmente (o antigo vira cancelado com motivo "remarcado"). Restante da mcp intacto.
+- Alertas de atraso (15 min sem check-in) calculados no painel e enviados pelo mesmo cron ao gestor.
 
-## 3. Uma só verdade para rotas e agendamentos
-- O helper único de calendário (o mesmo da regra do AGENTS.md) passa a ler `calendar_holidays_cache` em `consultar_rota`, `agendar_visita_tecnica` e no horário humano.
-- Para rotas e visitas, ponto facultativo segue a mesma chave.
-- A tabela `holidays` fica intacta como backup e marcada DEPRECATED. Ela só é usada se o cache estiver totalmente vazio, para não piorar o que funciona hoje enquanto a primeira sincronia não roda.
+## 3. Telas
+- **Hoje (consultor, celular)**: painel "Agora" no topo; lista do dia em ordem de horário com selo de tipo/status/confirmação e botões grandes: Rota (Maps), Ligar, WhatsApp, Iniciar / Encerrar.
+- **Iniciar**: pede localização; mostra distância; fora do raio ou sem permissão → justificativa obrigatória.
+- **Durante (manutenção/instalação/entrega)**: câmera do celular (foto obrigatória antes de encerrar), escolher comodato do cliente, observações, itens.
+- **Encerrar**: resultado (visita boa/mediana/ruim ou concluída/com problema), resumo curto, próximo passo obrigatório; "novo agendamento" abre os horários sugeridos; "perdido" pede motivo e confirmação. Botão "Não realizado" separado (cliente ausente, cancelado no local, reagendar).
+- **Painel do gestor (dashboard do dia)**: visitas por consultor com status ao vivo, mapa com check-ins (Google Maps já configurado), alertas (atrasado, fora do local), métricas da semana (realizadas/não realizadas, duração média, resultados). Cards clicáveis abrem a Agenda filtrada.
+- Agenda: novos status e selo de confirmação em todas as visões; link do aviso abre `?agendamento=` (deep link já existente).
+- Configurações: raio, horários de confirmação, atraso, retenção.
 
-## 4. Horário de atendimento humano (mantido do plano anterior)
-- `organizations`: `human_hours` (padrão seg–sex 08:00–18:00), fuso America/Sao_Paulo, `human_urgent_bypass` (padrão desligado = urgência alta também espera), `ponto_facultativo_util` (padrão ligado).
-- Utilitário `_shared/business-hours.ts`: `estaEmHorario(agora)` e `proximoHorarioUtil(agora)` → "terça-feira, 03/11, a partir das 8h". Considera fins de semana, feriados, recessos e bloqueios parciais do cache.
+## 4. Etapas do lead
+- Visita comercial concluída → "Visita realizada"; próximo passo proposta → "Proposta enviada" quando marcada como enviada; perdido → "Perdido" (com confirmação). Usa `lead_stages.chave`; se a etapa não existir na organização, só registra na timeline.
 
-## 5. mcp (mantido)
-- `solicitar_atendimento_humano`, Matriz e cobrança de retorno devolvem `em_horario` e `retorno_previsto`.
-- **Dentro do horário:** aviso na hora + "Já passei sua solicitação para nossa equipe, que vai te responder por aqui em breve."
-- **Fora do horário:** o aviso vai para a fila (`notification_logs` com `queued`/`release_at`), com "Recebido fora do horário em <data/hora>". O cliente recebe "Nossa equipe de atendimento retoma na <próximo período útil real>, a partir das 8h. Já deixei sua solicitação registrada e ela será a primeira a ser encaminhada nesse horário. 😊"
-- **Repetição fora do horário:** só entra na linha do tempo; o cliente recebe a mesma informação de retorno.
-- **Linha do tempo:** "Transferência recebida fora do horário"; ao liberar, "encaminhada em <data/hora>".
-- **Agendamentos continuam avisando na hora** (recomendação mantida: é informativo e a visita já tem data). As demais ferramentas não mudam.
+## 5. Avisos
+- Check-out: cliente, consultor, tipo, resultado, duração, distância do check-in, próximo passo, link. Evento `visita_concluida`.
+- Check-in fora do raio / sem localização: evento `checkin_fora_do_local`, imediato.
+- Fora do horário humano: ficam na fila (regra atual). Proposta: `checkin_fora_do_local` é imediato mesmo fora do horário — confirmar.
 
-## 6. Agendador
-- `release-notification-queue` a cada 5 min: envia os avisos da fila com `release_at` vencido, uma vez cada, e grava a linha do tempo.
-- `sync-holidays` 1x por dia. Os dois rodam por agendamento no servidor, protegidos por um segredo interno gerado automaticamente.
+## 6. LGPD e retenção
+- Localização só do consultor, coletada **somente no clique** de Iniciar (sem rastreamento contínuo), com aviso na primeira vez. Não coletamos localização do cliente.
+- Fotos: só do equipamento; orientar a não fotografar pessoas/documentos. Bucket privado, URL assinada 1h.
+- Retenção padrão: coordenadas brutas apagadas após 180 dias (mantém distância e `fora_do_raio`); fotos após 24 meses ou fim do comodato + 6 meses. Limpeza por cron com registro em auditoria.
+- Mensagens de confirmação: só para quem conversou com a Flora (base legal: execução do agendamento pedido). Texto sem dados sensíveis.
+- Aviso ao gestor não inclui coordenadas, só distância.
 
-## 7. Tela (Configurações → Horário de atendimento)
-- Editável pelo admin: dias, horários, chave de urgência alta, chave de ponto facultativo, prévia "Se alguém pedir atendimento agora: ...".
-- **Próximos feriados (vindos do Google):** lista só leitura com data, nome, origem, cidade, além de "Última sincronia em ...", botão "Sincronizar agora" e aviso se o Google falhar.
-- Nenhum cadastro de feriados no Fera.
+## 7. Testes
+- Transições de status (válidas/ inválidas; encerrar sem próximo passo é recusado).
+- Distância Haversine e regra do raio (299 m ok, 301 m exige justificativa; sem permissão exige justificativa).
+- Duração calculada.
+- Confirmação: D-1 17h, dia −2h, respeito ao horário humano, sem envio sem contato, sem resposta → aviso ao consultor, sem duplicar.
+- Comodato: próxima manutenção = hoje + periodicidade.
+- Etapas do lead por resultado/próximo passo.
+- Permissões: consultor não vê/edita agendamento de outro; gestor vê todos.
+- mcp `responder_confirmacao_visita` e regressão do restante.
 
-## 8. Testes
-- **Leitura dos eventos:** feriado público entra; observância é ignorada; ponto facultativo segue a chave; `[Cidade: X]` vale só em X; bloqueio parcial funciona.
-- **Cache:** Google falhou → último cache; sem cache → só fins de semana; a troca do cache é atômica.
-- **Horário:** domingo à tarde → segunda 8h; 02/11/2026 → terça 03/11 8h; sexta 19h → segunda; antes das 8h → hoje 8h.
-- **mcp:** dentro → aviso na hora; fora → fila + retorno correto; repetição → só linha do tempo; urgência alta com a chave ligada e desligada; Matriz segue a mesma regra; agendamento avisa na hora; rotas usam o cache.
-- **Fila:** libera uma vez, depois do `release_at`.
+## 8. Ordem de entrega
+A) Banco + `visita-acoes` + telas Iniciar/Encerrar/Hoje → B) avisos ao gestor → C) painel do gestor com mapa e ao vivo → D) confirmação D-1/dia + ferramenta mcp → E) retenção.
 
-## Permissões do Google
-- **Necessário:** só leitura. Escopo `https://www.googleapis.com/auth/calendar.readonly`, que cobre a lista de agendas assinadas (incluindo "Feriados no Brasil") e os eventos da agenda própria. Alternativa mínima: `calendar.calendarlist.readonly` + `calendar.events.readonly`. Nenhum escopo de escrita: o Fera nunca cria nem edita eventos.
-- **Sobre "o token atual já cobre?":** não encontrei token nem conexão do Google Calendar neste projeto ou workspace, então ainda não há o que conferir. Depois que a conexão for criada, eu verifico os escopos concedidos antes de implementar.
-
-## O que você precisa fazer
-1. Conectar o Google Calendar como flora.nitsclean@gmail.com, com permissão de leitura: https://lovable.dev/connectors/google_calendar/connect?workspace=DyRIWqbAituV33j9ol8o
-2. PH bloqueia dias criando eventos de dia inteiro na agenda principal da Flora.
-3. Confirmar a recomendação: ponto facultativo = dia útil por padrão.
-
----
-
-# Lote 9 — Central de Atendimento ("Atendimentos")
-
-## Decisão de estrutura
-- **Não reaproveitar `support_tickets`.** Hoje ela serve aos chamados de suporte do sistema (título/descrição/categoria/prioridade/responsável) e não tem lead, pessoa, canal, chat_id, assumido/resolvido por nem resultado. Misturar tiraria o sentido das duas telas.
-- **Nova tabela `atendimentos`**, isolada por organização, ligada a lead/pessoa/chat: lead, pessoa, empresa, canal, chat_id, motivo (transferencia | matriz | cobranca), resumo, urgência, responsável (padrão = `flora_default_lead_owner`), status (aberto → em_atendimento → resolvido | encerrado_sem_resposta), aberto_em, relogio_inicia_em (próximo período útil quando aberto fora do horário), assumido_em/por, resolvido_em/por, resolução (obrigatória ao resolver), resultado (virou_agendamento | virou_proposta | duvida_resolvida | perdido | outro), nivel_alerta_enviado.
-- **Um atendimento aberto por lead** (índice único parcial). Cobrança repetida só agrega: entra na linha do tempo e incrementa um contador, sem abrir outro.
-- **Acesso:** vendedor vê só os atendimentos dele; gestor/admin veem a org toda (mesmas regras de carteira do restante).
-
-## 1. Criação automática (mcp)
-- `solicitar_atendimento_humano` cria ou reutiliza o atendimento aberto do lead. A regra de horário do Lote 8 continua: fora do horário, aviso em fila e relógio parado.
-- A notificação da equipe passa a levar o link `/atendimentos?id=...`.
-
-## 2. Tempo e gravidade (horário útil)
-- Tempo de espera = minutos úteis desde `relogio_inicia_em` até agora (ou até assumir), pelo utilitário do Lote 8.
-- Verde ≤15 min, amarelo 15–60 min, vermelho >60 min. Limites configuráveis na aba Horário de atendimento.
-- O agendador de 5 min do Lote 8 também confere a gravidade:
-  - **amarelo:** reaviso ao responsável, uma vez;
-  - **vermelho:** aviso ao responsável e aos gestores/admin, uma vez.
-  - Nada é enviado fora do horário.
-
-## 3. Painel "Agora"
-- No topo do Dashboard e da tela inicial no celular, com os atendimentos abertos/em atendimento ordenados por gravidade e tempo.
-- Botões: Abrir conversa, WhatsApp (wa.me), Assumir, Resolver (pede resultado + resolução).
-- Abaixo do painel, a agenda do dia (Hoje), já existente.
-- Nova tela "Atendimentos" no menu, com lista, filtros e detalhe.
-
-## 4. Responder
-- **Pelo Fera:** o detalhe mostra o Histórico do lead (lead_timeline) e a conversa buscada ao vivo do GPT Maker. A transcrição não é guardada, conforme a regra atual. Também dá para responder pelo canal da NitsClean (send-message).
-  - **Assumir:** marca em_atendimento, coloca o chat em atendimento humano no GPT Maker (start-human) e pausa a Flora e as retomadas.
-  - **Devolver para a Flora:** chama stop-human.
-  - Tudo passa por uma nova função no servidor que confere se o usuário tem acesso ao atendimento e usa o token GPT Maker já existente.
-- **Pelo WhatsApp pessoal (wa.me):** permitido. O atendimento só fecha em "Resolver" com resolução escrita.
-- Assumir, responder, devolver e resolver entram na linha do tempo (resumo curto, sem transcrição).
-- A confirmar na implementação: os endereços exatos da API do GPT Maker para histórico do chat, start-human e stop-human, testados com um chat real de teste antes de ligar os botões.
-
-## 5. Métricas (aba no Dashboard)
-- Filtros por período e responsável.
-- Totais por status.
-- % assumidos em até 10 min úteis.
-- Tempo médio e mediano até assumir e até resolver, contados em horário útil.
-- Distribuição por gravidade máxima atingida, por motivo e por canal.
-- Resultados.
-- Cruzamento: agendamentos criados para o mesmo lead depois da abertura do atendimento.
-
-## 6. Etapas do lead
-- O banco hoje usa uma lista fixa de etapas (novo, qualificacao, em_teste, proposta, negociacao, fechado_ganho, fechado_perdido…).
-- **Nova tabela `lead_stages` por organização,** editável pelo admin (nome, ordem, cor, tipo aberta/ganho/perdido). Proposta inicial: Novo → Qualificado → Visita agendada → Visita realizada → Proposta enviada → Teste/amostra → Ganho | Perdido → Cliente ativo.
-- Novo campo `leads.stage_id`, preenchido a partir da etapa atual, mantendo a antiga (sem quebrar a Flora nem as telas antigas durante a troca).
-- **Movimentos automáticos:**
-  - agendou → Visita agendada;
-  - visita concluída → Visita realizada;
-  - resolveu com "perdido" → sugere Perdido com confirmação.
-- A lista definitiva será validada com o gestor antes de migrar os leads atuais.
-
-## 7. mcp `listar_pendencias` (só leitura)
-- Identifica o usuário do Fera pelo telefone do perfil e devolve os atendimentos abertos dele e as visitas do dia, com links.
-- Vendedor vê só os próprios; gestor/admin, os da org.
-- Telefone desconhecido devolve vazio, sem dados.
-- Antes da futura Flora Equipe, a chamada exige o mesmo token já usado pela mcp.
-
-## 8. Testes (Lote 9)
-- Cobrança agrega no atendimento aberto.
-- Relógio começa no próximo período útil.
-- Limites verde/amarelo/vermelho e reavisos únicos.
-- Resolver sem resolução é recusado.
-- Vendedor não vê o atendimento de outro.
-- Métricas em minutos úteis.
-- Movimento automático de etapa.
-- `listar_pendencias` por papel e com telefone desconhecido.
-
----
-
-# Ordem de implementação consolidada
-
-```text
-Fase A (sem Google) Horário humano + utilitário + fila + mensagens mcp
-                    (usa a tabela holidays atual como fonte provisória)
-Fase B (sem Google) Atendimentos: tabela, criação pela mcp, tela, painel Agora,
-                    Assumir/Resolver, gravidade e reavisos
-Fase C (sem Google) Responder pelo Fera (GPT Maker: histórico, send, start/stop-human)
-Fase D (sem Google) Métricas + etapas editáveis do lead + listar_pendencias
-Fase E (COM Google) sync-holidays, cache, troca da fonte de feriados para rotas,
-                    agendamentos e horário; lista "próximos feriados"
-```
-
-- **Depende do Google Calendar:** só a Fase E (sincronia, cache, lista de feriados do Google, bloqueios e compromissos da agenda principal da Flora). Até lá, o horário humano usa os 28 feriados atuais, sem nenhuma mudança para as rotas.
-- **Pode ser feito já:** Fases A a D.
-- **Escopo Google necessário:** só leitura (`calendar.readonly`). Ainda não há conexão do Google Calendar neste workspace para conferir o token.
-
-## O que você precisa fazer (consolidado)
-1. Conectar o Google Calendar como flora.nitsclean@gmail.com (só leitura): https://lovable.dev/connectors/google_calendar/connect?workspace=DyRIWqbAituV33j9ol8o. Só a Fase E depende disso.
-2. PH cria os bloqueios (dia inteiro) na agenda principal da Flora.
-3. Confirmar: ponto facultativo = dia útil por padrão; urgência alta espera por padrão.
-4. Validar com o gestor a lista de etapas do lead.
+## Decisões para aprovar
+1. Fotos obrigatórias só em manutenção/instalação/entrega (não em visita comercial) — ok?
+2. Check-in fora do raio avisa imediatamente mesmo fora do horário humano?
+3. Retenção: coordenadas 180 dias, fotos 24 meses?
+4. Remarcação pela Flora cancela o antigo e cria um novo (histórico preservado) — ok?
+5. Não existe tipo "entrega" hoje na Agenda; criar como novo tipo de serviço técnico.
+6. Ação no GPT Maker: ativar a nova ferramenta `responder_confirmacao_visita` na Flora.
