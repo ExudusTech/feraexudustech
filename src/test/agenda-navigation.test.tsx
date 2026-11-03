@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-leads", () => ({ useLeads: () => ({ data: [] }) }));
 vi.mock("@/components/ekkoa/ScheduleFormDialog", () => ({ default: ({ open, schedule }: any) => open ? <div role="dialog">{schedule?.title}</div> : null }));
 afterEach(() => { cleanup(); mocks.role = "super_admin"; });
 describe("Agenda and notification destinations", () => {
-  it.each(["admin", "gestor", "super_admin"])("%s defaults to all, including unassigned Flora visits", role => {
+  it.each(["admin", "gestor", "super_admin", "operacional"])("%s defaults to all, including unassigned Flora visits", role => {
     mocks.role = role; render(<MemoryRouter><Agenda /></MemoryRouter>);
     expect(screen.getByRole("tab", { name: "Todas" })).toHaveAttribute("data-state", "active");
     expect(screen.getByText("Flora")).toBeInTheDocument();

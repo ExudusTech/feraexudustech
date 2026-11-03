@@ -31,7 +31,7 @@ type CalendarView = "dia" | "semana" | "mes" | "ano";
 
 export default function Agenda() {
   const { user } = useAuth();
-  const canViewAll = (user?.roles ?? [user?.role ?? ""]).some(r => ["admin", "gestor", "super_admin"].includes(r));
+  const canViewAll = (user?.roles ?? [user?.role ?? ""]).some(r => ["admin", "gestor", "super_admin", "operacional"].includes(r));
   const { data: schedules = [], isLoading } = useSchedules();
   const { data: users = [] } = useOrganizationUsers();
   const { data: leads = [] } = useLeads();
