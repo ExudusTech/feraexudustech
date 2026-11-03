@@ -11,3 +11,4 @@
 - MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
 - Lead timeline (lead_timeline) holds short masked summaries only, written by mcp in background on the company-isolated lead; context returned to Flora is built from the chat-identified person only (phone / instagram_user_id / messenger_id), so transcripts and other people's data never leave the Fera.
 - localizar_estabelecimento answers precisa_nome without any provider call when the name is only a generic business type, so Flora never offers lookalike places.
+- consultar_rota_consultor computes opcoes_horario server-side (3 distinct days, band start to end minus visit duration, skipping the area consultant's existing schedules) so Flora never invents out-of-band times.

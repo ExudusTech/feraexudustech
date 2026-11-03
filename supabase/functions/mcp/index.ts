@@ -1643,6 +1643,10 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   });
 
   const diasSemana = dowsList.map(diaSemanaLabel).join(" e ");
+  const opcoes = await routeTimeOptions(supabase, candidates.filter(date => availableArea(date)), availableArea);
+  const mensagem = opcoes.length > 0
+    ? `Tenho estas opções para a visita:\n${opcoes.map((o, i) => `${i + 1}. ${o.texto}`).join("\n")}\nQual opção fica melhor para você?`
+    : null;
 
   return ok(
     {
@@ -1650,10 +1654,60 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
       cidade:          regiao ?? cidade ?? cep,
       dias_de_visita:  diasSemana,
       proximas_datas:  proximasFormatadas,
+      opcoes_horario:  opcoes,
+      ...(mensagem ? { mensagem_para_lead: mensagem } : {}),
     },
     `Consultor visita ${regiao ?? cidade ?? cep} às ${diasSemana}. Próximas: ${proximasFormatadas.map((p) => p.data_ptbr).join(", ")}`,
-    "Antes de responder, consulte os horários livres na agenda para estas datas e ofereça 3 opções prontas (dia + horário livre dentro da faixa). Não peça ao lead para sugerir horário."
+    opcoes.length > 0
+      ? "Ofereça ao lead exatamente as opções de opcoes_horario (use mensagem_para_lead). Não calcule outros horários nem peça ao lead para sugerir horário."
+      : "Nenhum horário livre encontrado nos próximos dias; use solicitar_atendimento_humano para a equipe combinar a visita."
   );
+}
+
+const VISIT_DURATION_MIN = 60;
+const toMin = (t: string) => { const [h, m] = t.slice(0, 5).split(":").map(Number); return h * 60 + (m || 0); };
+const fromMin = (n: number) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+const horaTexto = (n: number) => `${Math.floor(n / 60)}h${n % 60 ? String(n % 60).padStart(2, "0") : ""}`;
+const DIA_LONGO = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+
+/** Up to 3 ready-made options on distinct days, inside the region band, free for the consultant. */
+async function routeTimeOptions(
+  supabase: ReturnType<typeof getClient>, dates: string[],
+  areaFor: (date: string) => { horario_inicio?: string | null; horario_fim?: string | null; consultant_user_id?: string | null } | undefined,
+): Promise<{ data: string; hora: string; texto: string }[]> {
+  if (dates.length === 0) return [];
+  let existing: { scheduled_date?: string; start_time?: string; end_time?: string; assigned_to?: string | null }[] = [];
+  try {
+    const { data } = await supabase.from("schedules").select("scheduled_date, start_time, end_time, assigned_to, status")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("scheduled_date", dates).neq("status", "cancelado");
+    existing = Array.isArray(data) ? data : [];
+  } catch { console.error("[rota] schedules lookup failed"); }
+  const options: { data: string; hora: string; texto: string }[] = [];
+  for (const date of dates) {
+    if (options.length >= 3) break;
+    const area = areaFor(date);
+    if (!area) continue;
+    const startBand = toMin(area.horario_inicio ?? "08:00");
+    const lastStart = toMin(area.horario_fim ?? "18:00") - VISIT_DURATION_MIN;
+    const busy = existing.filter(s => s.scheduled_date === date && s.start_time &&
+      (!area.consultant_user_id || !s.assigned_to || s.assigned_to === area.consultant_user_id));
+    const free: number[] = [];
+    for (let t = startBand; t <= lastStart; t += 30) {
+      const clash = busy.some(s => {
+        const bs = toMin(s.start_time!); const be = s.end_time ? toMin(s.end_time) : bs + VISIT_DURATION_MIN;
+        return t < be && bs < t + VISIT_DURATION_MIN;
+      });
+      if (!clash) free.push(t);
+    }
+    if (free.length === 0) continue;
+    // Vary: 1st earliest, 2nd latest, 3rd middle (morning/afternoon when the band allows).
+    const i = options.length;
+    const pick = i === 0 ? free[0] : i === 1 ? free[free.length - 1] : free[Math.floor(free.length / 2)];
+    const d = new Date(date + "T12:00:00-03:00");
+    options.push({ data: date, hora: fromMin(pick),
+      texto: `${DIA_LONGO[d.getDay()]}, ${date.slice(8, 10)}/${date.slice(5, 7)}, às ${horaTexto(pick)}` });
+  }
+  return options;
 }
 
 async function obterPromocaoVigente(_params: Record<string, unknown>): Promise<McpResponse> {
