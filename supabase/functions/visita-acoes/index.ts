@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
-  if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
+  if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
   const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, clients(name), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
@@ -99,6 +99,19 @@ Deno.serve(async (req) => {
         if (data?.signedUrl) urls[e.foto_path] = data.signedUrl;
       }
       return json({ urls });
+    }
+    case "proposta_enviada": {
+      const { data: pp } = await admin.from("schedule_proximo_passo").select("id, tipo, proposta_enviada_em").eq("schedule_id", s.id).maybeSingle();
+      if (!pp || pp.tipo !== "proposta") return json({ error: "Esta visita não tem proposta como próximo passo" }, 409);
+      if (!pp.proposta_enviada_em) {
+        await admin.from("schedule_proximo_passo").update({ proposta_enviada_em: new Date().toISOString() }).eq("id", pp.id);
+        if (s.lead_id) {
+          const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", "proposta_enviada").maybeSingle();
+          if (st) await admin.from("leads").update({ stage_id: st.id, stage: "proposta" }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
+        }
+        await timeline("visita", `Proposta enviada (marcada por ${consultor})`);
+      }
+      return json({ ok: true });
     }
     case "nao_realizado": {
       if (!["agendado", "confirmado", "em_atendimento"].includes(s.status)) return json({ error: "Esta visita já foi finalizada" }, 409);
