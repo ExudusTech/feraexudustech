@@ -10,11 +10,12 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client?: Client | null;
+  onSaved?: (client: Client) => void;
 }
 
 const empty = { name: "", email: "", phone: "", document: "", company: "", address: "", city: "", state: "", zip_code: "", notes: "", status: "active" };
 
-export default function ClientFormDialog({ open, onOpenChange, client }: Props) {
+export default function ClientFormDialog({ open, onOpenChange, client, onSaved }: Props) {
   const [form, setForm] = useState(empty);
   const create = useCreateClient();
   const update = useUpdateClient();
@@ -49,7 +50,8 @@ export default function ClientFormDialog({ open, onOpenChange, client }: Props) 
     if (isEdit) {
       await update.mutateAsync({ id: client!.id, ...form });
     } else {
-      await create.mutateAsync(form);
+      const created = await create.mutateAsync(form);
+      if (created) onSaved?.(created as Client);
     }
     onOpenChange(false);
   };

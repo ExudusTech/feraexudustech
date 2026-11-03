@@ -11,6 +11,7 @@ import ClientBaseDialog from "@/components/crm/ClientBaseDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ClientFormDialog from "@/components/crm/ClientFormDialog";
+import ScheduleFormDialog from "@/components/ekkoa/ScheduleFormDialog";
 import { useClients, useDeleteClient, type Client } from "@/hooks/use-clients";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Users, CalendarCheck } from "lucide-react";
 
@@ -19,6 +20,7 @@ export default function Clientes() {
   const { data: clients = [], isLoading } = useClients();
   const deleteClient = useDeleteClient();
   const [search, setSearch] = useState("");
+  const [agendarId, setAgendarId] = useState<string | null>(null);
   const [tab, setTab] = useState("clientes");
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -94,6 +96,7 @@ export default function Clientes() {
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => { setSelectedClient(c); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setAgendarId(c.id)}>Agendar</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => setBaseClient(c)}>Base instalada</DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId({ type: "client", id: c.id })}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
                           </DropdownMenuContent>
@@ -113,6 +116,7 @@ export default function Clientes() {
       </Tabs>
 
       <ClientFormDialog open={dialogOpen} onOpenChange={setDialogOpen} client={selectedClient} />
+      <ScheduleFormDialog open={!!agendarId} onOpenChange={(o) => !o && setAgendarId(null)} defaultClientId={agendarId} />
 
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
