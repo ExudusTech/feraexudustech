@@ -15,8 +15,8 @@ export default function LevarProximaVisita() {
   const { data = [] } = useQuery({
     queryKey: ["ocorrencias", "minhas", user?.id], enabled: !!user?.id,
     queryFn: async () => {
-      const { data } = await (supabase as any).from("ocorrencias_ponto").select("id, item_descricao, quantidade, urgente, status, client_id, clients(name), comodatos(localizacao_interna)")
-        .eq("responsavel_id", user!.id).in("status", ["aberta", "separada"]).order("created_at");
+      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, client_id, clients(name), comodatos(localizacao_interna)")
+        .eq("assigned_to", user!.id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]).order("created_at");
       return (data ?? []) as any[];
     },
   });
@@ -38,8 +38,8 @@ export default function LevarProximaVisita() {
               <div key={o.id} className="flex items-center gap-2 text-sm">
                 <span className="flex-1">{o.quantidade}x {o.item_descricao}{o.comodatos?.localizacao_interna && <span className="text-muted-foreground"> · {o.comodatos.localizacao_interna}</span>}</span>
                 {o.urgente && <Badge variant="destructive">Urgente</Badge>}
-                <Button size="sm" variant={o.status === "separada" ? "default" : "outline"} onClick={() => separar(o.id, o.status === "separada" ? "aberta" : "separada")}>
-                  {o.status === "separada" ? "Separado ✓" : "Separar"}</Button>
+                <Button size="sm" variant={o.status === "em_andamento" ? "default" : "outline"} onClick={() => separar(o.id, o.status === "em_andamento" ? "aberta" : "separada")}>
+                  {o.status === "em_andamento" ? "Separado ✓" : "Separar"}</Button>
               </div>))}
           </div>))}
       </CardContent>
