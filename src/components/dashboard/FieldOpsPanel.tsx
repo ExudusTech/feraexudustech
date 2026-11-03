@@ -83,8 +83,8 @@ export default function FieldOpsPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
       <EmergencyRequests />
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <Metric label="Realizadas na semana" value={m.realizadas} f="realizadas" />
         <Metric label="Não realizadas" value={m.naoRealizadas} f="nao_realizadas" />
         <Metric label="Duração média (min)" value={m.duracaoMedia} />
