@@ -153,8 +153,8 @@ describe("MCP establishment location", () => {
   });
   it("does not match an empty generic name against every candidate", async () => {
     const result = await harness({ places: [place("28900-100"), place("28926-100")] }).route("localizar_estabelecimento", { nome: "O Restaurante" });
-    expect(result.data.correspondencia_exata).toBe(false);
-    expect(result.data.candidatos).toHaveLength(2);
+    expect(result.data.precisa_nome).toBe(true);
+    expect(result.data.candidatos).toHaveLength(0);
   });
   it("uses Google street components without locality or CEP in the message", async () => {
     const p = { ...place("28900-100"), formattedAddress: "Rua Teste, Centro, Cabo Frio - RJ, 28900-100", addressComponents: [...place("28900-100").addressComponents, { types: ["route"], longText: "Rua Teste" }, { types: ["street_number"], longText: "40" }] };
