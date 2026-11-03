@@ -183,6 +183,13 @@
       "when": 1793729357218,
       "tag": "0025_lote11_base_instalada",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793732967263,
+      "tag": "0026_lote11_consolidar_estruturas",
+      "breakpoints": true
     }
   ]
 }
