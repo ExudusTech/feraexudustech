@@ -153,8 +153,8 @@ describe("MCP establishment location", () => {
   });
   it("does not match an empty generic name against every candidate", async () => {
     const result = await harness({ places: [place("28900-100"), place("28926-100")] }).route("localizar_estabelecimento", { nome: "O Restaurante" });
-    expect(result.data.correspondencia_exata).toBe(false);
-    expect(result.data.candidatos).toHaveLength(2);
+    expect(result.data.precisa_nome).toBe(true);
+    expect(result.data.candidatos).toHaveLength(0);
   });
   it("uses Google street components without locality or CEP in the message", async () => {
     const p = { ...place("28900-100"), formattedAddress: "Rua Teste, Centro, Cabo Frio - RJ, 28900-100", addressComponents: [...place("28900-100").addressComponents, { types: ["route"], longText: "Rua Teste" }, { types: ["street_number"], longText: "40" }] };
@@ -242,4 +242,25 @@ describe("cities with several coverage regions", () => {
     expect(r.data.cobertura.map((c: any) => [c.regiao, c.dia_visita])).toEqual([["Cabo Frio", "Segunda-feira e Sexta-feira"], ["Cabo Frio 2º Distrito", "Terça-feira e Quinta-feira"]]);
     expect(r.next_action_hint).toContain("chame localizar_estabelecimento");
   });
+});
+
+describe("nome genérico", () => {
+  for (const [nome, msg] of [["hotel em Búzios", "Qual é o nome do hotel?"], ["minha clínica", "Qual é o nome da clínica?"], ["restaurante", "Qual é o nome do restaurante?"]]) {
+    it(`${nome} pede o nome sem buscar`, async () => {
+      const h = harness();
+      const r = JSON.parse(JSON.stringify(await h.route("localizar_estabelecimento", { nome, cidade: "Búzios" })));
+      expect(r.success).toBe(true);
+      expect(r.data).toMatchObject({ precisa_nome: true, encontrado: false, candidatos: [] });
+      expect(r.data.mensagem_para_lead).toContain(msg);
+      expect(h.requests).toHaveLength(0);
+    });
+  }
+  for (const nome of ["Hotel Viareggio", "Pousada Casas Brancas", "Clínica São Lucas", "Restaurante Sabor do Mar"]) {
+    it(`${nome} busca normalmente`, async () => {
+      const h = harness();
+      const r = JSON.parse(JSON.stringify(await h.route("localizar_estabelecimento", { nome, cidade: "Cabo Frio" })));
+      expect(r.data.precisa_nome).toBeUndefined();
+      expect(h.requests.some((q: any) => q.url.includes("places"))).toBe(true);
+    });
+  }
 });

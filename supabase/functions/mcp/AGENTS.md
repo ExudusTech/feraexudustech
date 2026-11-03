@@ -10,3 +10,4 @@
 - Human handoff always resolves or creates a tenant-scoped lead, records the note in lead_timeline (description untouched), and alerts per lead at most once per 30 minutes, with high-urgency follow-ups limited to one per 15 minutes, so transfers stay visible without spamming the team.
 - MCP tools return generic "Erro interno ao <ação>" for database failures and log only stage and error code server-side.
 - Lead timeline (lead_timeline) holds short masked summaries only, written by mcp in background on the company-isolated lead; context returned to Flora is built from the chat-identified person only (phone / instagram_user_id / messenger_id), so transcripts and other people's data never leave the Fera.
+- localizar_estabelecimento answers precisa_nome without any provider call when the name is only a generic business type, so Flora never offers lookalike places.

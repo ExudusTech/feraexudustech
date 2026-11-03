@@ -1444,6 +1444,24 @@ function isPlaceInRj(place: { addressComponents?: { types?: string[]; longText?:
   return true;
 }
 
+const GENERIC_BUSINESS_TYPES: Record<string, string> = {
+  hotel: "hotel", pousada: "pousada", restaurante: "restaurante", clinica: "clínica", academia: "academia", escritorio: "escritório",
+  loja: "loja", empresa: "empresa", condominio: "condomínio", salao: "salão", bar: "bar", padaria: "padaria", mercado: "mercado",
+  supermercado: "supermercado", lanchonete: "lanchonete", cafeteria: "cafeteria", consultorio: "consultório", hostel: "hostel",
+  hospital: "hospital", farmacia: "farmácia", escola: "escola", oficina: "oficina", estabelecimento: "estabelecimento",
+  negocio: "negócio", comercio: "comércio", quiosque: "quiosque", pizzaria: "pizzaria", sorveteria: "sorveteria", lavanderia: "lavanderia",
+  barbearia: "barbearia", petshop: "pet shop", igreja: "igreja", resort: "resort", spa: "spa", buffet: "buffet", laboratorio: "laboratório",
+};
+/** Business type when the name is only a generic type ("hotel em Búzios", "minha clínica"); null for real names. */
+function genericBusinessType(nome: string): string | null {
+  const words = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const cut = words.findIndex(w => ["em", "de", "do", "da", "no", "na", "aqui", "la"].includes(w));
+  const core = (cut >= 0 ? words.slice(0, cut) : words).filter(w => !["meu", "minha", "nosso", "nossa", "o", "a", "um", "uma", "e"].includes(w));
+  if (core.length !== 1) return null;
+  const singular = core[0].replace(/(oes|aes)$/, "ao").replace(/s$/, "");
+  return GENERIC_BUSINESS_TYPES[core[0]] ?? GENERIC_BUSINESS_TYPES[singular] ?? null;
+}
+
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
@@ -1451,6 +1469,10 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.cidade != null && !cidade) return fail("cidade inválida (até 120 caracteres)");
   if (params.bairro != null && !bairro) return fail("bairro inválido");
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
+  // Generic type only (no proper name): never search Google, ask the lead for the name.
+  const tipoGenerico = params.cep ? null : genericBusinessType(nome);
+  if (tipoGenerico) return ok({ encontrado: false, precisa_nome: true, candidatos: [],
+    mensagem_para_lead: `Qual é o nome ${["pousada", "clínica", "academia", "loja", "empresa", "padaria", "lanchonete", "cafeteria", "farmácia", "escola", "oficina", "pizzaria", "sorveteria", "lavanderia", "barbearia", "igreja"].includes(tipoGenerico) ? "da" : "do"} ${tipoGenerico}? Assim já vejo o melhor dia para a visita.` });
   const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
     mensagem_para_lead: "Me passa o bairro ou o CEP do estabelecimento? Assim já vejo o melhor dia para o consultor passar aí." });
   // Tool-local name comparison; do not change the shared parameter normalizer.
