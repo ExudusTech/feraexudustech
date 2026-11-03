@@ -8,6 +8,7 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { id: "me", role: m
 vi.mock("@/components/layout/AppLayout", () => ({ default: ({ children }: any) => <div>{children}</div> }));
 vi.mock("@/components/atendimentos/PainelAgora", () => ({ default: () => null }));
 vi.mock("@/hooks/use-schedules", () => ({ useSchedules: () => ({ isLoading: false, data: [{ id: "flora-visit", title: "Visita Técnica — Cabo Frio Shopping", source: "flora", assigned_to: null, created_by: null, scheduled_date: "2026-10-16", start_time: "14:00:00", status: "agendado", location: "Cabo Frio" }] }), useDeleteSchedule: () => ({ mutate: vi.fn() }) }));
+vi.mock("@/components/agenda/VisitExecutionDialog", () => ({ default: () => null }));
 vi.mock("@/hooks/use-users", () => ({ useOrganizationUsers: () => ({ data: [] }) }));
 vi.mock("@/hooks/use-leads", () => ({ useLeads: () => ({ data: [] }) }));
 vi.mock("@/components/ekkoa/ScheduleFormDialog", () => ({ default: ({ open, schedule }: any) => open ? <div role="dialog">{schedule?.title}</div> : null }));

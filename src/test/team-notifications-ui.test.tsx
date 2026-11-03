@@ -12,10 +12,12 @@ vi.mock("@/hooks/use-team-notifications", async importOriginal => {
 });
 afterEach(() => { cleanup(); mocks.save.mockClear(); mocks.mutate.mockClear(); mocks.role = "gestor"; });
 describe("Team recipient management", () => {
-  it("offers only the four supported events", () => {
+  it("offers only the eight supported events", () => {
     render(<TeamNotifications />);
     fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
-    expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(8);
+    expect(screen.getByLabelText("Check-in fora do local")).toBeInTheDocument();
+    expect(screen.getByLabelText("Visita concluída (check-out)")).toBeInTheDocument();
     expect(screen.getByLabelText("Agendamento — visita comercial")).toBeInTheDocument();
     expect(screen.getByLabelText("Agendamento — visita técnica")).toBeInTheDocument();
     expect(screen.getByLabelText("Transferência")).toBeInTheDocument();
