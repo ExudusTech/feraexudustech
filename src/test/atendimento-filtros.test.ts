@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { aplicaFiltro, rotularAutores, type Service } from "@/lib/atendimento-metrics";
 
-const svc: Service = { config: { dias: [0,1,2,3,4,5,6], inicio: "00:00", fim: "23:59", timezone: "America/Sao_Paulo" } as any, closed: [], city: null, amarelo: 10, vermelho: 30 };
+const svc: Service = { config: { days: [0,1,2,3,4,5,6], start: "00:00", end: "23:59", timezone: "America/Sao_Paulo" }, closed: [], city: null, amarelo: 10, vermelho: 30 };
 const base = { lead_id: null, tipo: "transferencia", canal: "WHATSAPP", resultado: null, assumido_em: null, resolvido_em: null, responsavel_id: null, assumido_por: null };
 const now = new Date("2026-11-03T15:00:00Z");
 const items = [
