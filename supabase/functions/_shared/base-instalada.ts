@@ -38,7 +38,7 @@ function alignWeekday(from: string, dia?: number | null): string {
 export function proximasDatas(p: Plano, from: string, horizonDias: number, blocked: (iso: string) => boolean): string[] {
   const step = intervaloDias(p);
   const end = addDays(from, horizonDias);
-  let d = alignWeekday(p.data_inicio > from ? p.data_inicio : p.data_inicio, p.dia_semana);
+  let d = alignWeekday(p.data_inicio, p.dia_semana);
   // advance whole steps until within range
   while (d < from) d = addDays(d, step);
   const out: string[] = [];
@@ -85,8 +85,8 @@ export function piorEstado(estados: (string | null | undefined)[]): Estado | nul
 
 /** Client location from a check-in only overwrites an existing one when explicitly confirmed. */
 export function podeGravarLocalizacao(existente: { latitude?: number | null } | null, confirmado: boolean): boolean {
-  if (!confirmado) return false;
-  return true && (existente?.latitude === null || existente?.latitude === undefined || confirmado);
+  void existente;
+  return confirmado === true;
 }
 
 export interface ImportRow { cliente: string; cidade: string; frequencia: string; dia_semana: number | null; consultor?: string; erro?: string }
