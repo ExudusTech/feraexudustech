@@ -2317,7 +2317,7 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
     const stageId = await bookedStageId(supabase);
     await supabase.from("leads")
-      .update({ stage: "agendado", ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
+      .update({ ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
@@ -2460,7 +2460,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
     const stageId = await bookedStageId(supabase);
     await supabase.from("leads")
-      .update({ stage: "agendado", ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
+      .update({ ...(stageId ? { stage_id: stageId } : {}), updated_at: new Date().toISOString() })
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
   }
   await fillBookingEmail(supabase, bookingLead, validEmail);
