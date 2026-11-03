@@ -25,3 +25,4 @@
 - Human-service hours live in supabase/functions/_shared/business-hours.ts; mcp embeds an identical copy (test-enforced) because its test harness cannot load imports, so Flora, the queue and screens agree.
 - Team alerts outside human hours are stored as QUEUED notification_logs and released by release-notification-queue (5-min cron), which also sends atendimento wait reminders; bookings still alert immediately.
 - Atendimentos (one open per lead) are created by mcp; Fera actions go through atendimento-acoes, which reads the row with caller RLS before using the GPT Maker token or writing the timeline.
+- The Leads kanban is built from lead_stages via stage_id; a BEFORE trigger on leads (sync_lead_stage) keeps the legacy stage enum in sync in both directions so older readers keep working.
