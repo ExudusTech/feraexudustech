@@ -1,20 +1,20 @@
 // Runs every 15 minutes: D-1 and same-day visit confirmations to the client's chat, "no answer" alert to the consultant,
 // late-visit alerts to managers, and daily retention cleanup of raw locations/photos. Every step is claimed per row, so reruns are harmless.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { confirmationDue, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage } from "../_shared/visit-exec.ts";
+import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 
 const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "Content-Type": "application/json" } });
 
-async function sendToChat(chatId: string, message: string): Promise<boolean> {
+async function sendToChat(chatId: string, message: string): Promise<string | null> {
   const token = Deno.env.get("GPTMAKER_API_TOKEN");
-  if (!token) return false;
+  if (!token) return "CONFIG_MISSING";
   try {
     const res = await fetch(`https://api.gptmaker.ai/v2/chat/${encodeURIComponent(chatId)}/send-message`, { method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ message }), signal: AbortSignal.timeout(10000) });
     await res.body?.cancel();
-    return res.ok;
-  } catch { return false; }
+    return res.ok ? null : `HTTP ${res.status}`;
+  } catch { return "DELIVERY_FAILED"; }
 }
 
 Deno.serve(async () => {
@@ -22,9 +22,9 @@ Deno.serve(async () => {
   const now = new Date();
   const today = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-  const out = { confirmacoes: 0, sem_resposta: 0, atrasos: 0, limpeza: 0 };
+  const out = { confirmacoes: 0, falhas: 0, sem_resposta: 0, atrasos: 0, limpeza: 0 };
   const { data: rows } = await admin.from("schedules")
-    .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, confirmacao_status, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
+    .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
   const orgCache = new Map<string, { open: boolean; d1: string; horas: number; atraso: number }>();
   for (const s of rows ?? []) {
@@ -42,16 +42,29 @@ Deno.serve(async () => {
       const info = { id: s.id, cliente, consultor: who?.name ?? "Sem responsável", tipo: "" };
 
       const chat = lead?.gptmaker_chat_id as string | null;
-      const due = chat ? confirmationDue(now, { scheduled_date: s.scheduled_date, start_time: s.start_time, confirmacao_status: s.confirmacao_status,
+      const due = confirmationEligible(s.created_at, chat) ? confirmationDue(now, { scheduled_date: s.scheduled_date, start_time: s.start_time, confirmacao_status: s.confirmacao_status,
         d1_sent: !!s.confirmacao_d1_enviada_em, dia_sent: !!s.confirmacao_dia_enviada_em, sem_resposta_alertado: !!s.sem_confirmacao_alertado_em },
         { d1_hora: cfg.d1, horas_antes: cfg.horas }, cfg.open) : null;
       if (due === "d1" || due === "dia") {
         const col = due === "d1" ? "confirmacao_d1_enviada_em" : "confirmacao_dia_enviada_em";
-        const { data: claimed } = await admin.from("schedules").update({ [col]: now.toISOString() }).eq("id", s.id).is(col, null).select("id").maybeSingle();
-        if (claimed && await sendToChat(chat!, confirmationMessage(due, s.scheduled_date, s.start_time!, lead?.empresa_nome || lead?.company))) {
-          out.confirmacoes++;
-          await admin.from("lead_timeline").insert({ organization_id: org, lead_id: s.lead_id, tipo: "visita", origem: "fera",
-            resumo: due === "d1" ? "Confirmação D-1 enviada ao cliente" : "Confirmação do dia enviada ao cliente", referencia_id: s.id }).then(() => undefined, () => undefined);
+        const spent = attemptsFor(due, s.confirmacao_tentativas, s.confirmacao_ultimo_erro);
+        if (spent < CONFIRMACAO_MAX_TENTATIVAS) {
+          // Claim by bumping the attempt counter; the step is marked sent only after GPT Maker accepts the message.
+          const { data: claimed } = await admin.from("schedules").update({ confirmacao_tentativas: spent + 1 })
+            .eq("id", s.id).eq("confirmacao_tentativas", s.confirmacao_tentativas ?? 0).is(col, null).select("id").maybeSingle();
+          if (claimed) {
+            const err = await sendToChat(chat!, confirmationMessage(due, s.scheduled_date, s.start_time!, lead?.empresa_nome || lead?.company));
+            if (!err) {
+              out.confirmacoes++;
+              await admin.from("schedules").update({ [col]: new Date().toISOString(), confirmacao_tentativas: 0, confirmacao_ultimo_erro: null }).eq("id", s.id);
+              await admin.from("lead_timeline").insert({ organization_id: org, lead_id: s.lead_id, tipo: "visita", origem: "fera",
+                resumo: due === "d1" ? "Confirmação D-1 enviada ao cliente" : "Confirmação do dia enviada ao cliente", referencia_id: s.id }).then(() => undefined, () => undefined);
+            } else {
+              out.falhas++;
+              await admin.from("schedules").update({ confirmacao_ultimo_erro: `${due}: ${err}` }).eq("id", s.id);
+              console.error("[confirmar-visitas] send failed", err);
+            }
+          }
         }
       } else if (due === "sem_resposta") {
         const { data: claimed } = await admin.from("schedules").update({ sem_confirmacao_alertado_em: now.toISOString(), confirmacao_status: "sem_resposta" })

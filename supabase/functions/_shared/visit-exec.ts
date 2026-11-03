@@ -147,3 +147,14 @@ export function lateMinutes(now: Date, s: { scheduled_date: string; start_time: 
   const diff = (now.getTime() - spInstant(s.scheduled_date, s.start_time).getTime()) / 60_000;
   return diff > 0 ? Math.floor(diff) : 0;
 }
+
+/** Client confirmations start with visits created from 2026-11-03 (São Paulo) and only when the client has a chat. */
+export const CONFIRMACAO_INICIO = "2026-11-03T03:00:00Z";
+export const CONFIRMACAO_MAX_TENTATIVAS = 3;
+export function confirmationEligible(createdAt: string | null | undefined, chatId: string | null | undefined): boolean {
+  return !!chatId && !!createdAt && Date.parse(createdAt) >= Date.parse(CONFIRMACAO_INICIO);
+}
+/** Failed attempts already spent on this step ("d1"/"dia"); the last error is stored as "<step>: <code>". */
+export function attemptsFor(step: "d1" | "dia", tentativas: number | null | undefined, erro: string | null | undefined): number {
+  return erro?.startsWith(`${step}:`) ? Number(tentativas ?? 0) : 0;
+}
