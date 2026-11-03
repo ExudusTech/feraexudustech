@@ -19,6 +19,8 @@ import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
+import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
+import { CONFIRMACAO_LABEL } from "@/lib/visit-exec";
 import PainelAgora from "@/components/atendimentos/PainelAgora";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
@@ -53,6 +55,8 @@ export default function Agenda() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [execId, setExecId] = useState<string | null>(null);
+  const execItem = schedules.find((x) => x.id === execId) ?? null;
 
   const [searchParams] = useSearchParams();
   const linkedId = searchParams.get("agendamento");
@@ -129,9 +133,11 @@ export default function Agenda() {
   const getStatusBadge = (status: string) => {
     const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
       agendado: { label: "Agendado", variant: "default" },
+      confirmado: { label: "Confirmado", variant: "default" },
+      em_atendimento: { label: "Em atendimento", variant: "outline" },
       concluido: { label: "Concluído", variant: "secondary" },
+      nao_realizado: { label: "Não realizado", variant: "destructive" },
       cancelado: { label: "Cancelado", variant: "destructive" },
-      em_andamento: { label: "Em Andamento", variant: "outline" },
     };
     const cfg = map[status] || { label: status, variant: "outline" as const };
     return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
@@ -353,8 +359,10 @@ export default function Agenda() {
               <SelectContent>
                 <SelectItem value="all">Todos Status</SelectItem>
                 <SelectItem value="agendado">Agendado</SelectItem>
-                <SelectItem value="em_andamento">Em Andamento</SelectItem>
+                <SelectItem value="confirmado">Confirmado</SelectItem>
+                <SelectItem value="em_atendimento">Em atendimento</SelectItem>
                 <SelectItem value="concluido">Concluído</SelectItem>
+                <SelectItem value="nao_realizado">Não realizado</SelectItem>
                 <SelectItem value="cancelado">Cancelado</SelectItem>
               </SelectContent>
             </Select>
@@ -411,7 +419,7 @@ export default function Agenda() {
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : displayMode === "hoje" ? (
-          <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} />
+          <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} onExecute={(s) => setExecId(s.id)} />
         ) : displayMode === "lista" ? (
           <div className="border rounded-lg overflow-x-auto">
             <Table>
@@ -446,7 +454,7 @@ export default function Agenda() {
                       <TableCell>{s.lead_id ? (leadMap.get(s.lead_id) ?? "—") : "—"}</TableCell>
                       <TableCell>{format(parseISO(s.scheduled_date), "dd/MM/yyyy")}</TableCell>
                       <TableCell>{s.start_time?.slice(0, 5) || "—"}</TableCell>
-                      <TableCell>{getStatusBadge(s.status)}</TableCell>
+                      <TableCell>{getStatusBadge(s.status)}{s.status === "agendado" && s.confirmacao_status && ["confirmado", "remarcar", "sem_resposta"].includes(s.confirmacao_status) && <Badge variant="outline" className="ml-1">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}</TableCell>
                       <TableCell>{userMap.get(s.assigned_to || "") || "Sem responsável"}</TableCell>
                       <TableCell className="max-w-[250px] truncate">{s.location || "—"}</TableCell>
                       <TableCell>
@@ -457,6 +465,9 @@ export default function Agenda() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                               <Pencil className="h-4 w-4 mr-2" /> Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setExecId(s.id)}>
+                              <CalendarDays className="mr-2 h-4 w-4" /> Executar / ver registro
                             </DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId(s.id)}>
                               <Trash2 className="h-4 w-4 mr-2" /> Excluir
@@ -494,6 +505,8 @@ export default function Agenda() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <VisitExecutionDialog open={!!execItem} onOpenChange={(o) => !o && setExecId(null)} schedule={execItem}
+        clientName={execItem?.lead_id ? leadInfo.get(execItem.lead_id)?.title : undefined} />
     </AppLayout>
   );
 }

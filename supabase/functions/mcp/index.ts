@@ -2311,6 +2311,15 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
 
   if (error) return fail(dbFail("criar agendamento", error));
 
+  if (leadId && schedule?.id) {
+    // A visit the client asked to reschedule (via responder_confirmacao_visita) is replaced by this new booking.
+    try {
+      await supabase.from("schedules").update({ status: "cancelado", nao_realizado_motivo: "remarcado", notes: "Remarcado pelo cliente via Flora" })
+        .eq("organization_id", NITSCLEAN_ORG_ID).eq("lead_id", leadId).eq("confirmacao_status", "remarcar")
+        .in("status", ["agendado", "confirmado"]).neq("id", schedule.id);
+    } catch { console.error("[agendar] reschedule cleanup failed"); }
+  }
+
   if (leadId) {
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
     const stageId = await bookedStageId(supabase);
@@ -2443,11 +2452,23 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       location: bookingLocation(bookingLead, cidade), zip_code: bookingLead?.zip_code ?? validCep(params.cep), notes: notesArr,
       client_id: bookingLead?.client_id ?? null,
       lead_id: leadId ?? null,
+      latitude: coordOrNull((current.params as Record<string, unknown>).latitude ?? params.latitude, 90),
+      longitude: coordOrNull((current.params as Record<string, unknown>).longitude ?? params.longitude, 180),
+      confirmacao_status: params.chat_id ? "pendente" : "nao_aplicavel",
     })
     .select("id, title, scheduled_date, start_time, status")
     .single();
 
   if (error) return fail(dbFail("criar agendamento", error));
+
+  if (leadId && schedule?.id) {
+    // A visit the client asked to reschedule (via responder_confirmacao_visita) is replaced by this new booking.
+    try {
+      await supabase.from("schedules").update({ status: "cancelado", nao_realizado_motivo: "remarcado", notes: "Remarcado pelo cliente via Flora" })
+        .eq("organization_id", NITSCLEAN_ORG_ID).eq("lead_id", leadId).eq("confirmacao_status", "remarcar")
+        .in("status", ["agendado", "confirmado"]).neq("id", schedule.id);
+    } catch { console.error("[agendar] reschedule cleanup failed"); }
+  }
 
   if (leadId) {
     // Automatic pipeline move: booked visit → "Visita agendada" (when the org has that stage configured).
@@ -3409,6 +3430,18 @@ const TOOLS_MANIFEST = [
   },
   // ── Block 5: Routing / Exceptions ─────────────────────────────────────────
   {
+    name: "responder_confirmacao_visita",
+    description: "Use quando o cliente responder ao lembrete de visita enviado pela NitsClean: 'confirmo' confirma a visita; 'preciso remarcar' devolve opcoes_horario prontas e mensagem_para_lead. Depois que o cliente escolher, chame agendar_visita_tecnica com o mesmo lead_id (a visita antiga é cancelada sozinha).",
+    parameters: {
+      type: "object",
+      required: ["chat_id", "resposta"],
+      properties: {
+        chat_id:  { type: "string", description: "chat_id da conversa atual" },
+        resposta: { type: "string", description: "confirmo | remarcar (ou o texto do cliente)" },
+      },
+    },
+  },
+  {
     name: "listar_pendencias",
     description: "Somente leitura, para a equipe (Flora Equipe): lista os atendimentos em aberto e as visitas de hoje do usuário do Fera identificado pelo telefone. Vendedores veem só os próprios; gestor/admin, os da organização. Telefone desconhecido devolve listas vazias.",
     parameters: {
@@ -3500,6 +3533,49 @@ for (const tool of TOOLS_MANIFEST) {
   });
 }
 
+function coordOrNull(value: unknown, max: number): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(n) && Math.abs(n) <= max ? n : null;
+}
+
+/** Client answer to a visit confirmation sent by the Fera: confirm, or start a reschedule with ready-made options. */
+async function responderConfirmacaoVisita(params: Record<string, unknown>): Promise<McpResponse> {
+  const chatId = typeof params.chat_id === "string" ? params.chat_id.trim() : "";
+  const resposta = String(params.resposta ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const kind = /remarc|reagend|outro dia|outro horario|nao posso|nao vou/.test(resposta) ? "remarcar"
+    : /confirm|sim|ok|combinado|pode ser|certo/.test(resposta) ? "confirmo" : null;
+  if (!chatId) return fail("Informe o chat_id");
+  if (!kind) return fail("Resposta não reconhecida", "Pergunte ao cliente se confirma a visita ou se precisa remarcar");
+  const supabase = getClient();
+  const today = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const { data: leads } = await supabase.from("leads").select("id, city, regiao, zip_code").eq("organization_id", NITSCLEAN_ORG_ID).eq("gptmaker_chat_id", chatId);
+  const leadIds = (leads ?? []).map((l: { id: string }) => l.id);
+  if (!leadIds.length) return ok({ encontrado: false }, "Nenhuma visita encontrada para esta conversa");
+  const { data: visits } = await supabase.from("schedules").select("id, lead_id, scheduled_date, start_time, status")
+    .eq("organization_id", NITSCLEAN_ORG_ID).in("lead_id", leadIds).in("status", ["agendado", "confirmado"]).gte("scheduled_date", today)
+    .order("scheduled_date").order("start_time").limit(1);
+  const visit = visits?.[0];
+  if (!visit) return ok({ encontrado: false }, "Nenhuma visita futura encontrada para esta conversa");
+  const quando = `${String(visit.scheduled_date).slice(8, 10)}/${String(visit.scheduled_date).slice(5, 7)} às ${Number(String(visit.start_time).slice(0, 2))}h${String(visit.start_time).slice(3, 5) === "00" ? "" : String(visit.start_time).slice(3, 5)}`;
+  const timeline = (resumo: string) => queueTimeline(supabase, { leadId: visit.lead_id, tipo: "visita", referenciaId: visit.id, params, resumo });
+  if (kind === "confirmo") {
+    const { error } = await supabase.from("schedules").update({ status: "confirmado", confirmacao_status: "confirmado", confirmado_em: new Date().toISOString() }).eq("id", visit.id);
+    if (error) return fail(dbFail("confirmar visita", error));
+    timeline(`Cliente confirmou a visita de ${quando}`);
+    return ok({ encontrado: true, confirmado: true, schedule_id: visit.id, mensagem_para_lead: `Perfeito, visita confirmada para ${quando}. Até lá!` }, "Visita confirmada");
+  }
+  const { error } = await supabase.from("schedules").update({ confirmacao_status: "remarcar" }).eq("id", visit.id);
+  if (error) return fail(dbFail("remarcar visita", error));
+  timeline(`Cliente pediu para remarcar a visita de ${quando}`);
+  const lead = (leads ?? []).find((l: { id: string }) => l.id === visit.lead_id) as { city?: string; regiao?: string; zip_code?: string } | undefined;
+  const rota = await consultarRotaConsultor({ chat_id: chatId, cidade: lead?.city ?? undefined, regiao: lead?.regiao ?? undefined, cep: lead?.zip_code ?? undefined });
+  const rd = (rota.success ? rota.data : {}) as Record<string, unknown>;
+  return ok({ encontrado: true, remarcar: true, schedule_id: visit.id, lead_id: visit.lead_id,
+    opcoes_horario: rd.opcoes_horario ?? [], precisa_localizar: rd.precisa_localizar ?? false,
+    mensagem_para_lead: typeof rd.mensagem_para_lead === "string" ? rd.mensagem_para_lead : "Sem problemas! Qual dia e horário ficam melhores para você?" },
+    "Visita marcada para remarcar", "Quando o cliente escolher, chame agendar_visita_tecnica com o mesmo lead_id; a visita antiga é cancelada automaticamente");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TOOL ROUTER
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3531,6 +3607,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "agendar_visita_tecnica":       return agendarVisitaTecnica(params);
     case "agendar_reuniao_sede":         return agendarReuniaoSede(params);
     case "cancelar_reagendar_visita":    return cancelarReagendarVisita(params);
+    case "responder_confirmacao_visita": return responderConfirmacaoVisita(params);
     // Block 4
     case "mover_lead_estagio":           return moverLeadEstagio(params);
     case "atribuir_responsavel":         return atribuirResponsavel(params);

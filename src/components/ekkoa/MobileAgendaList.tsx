@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { MapPin, Phone, MessageCircle, Navigation } from "lucide-react";
+import { MapPin, Phone, MessageCircle, Navigation, PlayCircle, CheckCircle2 } from "lucide-react";
+import { CONFIRMACAO_LABEL, STATUS_LABEL } from "@/lib/visit-exec";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,11 +15,16 @@ interface Props {
   schedules: Schedule[];
   leads: Map<string, LeadInfo>;
   onOpen: (s: Schedule) => void;
+  /** When given, shows the large Iniciar/Encerrar button for field execution. */
+  onExecute?: (s: Schedule) => void;
+  /** Hide the Hoje/Amanhã switch and show only today. */
+  todayOnly?: boolean;
 }
 
 /** Phone view: today/tomorrow visits sorted by time with large action buttons. */
-export default function MobileAgendaList({ schedules, leads, onOpen }: Props) {
-  const [day, setDay] = useState<"hoje" | "amanha">("hoje");
+export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, todayOnly }: Props) {
+  const [dayState, setDay] = useState<"hoje" | "amanha">("hoje");
+  const day = todayOnly ? "hoje" : dayState;
   const target = day === "hoje" ? new Date() : addDays(new Date(), 1);
   const items = useMemo(
     () => schedules
@@ -30,14 +36,14 @@ export default function MobileAgendaList({ schedules, leads, onOpen }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2" role="tablist">
+      {!todayOnly && <div className="grid grid-cols-2 gap-2" role="tablist">
         {(["hoje", "amanha"] as const).map((d) => (
           <button key={d} role="tab" aria-selected={day === d} onClick={() => setDay(d)}
             className={cn("min-h-11 rounded-lg border text-base font-semibold", day === d ? "bg-primary text-primary-foreground border-primary" : "bg-card")}>
             {d === "hoje" ? "Hoje" : "Amanhã"}
           </button>
         ))}
-      </div>
+      </div>}
       <p className="text-sm text-muted-foreground capitalize">{format(target, "EEEE, dd 'de' MMMM", { locale: ptBR })}</p>
       {items.length === 0 && <p className="text-muted-foreground py-6 text-center">Nenhuma visita {day === "hoje" ? "hoje" : "amanhã"}.</p>}
       {items.map((s) => {
@@ -52,6 +58,9 @@ export default function MobileAgendaList({ schedules, leads, onOpen }: Props) {
                 <div className="flex gap-1 flex-wrap justify-end">
                   <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
+                  {s.status !== "agendado" && <Badge variant={s.status === "nao_realizado" ? "destructive" : "default"}>{STATUS_LABEL[s.status] ?? s.status}</Badge>}
+                  {s.confirmacao_status && ["confirmado", "remarcar", "sem_resposta"].includes(s.confirmacao_status) && s.status === "agendado" &&
+                    <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
                 </div>
               </div>
               <p className="text-base font-semibold">{lead?.title || s.title}</p>
@@ -68,6 +77,14 @@ export default function MobileAgendaList({ schedules, leads, onOpen }: Props) {
                 {phone ? <a href={`https://wa.me/${phone}`} target="_blank" rel="noopener noreferrer"><MessageCircle className="h-5 w-5" />WhatsApp</a> : <span className="opacity-50"><MessageCircle className="h-5 w-5" />WhatsApp</span>}
               </Button>
             </div>
+            {onExecute && ["agendado", "confirmado", "em_atendimento"].includes(s.status) && (
+              <Button className="w-full min-h-12 text-base" variant={s.status === "em_atendimento" ? "default" : "secondary"} onClick={() => onExecute(s)}>
+                {s.status === "em_atendimento" ? <><CheckCircle2 className="h-5 w-5" />Encerrar</> : <><PlayCircle className="h-5 w-5" />Iniciar</>}
+              </Button>
+            )}
+            {onExecute && ["concluido", "nao_realizado"].includes(s.status) && (
+              <Button className="w-full min-h-11" variant="ghost" onClick={() => onExecute(s)}>Ver registro</Button>
+            )}
           </article>
         );
       })}

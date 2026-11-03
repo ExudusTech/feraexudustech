@@ -1,3 +1,4 @@
+import FieldOpsSettings from "@/components/settings/FieldOpsSettings";
 import AppLayout from "@/components/layout/AppLayout";
 import { useOrganization, useUpdateOrganization } from "@/hooks/use-organizations";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -95,7 +96,8 @@ export default function Configuracoes() {
       }
     >
       <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl min-w-0">
-        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger></TabsList>
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger><TabsTrigger value="campo">Visitas em campo</TabsTrigger></TabsList>
+        <TabsContent value="campo"><FieldOpsSettings /></TabsContent>
         <TabsContent value="horario"><HumanHoursSettings /></TabsContent>
         <TabsContent value="etapas"><LeadStagesSettings /></TabsContent>
         <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>

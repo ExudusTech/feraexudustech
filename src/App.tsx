@@ -17,6 +17,7 @@ import Produtos from "@/pages/Produtos";
 import Financeiro from "@/pages/Financeiro";
 import Relatorios from "@/pages/Relatorios";
 import Agenda from "@/pages/Agenda";
+import Hoje from "@/pages/Hoje";
 import AreasCobertura from "@/pages/AreasCobertura";
 import Usuarios from "@/pages/Usuarios";
 import MeuPerfil from "@/pages/MeuPerfil";
@@ -54,6 +55,7 @@ const App = () => (
             <Route path="/produtos" element={<ProtectedRoute><Produtos /></ProtectedRoute>} />
             <Route path="/financeiro" element={<ProtectedRoute><Financeiro /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
+            <Route path="/hoje" element={<ProtectedRoute><Hoje /></ProtectedRoute>} />
             <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
             <Route path="/areas-cobertura" element={<ProtectedRoute><AreasCobertura /></ProtectedRoute>} />
             <Route path="/equipamentos" element={<ProtectedRoute><Equipamentos /></ProtectedRoute>} />

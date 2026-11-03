@@ -26,6 +26,15 @@ export interface Schedule {
   source: string;
   created_at: string;
   updated_at: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  confirmacao_status?: string;
+  checkin_em?: string | null;
+  checkout_em?: string | null;
+  duracao_min?: number | null;
+  resultado?: string | null;
+  resumo_execucao?: string | null;
+  nao_realizado_motivo?: string | null;
 }
 
 export function useSchedules() {

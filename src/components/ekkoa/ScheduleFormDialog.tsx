@@ -217,15 +217,18 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule }: Pro
 
             <div>
               <Label>Status</Label>
+              {["em_atendimento", "concluido", "nao_realizado"].includes(form.status) ? (
+                <p className="text-sm text-muted-foreground py-2">{({ em_atendimento: "Em atendimento", concluido: "Concluído", nao_realizado: "Não realizado" } as Record<string, string>)[form.status]} — use Iniciar/Encerrar na visita.</p>
+              ) : (
               <Select value={form.status} onValueChange={(v) => set("status", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="agendado">Agendado</SelectItem>
                   <SelectItem value="confirmado">Confirmado</SelectItem>
-                  <SelectItem value="realizado">Realizado</SelectItem>
                   <SelectItem value="cancelado">Cancelado</SelectItem>
                 </SelectContent>
               </Select>
+              )}
             </div>
 
             {/* Time - with window hints */}

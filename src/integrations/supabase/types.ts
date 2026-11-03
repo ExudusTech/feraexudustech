@@ -3167,6 +3167,81 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261103b_schedules: {
+        Row: {
+          assigned_to: string | null
+          backup_at: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string | null
+          lead_id: string | null
+          location: string | null
+          notes: string | null
+          operation_id: string | null
+          organization_id: string | null
+          schedule_subtype: string | null
+          schedule_type: string | null
+          scheduled_date: string | null
+          source: string | null
+          start_time: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          backup_at?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          backup_at?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
@@ -5692,10 +5767,13 @@ export type Database = {
         Row: {
           accent_color: string | null
           address: string | null
+          alerta_atraso_min: number
           atendimento_alerta_amarelo_min: number
           atendimento_alerta_vermelho_min: number
           city: string | null
           cnpj: string | null
+          confirmacao_d1_hora: string
+          confirmacao_dia_horas_antes: number
           created_at: string
           email: string
           flora_default_lead_owner: string | null
@@ -5713,6 +5791,9 @@ export type Database = {
           plan: string
           ponto_facultativo_util: boolean
           primary_color: string | null
+          raio_checkin_m: number
+          retencao_fotos_dias: number
+          retencao_localizacao_dias: number
           secondary_color: string | null
           state: string | null
           support_color: string | null
@@ -5724,10 +5805,13 @@ export type Database = {
         Insert: {
           accent_color?: string | null
           address?: string | null
+          alerta_atraso_min?: number
           atendimento_alerta_amarelo_min?: number
           atendimento_alerta_vermelho_min?: number
           city?: string | null
           cnpj?: string | null
+          confirmacao_d1_hora?: string
+          confirmacao_dia_horas_antes?: number
           created_at?: string
           email: string
           flora_default_lead_owner?: string | null
@@ -5745,6 +5829,9 @@ export type Database = {
           plan?: string
           ponto_facultativo_util?: boolean
           primary_color?: string | null
+          raio_checkin_m?: number
+          retencao_fotos_dias?: number
+          retencao_localizacao_dias?: number
           secondary_color?: string | null
           state?: string | null
           support_color?: string | null
@@ -5756,10 +5843,13 @@ export type Database = {
         Update: {
           accent_color?: string | null
           address?: string | null
+          alerta_atraso_min?: number
           atendimento_alerta_amarelo_min?: number
           atendimento_alerta_vermelho_min?: number
           city?: string | null
           cnpj?: string | null
+          confirmacao_d1_hora?: string
+          confirmacao_dia_horas_antes?: number
           created_at?: string
           email?: string
           flora_default_lead_owner?: string | null
@@ -5777,6 +5867,9 @@ export type Database = {
           plan?: string
           ponto_facultativo_util?: boolean
           primary_color?: string | null
+          raio_checkin_m?: number
+          retencao_fotos_dias?: number
+          retencao_localizacao_dias?: number
           secondary_color?: string | null
           state?: string | null
           support_color?: string | null
@@ -6428,23 +6521,215 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_checkins: {
+        Row: {
+          checkin_em: string
+          created_at: string
+          distancia_m: number | null
+          fora_do_raio: boolean
+          id: string
+          justificativa: string | null
+          latitude: number | null
+          longitude: number | null
+          organization_id: string
+          precisao_m: number | null
+          schedule_id: string
+          sem_permissao: boolean
+          user_id: string
+        }
+        Insert: {
+          checkin_em?: string
+          created_at?: string
+          distancia_m?: number | null
+          fora_do_raio?: boolean
+          id?: string
+          justificativa?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          organization_id: string
+          precisao_m?: number | null
+          schedule_id: string
+          sem_permissao?: boolean
+          user_id: string
+        }
+        Update: {
+          checkin_em?: string
+          created_at?: string
+          distancia_m?: number | null
+          fora_do_raio?: boolean
+          id?: string
+          justificativa?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          organization_id?: string
+          precisao_m?: number | null
+          schedule_id?: string
+          sem_permissao?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_checkins_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_checkins_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: true
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_evidencias: {
+        Row: {
+          autor_id: string
+          comodato_id: string | null
+          created_at: string
+          foto_path: string | null
+          id: string
+          itens: string[]
+          observacoes: string | null
+          organization_id: string
+          schedule_id: string
+        }
+        Insert: {
+          autor_id: string
+          comodato_id?: string | null
+          created_at?: string
+          foto_path?: string | null
+          id?: string
+          itens?: string[]
+          observacoes?: string | null
+          organization_id: string
+          schedule_id: string
+        }
+        Update: {
+          autor_id?: string
+          comodato_id?: string | null
+          created_at?: string
+          foto_path?: string | null
+          id?: string
+          itens?: string[]
+          observacoes?: string | null
+          organization_id?: string
+          schedule_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_evidencias_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_evidencias_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_evidencias_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_proximo_passo: {
+        Row: {
+          autor_id: string
+          created_at: string
+          data_alvo: string | null
+          descricao: string | null
+          id: string
+          motivo_perda: string | null
+          organization_id: string
+          proposta_enviada_em: string | null
+          referencia_id: string | null
+          schedule_id: string
+          tipo: string
+        }
+        Insert: {
+          autor_id: string
+          created_at?: string
+          data_alvo?: string | null
+          descricao?: string | null
+          id?: string
+          motivo_perda?: string | null
+          organization_id: string
+          proposta_enviada_em?: string | null
+          referencia_id?: string | null
+          schedule_id: string
+          tipo: string
+        }
+        Update: {
+          autor_id?: string
+          created_at?: string
+          data_alvo?: string | null
+          descricao?: string | null
+          id?: string
+          motivo_perda?: string | null
+          organization_id?: string
+          proposta_enviada_em?: string | null
+          referencia_id?: string | null
+          schedule_id?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_proximo_passo_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_proximo_passo_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: true
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedules: {
         Row: {
           assigned_to: string | null
+          atraso_alertado_em: string | null
+          checkin_em: string | null
+          checkout_em: string | null
           client_id: string | null
+          confirmacao_d1_enviada_em: string | null
+          confirmacao_dia_enviada_em: string | null
+          confirmacao_status: string
+          confirmado_em: string | null
           created_at: string
           created_by: string | null
           description: string | null
+          duracao_min: number | null
           end_time: string | null
           id: string
+          latitude: number | null
           lead_id: string | null
           location: string | null
+          longitude: number | null
+          nao_realizado_motivo: string | null
           notes: string | null
           operation_id: string | null
           organization_id: string
+          resultado: string | null
+          resumo_execucao: string | null
           schedule_subtype: string | null
           schedule_type: string
           scheduled_date: string
+          sem_confirmacao_alertado_em: string | null
           source: string
           start_time: string | null
           status: string
@@ -6454,20 +6739,34 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          atraso_alertado_em?: string | null
+          checkin_em?: string | null
+          checkout_em?: string | null
           client_id?: string | null
+          confirmacao_d1_enviada_em?: string | null
+          confirmacao_dia_enviada_em?: string | null
+          confirmacao_status?: string
+          confirmado_em?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
+          duracao_min?: number | null
           end_time?: string | null
           id?: string
+          latitude?: number | null
           lead_id?: string | null
           location?: string | null
+          longitude?: number | null
+          nao_realizado_motivo?: string | null
           notes?: string | null
           operation_id?: string | null
           organization_id: string
+          resultado?: string | null
+          resumo_execucao?: string | null
           schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date: string
+          sem_confirmacao_alertado_em?: string | null
           source?: string
           start_time?: string | null
           status?: string
@@ -6477,20 +6776,34 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          atraso_alertado_em?: string | null
+          checkin_em?: string | null
+          checkout_em?: string | null
           client_id?: string | null
+          confirmacao_d1_enviada_em?: string | null
+          confirmacao_dia_enviada_em?: string | null
+          confirmacao_status?: string
+          confirmado_em?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
+          duracao_min?: number | null
           end_time?: string | null
           id?: string
+          latitude?: number | null
           lead_id?: string | null
           location?: string | null
+          longitude?: number | null
+          nao_realizado_motivo?: string | null
           notes?: string | null
           operation_id?: string | null
           organization_id?: string
+          resultado?: string | null
+          resumo_execucao?: string | null
           schedule_subtype?: string | null
           schedule_type?: string
           scheduled_date?: string
+          sem_confirmacao_alertado_em?: string | null
           source?: string
           start_time?: string | null
           status?: string
@@ -6644,6 +6957,10 @@ export type Database = {
       apply_flora_default_owner: {
         Args: { _org: string; _owner: string }
         Returns: Json
+      }
+      can_see_schedule: {
+        Args: { _schedule: string; _user: string }
+        Returns: boolean
       }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       has_role: {

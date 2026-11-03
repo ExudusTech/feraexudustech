@@ -148,6 +148,13 @@
       "when": 1793632173686,
       "tag": "0020_queue_status_and_timeline_atendimento",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793725555379,
+      "tag": "0021_lote10_execucao_agenda",
+      "breakpoints": true
     }
   ]
 }
