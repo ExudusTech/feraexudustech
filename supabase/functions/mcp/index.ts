@@ -946,23 +946,53 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     );
   }
 
-  const cobertura = areas.map((a) => {
-    const dows = parseDiaSemana(a.dia_semana ?? "");
-    return {
-      regiao:     a.name,
-      cidade:     a.city,
-      dia_visita: dows.length > 0
-        ? dows.map(diaSemanaLabel).join(" e ")
-        : (a.dia_semana ?? "A confirmar"),
-      horario: `${a.horario_inicio ?? "08:00"} às ${a.horario_fim ?? "18:00"}`,
-    };
-  });
+  const cobertura = coverageByRegion(areas);
+  if (!regiao && !cep && new Set(areas.map(a => a.name)).size > 1) {
+    return ok(
+      { coberto: true, vinculo: "DISTRIBUIDORA", precisa_localizar: true, cobertura },
+      `${cidade} está coberta, com dias diferentes por região`,
+      MULTI_REGION_HINT
+    );
+  }
 
   return ok(
     { coberto: true, vinculo: "DISTRIBUIDORA", cobertura },
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
     "Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres."
   );
+}
+
+const MULTI_REGION_HINT = "Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.";
+
+function coverageByRegion(areas: CoverageRegion[]) {
+  return areas.map((a) => {
+    const dows = parseDiaSemana(a.dia_semana ?? "");
+    return {
+      regiao:     a.name,
+      cidade:     a.city,
+      dia_visita: dows.length > 0 ? dows.map(diaSemanaLabel).join(" e ") : (a.dia_semana ?? "A confirmar"),
+      horario: `${a.horario_inicio ?? "08:00"} às ${a.horario_fim ?? "18:00"}`,
+    };
+  });
+}
+
+/** Region of the single establishment confirmed by localizar_estabelecimento in this chat (24h). */
+async function lastLocatedRegion(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<string | null> {
+  if (typeof chatId !== "string" || !chatId) return null;
+  try {
+    const { data, error } = await supabase.from("mcp_request_log").select("response")
+      .eq("method", "localizar_estabelecimento").eq("success", true)
+      .contains("params", { chat_id: chatId })
+      .gte("created_at", new Date(Date.now() - 86400000).toISOString())
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) { dbFail("consultar estabelecimento atual", error); return null; }
+    let response = data?.response;
+    if (typeof response === "string") response = JSON.parse(response);
+    const candidates = response?.result?.data?.candidatos;
+    if (!Array.isArray(candidates) || candidates.length !== 1) return null;
+    const region = candidates[0]?.regiao;
+    return typeof region === "string" && region.trim() ? region.trim() : null;
+  } catch { return null; }
 }
 
 interface CoverageRegion {
@@ -1537,13 +1567,23 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
 
   const supabase = getClient();
 
-  const areas = await selectCoverage(supabase, params);
+  const located = !regiao && !validCep(cep) ? await lastLocatedRegion(supabase, params.chat_id) : null;
+  const selectorParams = located ? { ...params, regiao: located } : params;
+  const areas = await selectCoverage(supabase, selectorParams);
 
   if (!areas || areas.length === 0) {
     return ok(
       { coberto: false, cidade: regiao ?? cidade ?? cep, proximas_datas: [] },
       `${regiao ?? cidade ?? cep} não está coberta`,
       "Use registrar_fora_cobertura para registrar o lead mesmo assim"
+    );
+  }
+
+  if (!selectorParams.regiao && !validCep(cep) && new Set(areas.map(a => a.name)).size > 1) {
+    return ok(
+      { coberto: true, precisa_localizar: true, cidade, regioes: coverageByRegion(areas) },
+      `${cidade} tem mais de uma região de visita; a região depende do endereço`,
+      MULTI_REGION_HINT
     );
   }
 

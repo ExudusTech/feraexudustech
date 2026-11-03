@@ -2,7 +2,7 @@
 - MCP request auditing is service-role-only and runs as background work so audit failures cannot change client responses.
 - Normalize MCP tool parameters centrally inside the router, leaving the received request untouched so auditing retains original input.
 - Apply trusted chat-channel enrichment centrally after parameter normalization without mutating received requests, so all tools agree while auditing retains original input.
-- Select MCP coverage centrally by exact region, narrowest matching CEP interval, then legacy city lookup so consultation and booking agree without broadening explicit selectors.
+- Select MCP coverage centrally by exact region, narrowest matching CEP interval, then the region of the single establishment located in the same chat; a city with several regions and no selector returns precisa_localizar (no dates) so districts are never mixed.
 - Keep establishment provider requests server-side, bounded, sequential and cached with graceful fallbacks so Google failures cannot interrupt Flora conversations; persist CEP in the existing lead zip_code column to avoid duplicate address fields.
 - Keep establishment name matching and short-address confirmation local to the lookup tool, and separate biased/unbiased cache entries, so shared parameter normalization and other tools remain unchanged.
 - Product/location contact enrichment selects only tenant phone-matched nome without writing person records.

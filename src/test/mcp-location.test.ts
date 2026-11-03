@@ -17,7 +17,7 @@ const place = (cep?: string) => ({ id: "place-1", displayName: { text: "Restaura
   addressComponents: [{ types: ["sublocality_level_1"], longText: "Centro" }, { types: ["administrative_area_level_2"], longText: "Cabo Frio" },
     ...(cep ? [{ types: ["postal_code"], longText: cep }] : [])] });
 
-function harness(options: { places?: any[]; googleStatus?: number; reverseCep?: string; reverseStatus?: string; noKey?: boolean; viaError?: boolean; holidays?: any[] } = {}) {
+function harness(options: { places?: any[]; googleStatus?: number; reverseCep?: string; reverseStatus?: string; noKey?: boolean; viaError?: boolean; holidays?: any[]; located?: any[] } = {}) {
   const queries: any[] = [], requests: any[] = [];
   const client = { from(table: string) {
     const query: any = { table, operation: "read", filters: [] };
@@ -30,11 +30,12 @@ function harness(options: { places?: any[]; googleStatus?: number; reverseCep?: 
         return true;
       }));
       if (table === "holidays") data = options.holidays ?? [];
+      if (table === "mcp_request_log" && options.located) data = { response: { result: { data: { candidatos: options.located } } } };
       if (query.operation !== "read") data = { id: "created", ...query.value };
       return { data, error: null };
     };
     const chain: any = {};
-    for (const op of ["eq", "ilike", "gte", "lte", "or", "order", "limit"]) chain[op] = (...args: any[]) => { query.filters.push([op, ...args]); return chain; };
+    for (const op of ["eq", "contains", "ilike", "gte", "lte", "or", "order", "limit"]) chain[op] = (...args: any[]) => { query.filters.push([op, ...args]); return chain; };
     chain.select = () => chain;
     chain.insert = (value: any) => { query.operation = "insert"; query.value = value; return chain; };
     chain.update = (value: any) => { query.operation = "update"; query.value = value; return chain; };
@@ -188,9 +189,10 @@ describe("MCP exact coverage selectors", () => {
     expect(result.success).toBe(false); expect(result.data.janelas).toEqual([{ inicio: "15:00", fim: "17:00" }]);
     expect(h.queries.every(q => q.operation === "read")).toBe(true);
   });
-  it("legacy city consultation still consolidates districts", async () => {
+  it("city with several districts no longer mixes their dates", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-10T15:00:00Z"));
-    expect((await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio" })).data.dias_de_visita).toContain("Segunda");
+    const r = await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio" });
+    expect(r.data.precisa_localizar).toBe(true); expect(r.data.dias_de_visita).toBeUndefined();
   });
   it("stores optional address fields and canonical zip_code on a new lead", async () => {
     const h = harness();
@@ -201,5 +203,43 @@ describe("MCP exact coverage selectors", () => {
   it.each([{ latitude: 91 }, { longitude: "invalid" }, { maps_url: "javascript:alert(1)" }, { cep: "bad" }])("rejects invalid optional lead fields %j", async invalid => {
     const h = harness(); expect((await h.route("criar_lead", { nome: "PH", ...invalid })).success).toBe(false);
     expect(h.queries.every(q => q.operation === "read")).toBe(true);
+  });
+});
+describe("cities with several coverage regions", () => {
+  const now = () => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T23:54:00Z")); };
+  it("Cabo Frio without region/CEP asks to locate and returns no dates", async () => {
+    now();
+    const r = await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio", regiao: "não informado", chat_id: "X-5521974480779" });
+    expect(r.success).toBe(true);
+    expect(r.data.precisa_localizar).toBe(true);
+    expect(r.data.proximas_datas).toBeUndefined();
+    expect(r.next_action_hint).toBe("Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.");
+  });
+  it("CEP 28909-470 (São Cristóvão) gives only Monday/Friday 13h30–16h30", async () => {
+    now();
+    const r = await harness().route("consultar_rota_consultor", { cidade: "Cabo Frio", cep: "28909-470" });
+    expect(r.data.dias_de_visita).toBe("Segunda-feira e Sexta-feira");
+    expect(r.data.proximas_datas[0]).toMatchObject({ data: "2026-11-06", regiao: "Cabo Frio", horario: "13:30:00 às 16:30:00" });
+    expect(r.data.proximas_datas.every((d: any) => d.regiao === "Cabo Frio")).toBe(true);
+  });
+  it("establishment located in the 2º Distrito in this chat gives Tuesday/Thursday 15h–17h", async () => {
+    now();
+    const h = harness({ located: [{ nome: "Clínica", regiao: "Cabo Frio 2º Distrito", cep: "28926-100" }] });
+    const r = await h.route("consultar_rota_consultor", { cidade: "Cabo Frio", chat_id: "X-5521974480779" });
+    expect(r.data.dias_de_visita).toBe("Terça-feira e Quinta-feira");
+    expect(r.data.proximas_datas.every((d: any) => d.regiao === "Cabo Frio 2º Distrito" && d.horario === "15:00:00 às 17:00:00")).toBe(true);
+  });
+  it("single-region city keeps returning dates", async () => {
+    now();
+    const r = await harness().route("consultar_rota_consultor", { cidade: "Sampaio Correia" });
+    expect(r.data.dias_de_visita).toBe("Quarta-feira");
+    expect(r.data.precisa_localizar).toBeUndefined();
+    expect(r.data.proximas_datas.length).toBeGreaterThan(0);
+  });
+  it("verificar_cobertura_regiao lists per region without mixing", async () => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Cabo Frio" });
+    expect(r.data).toMatchObject({ coberto: true, precisa_localizar: true });
+    expect(r.data.cobertura.map((c: any) => [c.regiao, c.dia_visita])).toEqual([["Cabo Frio", "Segunda-feira e Sexta-feira"], ["Cabo Frio 2º Distrito", "Terça-feira e Quinta-feira"]]);
+    expect(r.next_action_hint).toContain("chame localizar_estabelecimento");
   });
 });
