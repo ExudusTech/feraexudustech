@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import PointChecklist from "@/components/agenda/PointChecklist";
+import { baseAction } from "@/lib/base-instalada";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, CheckCircle2, Loader2, MapPin, PlayCircle, XCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -60,6 +62,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [resultado, setResultado] = useState(""); const [resumo, setResumo] = useState(""); const [proximo, setProximo] = useState("");
   const [dataAlvo, setDataAlvo] = useState(""); const [motivoPerda, setMotivoPerda] = useState(""); const [confPerdido, setConfPerdido] = useState(false);
   const [descricao, setDescricao] = useState("");
+  const [pts, setPts] = useState({ pending: 0, total: 0 });
+  const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
+  const [askLoc, setAskLoc] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState(""); const [showNao, setShowNao] = useState(false);
   useEffect(() => { setAskReason(null); setJustificativa(""); setLastPos(undefined); setShowNao(false); setResultado(""); setResumo(""); setProximo(""); }, [s?.id]);
 
@@ -73,6 +78,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     try {
       const r = await visitAction<{ distancia_m: number | null }>({ id: s!.id, action: "checkin", sem_permissao: !pos, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
       setStatus("em_atendimento"); done();
+      if (s!.client_id && pos && tecnico) setAskLoc(true);
       toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : undefined });
     } catch (e) {
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
@@ -138,6 +144,16 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {status === "em_atendimento" && (
           <div className="space-y-4">
+            {askLoc && (
+              <div className="rounded-lg border p-3 space-y-2">
+                <p className="text-sm">Usar esta localização como endereço do cliente?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button className="min-h-11" disabled={busy} onClick={() => run(async () => { await baseAction({ action: "localizacao_cliente", schedule_id: s.id, confirmar: true });
+                    setAskLoc(false); toast({ title: "Localização do cliente atualizada" }); })}>Sim, usar</Button>
+                  <Button variant="outline" className="min-h-11" onClick={() => setAskLoc(false)}>Não</Button>
+                </div>
+              </div>)}
+            {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
             <section className="space-y-2 rounded-lg border p-3">
               <h3 className="font-semibold text-sm">Registro {fotoObrigatoria && "(foto obrigatória)"}</h3>
               {loans.length > 0 && (
@@ -182,9 +198,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <Input value={motivoPerda} onChange={(e) => setMotivoPerda(e.target.value)} placeholder="Motivo da perda" maxLength={200} />
                 <label className="flex items-center gap-2 text-sm"><Checkbox checked={confPerdido} onCheckedChange={(v) => setConfPerdido(!!v)} />Confirmo que o lead será marcado como perdido</label>
               </div>)}
-              <Button className="w-full min-h-12 text-base" onClick={checkout} disabled={busy || !resultado || !proximo || resumo.trim().length < 3 || (fotoObrigatoria && fotos < 1)}>
+              <Button className="w-full min-h-12 text-base" onClick={checkout} disabled={busy || !resultado || !proximo || resumo.trim().length < 3 || pts.pending > 0 || (fotoObrigatoria && !pts.total && fotos < 1)}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}Encerrar visita</Button>
-              {fotoObrigatoria && fotos < 1 && <p className="text-xs text-muted-foreground">Tire ao menos uma foto do equipamento para encerrar.</p>}
+              {pts.pending > 0 && <p className="text-xs text-muted-foreground">Avalie todos os pontos para encerrar ({pts.pending} pendente(s)).</p>}
+              {fotoObrigatoria && !pts.total && fotos < 1 && <p className="text-xs text-muted-foreground">Tire ao menos uma foto do equipamento para encerrar.</p>}
             </section>
             <Button variant="ghost" className="w-full" onClick={() => setShowNao((v) => !v)}>Não foi possível realizar</Button>
           </div>

@@ -15,7 +15,7 @@ import { useProductImageUrls } from "@/hooks/use-product-images";
 import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, pontosPendentes, uploadVisitPhoto } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 
-interface Props { scheduleId: string; orgId: string; clientId: string; onPendingChange?: (n: number) => void }
+interface Props { scheduleId: string; orgId: string; clientId: string; onPendingChange?: (pending: number, total: number) => void }
 
 function PhotoButton({ label, busy, onFile }: { label: string; busy: boolean; onFile: (f: File) => void }) {
   return (
@@ -47,7 +47,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
   const pontos = data?.pontos ?? [];
   const avaliados = (data?.avaliacoes ?? []).map((a) => a.comodato_id);
   const pend = pontosPendentes(pontos, avaliados).length;
-  useEffect(() => { onPendingChange?.(pend); }, [pend, onPendingChange]);
+  useEffect(() => { onPendingChange?.(pend, pontos.length); }, [pend, pontos.length, onPendingChange]);
   const nameOf = (id?: string | null) => products.find((p) => p.id === id)?.name;
   const { data: signed } = useProductImageUrls(pontos.map((p) => products.find((x) => x.id === p.product_id)?.image_url));
   const imageOf = (id?: string | null) => { const path = products.find((p) => p.id === id)?.image_url; return path ? (signed as any)?.[path] ?? null : null; };
