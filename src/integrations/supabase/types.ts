@@ -6981,6 +6981,11 @@ export type Database = {
       is_operacional: { Args: { _user_id: string }; Returns: boolean }
       is_privileged_user: { Args: { _user_id: string }; Returns: boolean }
       is_vendedor: { Args: { _user_id: string }; Returns: boolean }
+      lead_stage_chave_for_legacy: { Args: { _stage: string }; Returns: string }
+      legacy_stage_for: {
+        Args: { _chave: string; _tipo: string }
+        Returns: Database["public"]["Enums"]["lead_stage"]
+      }
     }
     Enums: {
       app_role:

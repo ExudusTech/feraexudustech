@@ -83,8 +83,9 @@ describe("pipeline auto-move on booking", () => {
     t.leads = [{ id: "lead", organization_id: org, empresa_nome: "Empresa", city: "Cabo Frio" }];
     const h = harness(t);
     await h.route("agendar_visita_tecnica", { lead_id: "lead", nome_contato: "Contato", empresa: "Empresa", cidade: "Cabo Frio", data_visita: "2026-11-10", horario: "09:00" });
-    const upd = h.writes.find((w) => w.table === "leads" && w.op === "update" && w.value.stage === "agendado");
+    const upd = h.writes.find((w) => w.table === "leads" && w.op === "update" && w.value.stage_id !== undefined);
     expect(upd?.value.stage_id).toBe("st-va");
+    expect(upd?.value.stage).toBeUndefined();
   });
 });
 

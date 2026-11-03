@@ -32,6 +32,7 @@ export interface Lead {
   title: string;
   description: string | null;
   stage: LeadStage;
+  stage_id?: string | null;
   value: number;
   source: string | null;
   contact_name: string | null;
