@@ -11,6 +11,7 @@ import { useSchedules } from "@/hooks/use-schedules";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
 import { RESULT_LABEL, STATUS_LABEL, lateMinutes } from "@/lib/visit-exec";
+import EmergencyRequests from "@/components/dashboard/EmergencyRequests";
 import { fieldMetrics, matchesFilter, type OpsFilter } from "@/lib/field-ops";
 
 const spDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -82,6 +83,7 @@ export default function FieldOpsPanel() {
 
   return (
     <div className="space-y-4">
+      <EmergencyRequests />
       <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         <Metric label="Realizadas na semana" value={m.realizadas} f="realizadas" />
         <Metric label="Não realizadas" value={m.naoRealizadas} f="nao_realizadas" />

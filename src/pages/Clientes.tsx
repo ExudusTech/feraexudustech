@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import ClientBaseDialog from "@/components/crm/ClientBaseDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import ClientFormDialog from "@/components/crm/ClientFormDialog";
@@ -14,6 +15,7 @@ import { useClientVisits, useDeleteClientVisit, type ClientVisit } from "@/hooks
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Users, CalendarCheck } from "lucide-react";
 
 export default function Clientes() {
+  const [baseClient, setBaseClient] = useState<{ id: string; name: string } | null>(null);
   const { data: clients = [], isLoading } = useClients();
   const { data: visits = [], isLoading: visitsLoading } = useClientVisits();
   const deleteClient = useDeleteClient();
@@ -102,6 +104,7 @@ export default function Clientes() {
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => { setSelectedClient(c); setDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setBaseClient(c)}>Base instalada</DropdownMenuItem>
                             <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId({ type: "client", id: c.id })}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -182,6 +185,7 @@ export default function Clientes() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <ClientBaseDialog client={baseClient} open={!!baseClient} onOpenChange={(o) => !o && setBaseClient(null)} />
     </AppLayout>
   );
 }

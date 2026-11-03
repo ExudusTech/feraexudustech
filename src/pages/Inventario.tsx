@@ -14,6 +14,8 @@ import { LINHA_PRODUTO_VALUES, linhaLabel, linhaBadgeClass } from "@/lib/linha-p
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { usePermissions } from "@/hooks/use-permissions";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import InstalledBasePanel from "@/components/inventario/InstalledBasePanel";
 
 export default function Inventario() {
   const { data: items = [], isLoading } = useInventory();
@@ -38,12 +40,16 @@ export default function Inventario() {
   return (
     <AppLayout
       title="Inventário"
-      subtitle="Todos os itens em estoque — equipamentos e consumíveis"
+      subtitle="Base instalada nos clientes e itens em estoque"
       actions={<div className="flex flex-wrap gap-2">
         {canAccessRoute("/equipamentos") && <Button variant="outline" asChild><Link to="/equipamentos">Modelos de equipamento</Link></Button>}
         {canEdit && <Button onClick={() => { setEdit(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Novo Item</Button>}
       </div>}
     >
+      <Tabs defaultValue="base">
+      <TabsList className="mb-4"><TabsTrigger value="base">Base instalada</TabsTrigger><TabsTrigger value="estoque">Estoque</TabsTrigger></TabsList>
+      <TabsContent value="base"><InstalledBasePanel /></TabsContent>
+      <TabsContent value="estoque">
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -110,6 +116,9 @@ export default function Inventario() {
           </TableBody>
         </Table>
       </div>
+
+      </TabsContent>
+      </Tabs>
 
       <InventoryFormDialog open={dialogOpen} onOpenChange={setDialogOpen} item={edit} />
 
