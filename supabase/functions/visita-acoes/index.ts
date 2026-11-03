@@ -125,9 +125,18 @@ Deno.serve(async (req) => {
     }
     case "checkout": {
       const { count } = await admin.from("schedule_evidencias").select("id", { count: "exact", head: true }).eq("schedule_id", s.id).not("foto_path", "is", null);
+      // Maintenance with registered points: every active point must be evaluated; the checklist photos replace the generic photo rule.
+      let checklist = false;
+      if (s.client_id && tecnico) {
+        const { data: pts } = await admin.from("comodatos").select("id, status").eq("client_id", s.client_id).eq("organization_id", s.organization_id);
+        const { data: avs } = await admin.from("ponto_avaliacoes").select("comodato_id").eq("schedule_id", s.id);
+        const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id));
+        if (pend.length) return json({ error: `Avalie todos os pontos antes de encerrar (${pend.length} pendente(s))` }, 400);
+        checklist = (pts ?? []).some((p: any) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");
+      }
       const err = validateCheckout({ status: s.status, resultado: b.resultado, resumo: b.resumo, proximo: b.proximo, data_alvo: b.data_alvo,
         motivo_perda: b.motivo_perda, confirmar_perdido: b.confirmar_perdido, commercial: !tecnico, fotos: count ?? 0,
-        precisa_foto: requiresPhoto(s.schedule_type, s.schedule_subtype) });
+        precisa_foto: !checklist && requiresPhoto(s.schedule_type, s.schedule_subtype) });
       if (err) return json({ error: err }, 400);
       const now = new Date().toISOString();
       const duracao = durationMinutes(s.checkin_em ?? now, now);
