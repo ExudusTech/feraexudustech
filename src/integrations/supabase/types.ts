@@ -2645,6 +2645,528 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261103_atendimentos: {
+        Row: {
+          aberto_em: string | null
+          alerta_nivel: string | null
+          assumido_em: string | null
+          assumido_por: string | null
+          canal: string | null
+          chat_id: string | null
+          cobrancas: number | null
+          contato_nome: string | null
+          created_at: string | null
+          empresa: string | null
+          humano_ativo: boolean | null
+          id: string | null
+          instagram: string | null
+          lead_id: string | null
+          motivo: string | null
+          organization_id: string | null
+          pessoa_id: string | null
+          recebido_fora_horario: boolean | null
+          relogio_inicia_em: string | null
+          resolucao: string | null
+          resolvido_em: string | null
+          resolvido_por: string | null
+          responsavel_id: string | null
+          resultado: string | null
+          resumo: string | null
+          status: string | null
+          tipo: string | null
+          ultima_cobranca_em: string | null
+          updated_at: string | null
+          urgencia: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          aberto_em?: string | null
+          alerta_nivel?: string | null
+          assumido_em?: string | null
+          assumido_por?: string | null
+          canal?: string | null
+          chat_id?: string | null
+          cobrancas?: number | null
+          contato_nome?: string | null
+          created_at?: string | null
+          empresa?: string | null
+          humano_ativo?: boolean | null
+          id?: string | null
+          instagram?: string | null
+          lead_id?: string | null
+          motivo?: string | null
+          organization_id?: string | null
+          pessoa_id?: string | null
+          recebido_fora_horario?: boolean | null
+          relogio_inicia_em?: string | null
+          resolucao?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          responsavel_id?: string | null
+          resultado?: string | null
+          resumo?: string | null
+          status?: string | null
+          tipo?: string | null
+          ultima_cobranca_em?: string | null
+          updated_at?: string | null
+          urgencia?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          aberto_em?: string | null
+          alerta_nivel?: string | null
+          assumido_em?: string | null
+          assumido_por?: string | null
+          canal?: string | null
+          chat_id?: string | null
+          cobrancas?: number | null
+          contato_nome?: string | null
+          created_at?: string | null
+          empresa?: string | null
+          humano_ativo?: boolean | null
+          id?: string | null
+          instagram?: string | null
+          lead_id?: string | null
+          motivo?: string | null
+          organization_id?: string | null
+          pessoa_id?: string | null
+          recebido_fora_horario?: boolean | null
+          relogio_inicia_em?: string | null
+          resolucao?: string | null
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          responsavel_id?: string | null
+          resultado?: string | null
+          resumo?: string | null
+          status?: string | null
+          tipo?: string | null
+          ultima_cobranca_em?: string | null
+          updated_at?: string | null
+          urgencia?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_flora_interactions: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at: string | null
+          id: string | null
+          interaction_id: string | null
+          lead_id: string | null
+          organization_id: string | null
+          payload: Json | null
+          response: Json | null
+          tool_name: string | null
+        }
+        Insert: {
+          canal?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at?: string | null
+          id?: string | null
+          interaction_id?: string | null
+          lead_id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          response?: Json | null
+          tool_name?: string | null
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          created_at?: string | null
+          id?: string | null
+          interaction_id?: string | null
+          lead_id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          response?: Json | null
+          tool_name?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_lead_timeline: {
+        Row: {
+          canal: string | null
+          chat_id: string | null
+          created_at: string | null
+          id: string | null
+          lead_id: string | null
+          organization_id: string | null
+          origem: string | null
+          pessoa_id: string | null
+          proximo_passo: string | null
+          referencia_id: string | null
+          resumo: string | null
+          tipo: string | null
+        }
+        Insert: {
+          canal?: string | null
+          chat_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          lead_id?: string | null
+          organization_id?: string | null
+          origem?: string | null
+          pessoa_id?: string | null
+          proximo_passo?: string | null
+          referencia_id?: string | null
+          resumo?: string | null
+          tipo?: string | null
+        }
+        Update: {
+          canal?: string | null
+          chat_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          lead_id?: string | null
+          organization_id?: string | null
+          origem?: string | null
+          pessoa_id?: string | null
+          proximo_passo?: string | null
+          referencia_id?: string | null
+          resumo?: string | null
+          tipo?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_leads: {
+        Row: {
+          assigned_to: string | null
+          bairro: string | null
+          canal_origem: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato: string | null
+          category: string | null
+          city: string | null
+          client_contact_id: string | null
+          client_id: string | null
+          company: string | null
+          contact_email: string | null
+          contact_name: string | null
+          contact_phone: string | null
+          created_at: string | null
+          created_by: string | null
+          created_by_flora: boolean | null
+          description: string | null
+          empresa_nome: string | null
+          endereco: string | null
+          expected_close_date: string | null
+          flora_tags: string[] | null
+          fora_cobertura: boolean | null
+          gptmaker_chat_id: string | null
+          id: string | null
+          instagram_handle: string | null
+          interaction_id: string | null
+          latitude: number | null
+          longitude: number | null
+          maps_url: string | null
+          organization_id: string | null
+          origem_especifica: string | null
+          pessoa_id: string | null
+          place_id: string | null
+          position: number | null
+          post_id: string | null
+          post_titulo: string | null
+          precisa_humano: boolean | null
+          regiao: string | null
+          source: string | null
+          stage: Database["public"]["Enums"]["lead_stage"] | null
+          stage_id: string | null
+          title: string | null
+          updated_at: string | null
+          value: number | null
+          vinculo: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          stage_id?: string | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          bairro?: string | null
+          canal_origem?: Database["public"]["Enums"]["canal_origem_enum"] | null
+          cargo_contato?: string | null
+          category?: string | null
+          city?: string | null
+          client_contact_id?: string | null
+          client_id?: string | null
+          company?: string | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contact_phone?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          created_by_flora?: boolean | null
+          description?: string | null
+          empresa_nome?: string | null
+          endereco?: string | null
+          expected_close_date?: string | null
+          flora_tags?: string[] | null
+          fora_cobertura?: boolean | null
+          gptmaker_chat_id?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          interaction_id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          maps_url?: string | null
+          organization_id?: string | null
+          origem_especifica?: string | null
+          pessoa_id?: string | null
+          place_id?: string | null
+          position?: number | null
+          post_id?: string | null
+          post_titulo?: string | null
+          precisa_humano?: boolean | null
+          regiao?: string | null
+          source?: string | null
+          stage?: Database["public"]["Enums"]["lead_stage"] | null
+          stage_id?: string | null
+          title?: string | null
+          updated_at?: string | null
+          value?: number | null
+          vinculo?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_notification_logs: {
+        Row: {
+          channel: string | null
+          destination: string | null
+          error_message: string | null
+          event_type: string | null
+          id: string | null
+          organization_id: string | null
+          payload: Json | null
+          queued_at: string | null
+          recipient_id: string | null
+          recipient_name: string | null
+          release_at: string | null
+          sent_at: string | null
+          status: string | null
+        }
+        Insert: {
+          channel?: string | null
+          destination?: string | null
+          error_message?: string | null
+          event_type?: string | null
+          id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          queued_at?: string | null
+          recipient_id?: string | null
+          recipient_name?: string | null
+          release_at?: string | null
+          sent_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          channel?: string | null
+          destination?: string | null
+          error_message?: string | null
+          event_type?: string | null
+          id?: string | null
+          organization_id?: string | null
+          payload?: Json | null
+          queued_at?: string | null
+          recipient_id?: string | null
+          recipient_name?: string | null
+          release_at?: string | null
+          sent_at?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_pessoas: {
+        Row: {
+          chat_ids: string[] | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          instagram_handle: string | null
+          instagram_user_id: string | null
+          messenger_id: string | null
+          nome: string | null
+          organization_id: string | null
+          telefone: string | null
+          updated_at: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          chat_ids?: string[] | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome?: string | null
+          organization_id?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          chat_ids?: string[] | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          instagram_handle?: string | null
+          instagram_user_id?: string | null
+          messenger_id?: string | null
+          nome?: string | null
+          organization_id?: string | null
+          telefone?: string | null
+          updated_at?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_product_image_sends: {
+        Row: {
+          chat_id: string | null
+          error_code: string | null
+          id: string | null
+          organization_id: string | null
+          product_id: string | null
+          sent_at: string | null
+          status: string | null
+        }
+        Insert: {
+          chat_id?: string | null
+          error_code?: string | null
+          id?: string | null
+          organization_id?: string | null
+          product_id?: string | null
+          sent_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          chat_id?: string | null
+          error_code?: string | null
+          id?: string | null
+          organization_id?: string | null
+          product_id?: string | null
+          sent_at?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261103_schedules: {
+        Row: {
+          assigned_to: string | null
+          client_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string | null
+          lead_id: string | null
+          location: string | null
+          notes: string | null
+          operation_id: string | null
+          organization_id: string | null
+          schedule_subtype: string | null
+          schedule_type: string | null
+          scheduled_date: string | null
+          source: string | null
+          start_time: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          zip_code: string | null
+        }
+        Insert: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Update: {
+          assigned_to?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string | null
+          lead_id?: string | null
+          location?: string | null
+          notes?: string | null
+          operation_id?: string | null
+          organization_id?: string | null
+          schedule_subtype?: string | null
+          schedule_type?: string | null
+          scheduled_date?: string | null
+          source?: string | null
+          start_time?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          zip_code?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
