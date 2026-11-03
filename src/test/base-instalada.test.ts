@@ -76,7 +76,8 @@ describe("importação", () => {
       { Cliente: "Hotel Z", Cidade: "Cabo Frio", "Frequência": "anual", Dia: "" },
       { Cliente: "Pousada W", Cidade: "Arraial", "Frequência": "Semanal", Dia: "sexta" },
     ], [{ name: "Pousada W", city: "Arraial" }]);
-    expect(r[0]).toMatchObject({ erro: undefined, frequencia: "quinzenal", dia_semana: 2 });
+    expect(r[0].erro).toBeUndefined();
+    expect(r[0]).toMatchObject({ frequencia: "quinzenal", dia_semana: 2 });
     expect(r[1].erro).toBe("Cliente duplicado");
     expect(r[2].erro).toBe("Cidade vazia");
     expect(r[3].erro).toBe("Frequência inválida");
