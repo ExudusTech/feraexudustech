@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -5,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import ClientSchedulesList from "@/components/crm/ClientSchedulesList";
 import ClientBaseDialog from "@/components/crm/ClientBaseDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -53,7 +55,7 @@ export default function Clientes() {
     <AppLayout
       title="Clientes"
       subtitle="Gerencie sua base de clientes e visitas"
-      actions={<Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />{tab === "visitas" ? "Nova Visita" : "Novo Cliente"}</Button>}
+      actions={tab === "visitas" ? <Button asChild><Link to="/agenda"><Plus className="h-4 w-4 mr-2" />Nova Visita</Link></Button> : <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>}
     >
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setSearch(""); }} className="space-y-4">
         <TabsList>
@@ -118,51 +120,7 @@ export default function Clientes() {
         </TabsContent>
 
         <TabsContent value="visitas">
-          {visitsLoading ? (
-            <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-          ) : filteredVisits.length === 0 && visits.length === 0 ? (
-            <div className="flex items-center justify-center h-64 text-muted-foreground">
-              <div className="text-center space-y-2">
-                <CalendarCheck className="h-12 w-12 mx-auto text-muted-foreground/40" />
-                <p>Nenhuma visita registrada.</p>
-                <Button variant="outline" onClick={handleNew}>Registrar primeira visita</Button>
-              </div>
-            </div>
-          ) : filteredVisits.length === 0 ? (
-            <div className="flex items-center justify-center h-64 text-muted-foreground"><p>Nenhum resultado encontrado.</p></div>
-          ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Cliente</TableHead><TableHead>Data</TableHead><TableHead>Tipo</TableHead>
-                    <TableHead>Assunto</TableHead><TableHead>Resultado</TableHead><TableHead>Próxima</TableHead><TableHead className="w-10" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredVisits.map((v) => (
-                    <TableRow key={v.id} className="cursor-pointer" onClick={() => { setSelectedVisit(v); setVisitDialogOpen(true); }}>
-                      <TableCell className="font-medium">{clientName(v.client_id)}</TableCell>
-                      <TableCell>{new Date(v.visit_date + "T12:00:00").toLocaleDateString("pt-BR")}</TableCell>
-                      <TableCell><Badge variant="secondary">{v.visit_type}</Badge></TableCell>
-                      <TableCell>{v.subject || "—"}</TableCell>
-                      <TableCell>{v.outcome || "—"}</TableCell>
-                      <TableCell>{v.next_visit_date ? new Date(v.next_visit_date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => { setSelectedVisit(v); setVisitDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
-                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteId({ type: "visit", id: v.id })}><Trash2 className="h-4 w-4 mr-2" />Excluir</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <ClientSchedulesList clientName={(id) => clientName(id as string)} search={search} />
         </TabsContent>
       </Tabs>
 

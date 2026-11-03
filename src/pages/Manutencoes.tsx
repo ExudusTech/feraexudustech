@@ -17,6 +17,7 @@ import { LINHA_PRODUTO_VALUES, linhaLabel, linhaBadgeClass } from "@/lib/linha-p
 import { cn } from "@/lib/utils";
 import { TIPOS_OS, type TipoOS } from "@/lib/fabricantes";
 import { usePermissions } from "@/hooks/use-permissions";
+import EmergencyRequests from "@/components/dashboard/EmergencyRequests";
 
 export default function Manutencoes() {
   const { data: items = [], isLoading } = useMaintenanceSchedule();
@@ -103,7 +104,7 @@ export default function Manutencoes() {
             ) : filtered.map((m) => (
               <TableRow key={m.id}>
                 <TableCell className="font-medium">{m.title}</TableCell>
-                <TableCell>{TIPOS_OS[(m.tipo_os ?? "manutencao") as TipoOS] ?? m.tipo_os}{m.fabricante ? <span className="block text-xs text-muted-foreground">{m.fabricante}</span> : null}{m.tipo_os === "retirada" && m.motivo_retirada ? <span className="block text-xs text-muted-foreground">Motivo: {m.motivo_retirada}</span> : null}</TableCell>
+                <TableCell>{TIPOS_OS[(m.tipo_os ?? "manutencao") as TipoOS] ?? m.tipo_os}{m.fabricante ? <span className="block text-xs text-muted-foreground">{m.fabricante}</span> : null}{m.tipo_os === "substituicao" ? <span className="block text-xs">{(m as any).quantidade}x {(m as any).item_descricao}{(m as any).urgente && <Badge variant="destructive" className="ml-1">Urgente{(m as any).aprovacao_status ? ` · ${(m as any).aprovacao_status}` : ""}</Badge>}</span> : null}{m.tipo_os === "retirada" && m.motivo_retirada ? <span className="block text-xs text-muted-foreground">Motivo: {m.motivo_retirada}</span> : null}</TableCell>
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", linhaBadgeClass(m.linha_produto))}>{linhaLabel(m.linha_produto)}</span></TableCell>
                 <TableCell>{m.inventory_item_id ? (invMap.get(m.inventory_item_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
@@ -115,7 +116,7 @@ export default function Manutencoes() {
                   ) : "—"}
                 </TableCell>
                 <TableCell>{new Date(m.scheduled_date).toLocaleDateString("pt-BR")}</TableCell>
-                <TableCell><Badge variant="outline">{m.status}</Badge></TableCell>
+                <TableCell><Badge variant="outline">{m.tipo_os === "substituicao" ? ({ agendada: "A levar", em_andamento: "Separado", concluida: "Resolvida", cancelada: "Cancelada" } as Record<string, string>)[m.status] ?? m.status : m.status}</Badge></TableCell>
                 <TableCell>
                   {canEdit && <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
