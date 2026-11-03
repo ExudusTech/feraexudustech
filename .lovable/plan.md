@@ -8,18 +8,15 @@
 ## 1. Fonte dos feriados: Google Calendar (só leitura)
 - **(a) Agenda pública "Feriados no Brasil"** (`pt.brazilian#holiday@group.v.calendar.google.com`), eventos de dia inteiro.
   - O Google marca cada evento na descrição: "Feriado público", "Observância" ou similar. **Feriado público** = sem atendimento. **Observância/data comemorativa** (Dia das Mães, Dia do Professor...) = ignorada.
-  - **Ponto facultativo** (Carnaval, Quarta de Cinzas, Corpus Christi...): chave configurável. **Recomendação: padrão = dia útil (atende).** O ponto facultativo vale para o serviço público, não para empresa privada. Quando a NitsClean não for atender (ex.: Carnaval), o Arilson bloqueia o dia na agenda própria (b), e fica explícito.
-  - Feriados estaduais do RJ: a agenda pública nem sempre traz todos os estaduais (ex.: São Jorge 23/04, Consciência Negra varia). Eles ficam garantidos pela agenda (b). Na implantação, comparo com os 28 atuais e listo o que faltar para o Arilson cadastrar.
-- **(b) Agenda "Feriados e recessos NitsClean"** na mesma conta: feriados municipais, recessos e dias sem atendimento. Todo evento dessa agenda = dia sem atendimento.
-  - Municipal: o título ou a descrição leva a cidade no formato `[Cidade: Cabo Frio]`. Sem cidade = vale para todas (recesso geral). Assim a regra de "exclusão municipal só na cidade certa" das rotas continua valendo.
-  - Evento com horário (não dia inteiro), como "fechado a partir das 12h", bloqueia só aquele intervalo do atendimento humano.
-  - **Se a agenda não existir, o Fera não cria.** A tela mostra "Agenda NitsClean não encontrada" e o passo a passo abaixo.
-
-**Como criar a agenda (b)** — Arilson, no Google Agenda logado como flora.nitsclean@gmail.com: "Outras agendas" → "+" → "Criar nova agenda" → nome exato "Feriados e recessos NitsClean" → Criar. Cadastrar eventos de dia inteiro; municipais com `[Cidade: Nome]`.
+  - **Ponto facultativo** (Carnaval, Quarta de Cinzas, Corpus Christi...): padrão = dia útil (atende). Quando a NitsClean não for atender, o PH bloqueia o dia na agenda principal da Flora (b).
+  - Feriados estaduais/municipais que a agenda pública não trouxer: o PH bloqueia na agenda principal (b). Na implantação, comparo com os 28 atuais e listo o que faltar.
+- **(b) Agenda principal da conta flora.nitsclean@gmail.com** (não há agenda separada). O PH cria ali os bloqueios.
+  - **Evento de DIA INTEIRO** (ex.: "Feriado municipal", "Recesso", "Sem atendimento", "Ponto facultativo") = dia bloqueado, para o horário humano e para rotas/opcoes_horario. Municipal: título ou descrição com `[Cidade: Cabo Frio]`; sem cidade = vale para todas.
+  - **Evento com horário** = compromisso/visita: conta como ocupado no cálculo de opcoes_horario (não bloqueia o dia inteiro).
 
 ## 2. Cache (somente leitura)
-- Nova tabela `calendar_holidays_cache` por organização: data, fim, nome, origem (`google_brasil` | `nitsclean`), tipo (`feriado` | `ponto_facultativo` | `recesso`), cidade, intervalo de horário opcional, `google_event_id`, `synced_at`. Usuários só leem; escrita só pelo servidor.
-- Tabela `calendar_sync_status` por org: último sucesso, último erro (código, sem dados pessoais), agenda NitsClean encontrada ou não.
+- Nova tabela `calendar_holidays_cache` por organização: data, fim, nome, origem (`google_brasil` | `flora_principal`), tipo (`feriado` | `bloqueio` | `compromisso`), cidade, início/fim de horário (compromissos), `google_event_id`, `synced_at`. Usuários só leem; escrita só pelo servidor.
+- Tabela `calendar_sync_status` por org: último sucesso, último erro (código, sem dados pessoais).
 - **Sincronia:** nova função `sync-holidays`, 1x por dia (madrugada) e sob demanda quando o cache tiver mais de 26h. Janela: hoje até +400 dias. Troca o conteúdo da org só depois de buscar as duas agendas com sucesso (nunca deixa o cache meio vazio).
 - **Falhas:** Google falhou → usa o último cache válido, mesmo vencido. Sem cache nenhum → só fins de semana contam como não úteis, e o painel mostra um aviso.
 
@@ -46,7 +43,7 @@
 
 ## 7. Tela (Configurações → Horário de atendimento)
 - Editável pelo admin: dias, horários, chave de urgência alta, chave de ponto facultativo, prévia "Se alguém pedir atendimento agora: ...".
-- **Próximos feriados (vindos do Google):** lista só leitura com data, nome, origem, cidade, além de "Última sincronia em ...", botão "Sincronizar agora" e aviso se a agenda NitsClean não existir ou se o Google falhar.
+- **Próximos feriados (vindos do Google):** lista só leitura com data, nome, origem, cidade, além de "Última sincronia em ...", botão "Sincronizar agora" e aviso se o Google falhar.
 - Nenhum cadastro de feriados no Fera.
 
 ## 8. Testes
@@ -62,7 +59,7 @@
 
 ## O que você precisa fazer
 1. Conectar o Google Calendar como flora.nitsclean@gmail.com, com permissão de leitura: https://lovable.dev/connectors/google_calendar/connect?workspace=DyRIWqbAituV33j9ol8o
-2. Pedir ao Arilson que crie a agenda "Feriados e recessos NitsClean" (passo a passo acima), ou me autorizar a seguir sem ela por enquanto.
+2. PH bloqueia dias criando eventos de dia inteiro na agenda principal da Flora.
 3. Confirmar a recomendação: ponto facultativo = dia útil por padrão.
 
 ---
@@ -152,12 +149,12 @@ Fase E (COM Google) sync-holidays, cache, troca da fonte de feriados para rotas,
                     agendamentos e horário; lista "próximos feriados"
 ```
 
-- **Depende do Google Calendar:** só a Fase E (sincronia, cache, lista de feriados do Google, agenda NitsClean). Até lá, o horário humano usa os 28 feriados atuais, sem nenhuma mudança para as rotas.
+- **Depende do Google Calendar:** só a Fase E (sincronia, cache, lista de feriados do Google, bloqueios e compromissos da agenda principal da Flora). Até lá, o horário humano usa os 28 feriados atuais, sem nenhuma mudança para as rotas.
 - **Pode ser feito já:** Fases A a D.
 - **Escopo Google necessário:** só leitura (`calendar.readonly`). Ainda não há conexão do Google Calendar neste workspace para conferir o token.
 
 ## O que você precisa fazer (consolidado)
 1. Conectar o Google Calendar como flora.nitsclean@gmail.com (só leitura): https://lovable.dev/connectors/google_calendar/connect?workspace=DyRIWqbAituV33j9ol8o. Só a Fase E depende disso.
-2. Arilson criar a agenda "Feriados e recessos NitsClean".
+2. PH cria os bloqueios (dia inteiro) na agenda principal da Flora.
 3. Confirmar: ponto facultativo = dia útil por padrão; urgência alta espera por padrão.
 4. Validar com o gestor a lista de etapas do lead.
