@@ -176,6 +176,13 @@
       "when": 1793727372511,
       "tag": "0024_lead_stage_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793729357218,
+      "tag": "0025_lote11_base_instalada",
+      "breakpoints": true
     }
   ]
 }

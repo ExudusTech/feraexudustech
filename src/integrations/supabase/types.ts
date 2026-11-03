@@ -3435,15 +3435,21 @@ export type Database = {
           assigned_user_id: string | null
           city: string | null
           company: string | null
+          coverage_area_id: string | null
           created_at: string
           created_by: string
           document: string | null
           email: string | null
           id: string
+          latitude: number | null
+          localizacao_confirmada_em: string | null
+          localizacao_origem: string | null
+          longitude: number | null
           name: string
           notes: string | null
           organization_id: string
           phone: string | null
+          place_id: string | null
           produto_linhas: string[] | null
           ramo_atuacao: string | null
           state: string | null
@@ -3457,15 +3463,21 @@ export type Database = {
           assigned_user_id?: string | null
           city?: string | null
           company?: string | null
+          coverage_area_id?: string | null
           created_at?: string
           created_by: string
           document?: string | null
           email?: string | null
           id?: string
+          latitude?: number | null
+          localizacao_confirmada_em?: string | null
+          localizacao_origem?: string | null
+          longitude?: number | null
           name: string
           notes?: string | null
           organization_id: string
           phone?: string | null
+          place_id?: string | null
           produto_linhas?: string[] | null
           ramo_atuacao?: string | null
           state?: string | null
@@ -3479,15 +3491,21 @@ export type Database = {
           assigned_user_id?: string | null
           city?: string | null
           company?: string | null
+          coverage_area_id?: string | null
           created_at?: string
           created_by?: string
           document?: string | null
           email?: string | null
           id?: string
+          latitude?: number | null
+          localizacao_confirmada_em?: string | null
+          localizacao_origem?: string | null
+          longitude?: number | null
           name?: string
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          place_id?: string | null
           produto_linhas?: string[] | null
           ramo_atuacao?: string | null
           state?: string | null
@@ -3497,6 +3515,13 @@ export type Database = {
           zip_code?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "clients_coverage_area_id_fkey"
+            columns: ["coverage_area_id"]
+            isOneToOne: false
+            referencedRelation: "ekkoa_coverage_areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clients_organization_id_fkey"
             columns: ["organization_id"]
@@ -3519,7 +3544,9 @@ export type Database = {
           dispenser_family_id: string | null
           endereco_instalacao: string | null
           estado: string | null
+          estado_atual: string | null
           fabricante: string | null
+          foto_path: string | null
           id: string
           inventory_item_id: string | null
           linha_produto: string | null
@@ -3527,10 +3554,14 @@ export type Database = {
           notes: string | null
           numero_contrato: string | null
           organization_id: string
+          origem: string
           periodicidade_manut: string | null
           product_id: string | null
           proxima_manutencao: string | null
+          quantidade: string
+          refil_product_id: string | null
           status: string
+          ultima_avaliacao_em: string | null
           ultima_manutencao: string | null
           unidade_consumo: string | null
           updated_at: string | null
@@ -3548,7 +3579,9 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          estado_atual?: string | null
           fabricante?: string | null
+          foto_path?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -3556,10 +3589,14 @@ export type Database = {
           notes?: string | null
           numero_contrato?: string | null
           organization_id: string
+          origem?: string
           periodicidade_manut?: string | null
           product_id?: string | null
           proxima_manutencao?: string | null
+          quantidade?: string
+          refil_product_id?: string | null
           status?: string
+          ultima_avaliacao_em?: string | null
           ultima_manutencao?: string | null
           unidade_consumo?: string | null
           updated_at?: string | null
@@ -3577,7 +3614,9 @@ export type Database = {
           dispenser_family_id?: string | null
           endereco_instalacao?: string | null
           estado?: string | null
+          estado_atual?: string | null
           fabricante?: string | null
+          foto_path?: string | null
           id?: string
           inventory_item_id?: string | null
           linha_produto?: string | null
@@ -3585,10 +3624,14 @@ export type Database = {
           notes?: string | null
           numero_contrato?: string | null
           organization_id?: string
+          origem?: string
           periodicidade_manut?: string | null
           product_id?: string | null
           proxima_manutencao?: string | null
+          quantidade?: string
+          refil_product_id?: string | null
           status?: string
+          ultima_avaliacao_em?: string | null
           ultima_manutencao?: string | null
           unidade_consumo?: string | null
           updated_at?: string | null
@@ -3633,6 +3676,13 @@ export type Database = {
           {
             foreignKeyName: "comodatos_product_id_fkey"
             columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_refil_product_id_fkey"
+            columns: ["refil_product_id"]
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["id"]
@@ -5489,6 +5539,103 @@ export type Database = {
           },
         ]
       }
+      ocorrencias_ponto: {
+        Row: {
+          avaliacao_id: string | null
+          client_id: string
+          comodato_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          item_descricao: string | null
+          item_product_id: string | null
+          organization_id: string
+          quantidade: string
+          resolvida_em: string | null
+          resolvida_schedule_id: string | null
+          responsavel_id: string | null
+          status: string
+          urgente: boolean
+        }
+        Insert: {
+          avaliacao_id?: string | null
+          client_id: string
+          comodato_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_descricao?: string | null
+          item_product_id?: string | null
+          organization_id: string
+          quantidade?: string
+          resolvida_em?: string | null
+          resolvida_schedule_id?: string | null
+          responsavel_id?: string | null
+          status?: string
+          urgente?: boolean
+        }
+        Update: {
+          avaliacao_id?: string | null
+          client_id?: string
+          comodato_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_descricao?: string | null
+          item_product_id?: string | null
+          organization_id?: string
+          quantidade?: string
+          resolvida_em?: string | null
+          resolvida_schedule_id?: string | null
+          responsavel_id?: string | null
+          status?: string
+          urgente?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ocorrencias_ponto_avaliacao_id_fkey"
+            columns: ["avaliacao_id"]
+            isOneToOne: false
+            referencedRelation: "ponto_avaliacoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocorrencias_ponto_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocorrencias_ponto_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocorrencias_ponto_item_product_id_fkey"
+            columns: ["item_product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocorrencias_ponto_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ocorrencias_ponto_resolvida_schedule_id_fkey"
+            columns: ["resolvida_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operational_expenses: {
         Row: {
           amount: number
@@ -5980,6 +6127,80 @@ export type Database = {
           },
         ]
       }
+      pedidos_visita_emergencial: {
+        Row: {
+          client_id: string
+          created_at: string
+          decidido_em: string | null
+          decidido_por: string | null
+          id: string
+          motivo: string | null
+          motivo_recusa: string | null
+          ocorrencia_id: string | null
+          organization_id: string
+          schedule_id: string | null
+          solicitado_por: string | null
+          status: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          motivo?: string | null
+          motivo_recusa?: string | null
+          ocorrencia_id?: string | null
+          organization_id: string
+          schedule_id?: string | null
+          solicitado_por?: string | null
+          status?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          decidido_em?: string | null
+          decidido_por?: string | null
+          id?: string
+          motivo?: string | null
+          motivo_recusa?: string | null
+          ocorrencia_id?: string | null
+          organization_id?: string
+          schedule_id?: string | null
+          solicitado_por?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pedidos_visita_emergencial_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_visita_emergencial_ocorrencia_id_fkey"
+            columns: ["ocorrencia_id"]
+            isOneToOne: false
+            referencedRelation: "ocorrencias_ponto"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_visita_emergencial_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_visita_emergencial_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pessoas: {
         Row: {
           chat_ids: string[]
@@ -6029,6 +6250,139 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      planos_manutencao: {
+        Row: {
+          ativo: boolean
+          client_id: string
+          consultor_id: string | null
+          created_at: string
+          created_by: string | null
+          data_inicio: string
+          dia_semana: number | null
+          duracao_min: number
+          frequencia: string
+          hora_inicio: string
+          horizonte_dias: number
+          id: string
+          intervalo_dias: number | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          client_id: string
+          consultor_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_inicio?: string
+          dia_semana?: number | null
+          duracao_min?: number
+          frequencia?: string
+          hora_inicio?: string
+          horizonte_dias?: number
+          id?: string
+          intervalo_dias?: number | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          client_id?: string
+          consultor_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          data_inicio?: string
+          dia_semana?: number | null
+          duracao_min?: number
+          frequencia?: string
+          hora_inicio?: string
+          horizonte_dias?: number
+          id?: string
+          intervalo_dias?: number | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "planos_manutencao_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "planos_manutencao_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ponto_avaliacoes: {
+        Row: {
+          autor_id: string | null
+          comodato_id: string
+          created_at: string
+          estado: string
+          foto_path: string | null
+          id: string
+          manutencoes: string[]
+          observacao: string | null
+          organization_id: string
+          precisa_substituir: boolean
+          schedule_id: string
+        }
+        Insert: {
+          autor_id?: string | null
+          comodato_id: string
+          created_at?: string
+          estado: string
+          foto_path?: string | null
+          id?: string
+          manutencoes?: string[]
+          observacao?: string | null
+          organization_id: string
+          precisa_substituir?: boolean
+          schedule_id: string
+        }
+        Update: {
+          autor_id?: string | null
+          comodato_id?: string
+          created_at?: string
+          estado?: string
+          foto_path?: string | null
+          id?: string
+          manutencoes?: string[]
+          observacao?: string | null
+          organization_id?: string
+          precisa_substituir?: boolean
+          schedule_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ponto_avaliacoes_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ponto_avaliacoes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ponto_avaliacoes_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
             referencedColumns: ["id"]
           },
         ]
@@ -6726,6 +7080,7 @@ export type Database = {
           notes: string | null
           operation_id: string | null
           organization_id: string
+          plano_manutencao_id: string | null
           resultado: string | null
           resumo_execucao: string | null
           schedule_subtype: string | null
@@ -6765,6 +7120,7 @@ export type Database = {
           notes?: string | null
           operation_id?: string | null
           organization_id: string
+          plano_manutencao_id?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -6804,6 +7160,7 @@ export type Database = {
           notes?: string | null
           operation_id?: string | null
           organization_id?: string
+          plano_manutencao_id?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -6844,6 +7201,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedules_plano_manutencao_id_fkey"
+            columns: ["plano_manutencao_id"]
+            isOneToOne: false
+            referencedRelation: "planos_manutencao"
             referencedColumns: ["id"]
           },
         ]
@@ -6963,6 +7327,10 @@ export type Database = {
       apply_flora_default_owner: {
         Args: { _org: string; _owner: string }
         Returns: Json
+      }
+      can_see_client: {
+        Args: { _client: string; _user: string }
+        Returns: boolean
       }
       can_see_schedule: {
         Args: { _schedule: string; _user: string }
