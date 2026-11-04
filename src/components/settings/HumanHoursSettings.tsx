@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Clock, CalendarOff } from "lucide-react";
+import { Clock, CalendarOff, RefreshCw } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
@@ -42,7 +45,23 @@ export default function HumanHoursSettings() {
   }, [draft.days.join(), draft.start, draft.end, closed, city]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const today = new Date().toISOString().slice(0, 10);
-  const upcoming = holidays.filter((h) => h.date >= today).slice(0, 12);
+  const googleRows = holidays.filter((h) => h.source === "google");
+  const upcoming = (googleRows.length ? googleRows : holidays).filter((h) => h.date >= today).slice(0, 15);
+  const qc = useQueryClient();
+  const { data: sync } = useQuery({
+    queryKey: ["gcal-sync", org?.id], enabled: !!org?.id,
+    queryFn: async () => (await supabase.from("google_calendar_sync_status").select("*").eq("organization_id", org!.id).maybeSingle()).data,
+  });
+  const [syncing, setSyncing] = useState(false);
+  const syncNow = async () => {
+    setSyncing(true);
+    const { data, error } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+    setSyncing(false);
+    if (error || !data?.ok) toast.error("Não foi possível ler o Google Agenda agora. Mantida a última sincronização.");
+    else toast.success(data.skipped ? "Sincronizado há menos de 1 minuto." : `Sincronizado: ${data.feriados} feriados, ${data.bloqueios} dias bloqueados, ${data.ocupados} compromissos.`);
+    qc.invalidateQueries({ queryKey: ["gcal-sync"] }); qc.invalidateQueries({ queryKey: ["closed-days"] });
+  };
+  const fmt = (v?: string | null) => v ? new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—";
   const a = Math.max(1, parseInt(amarelo, 10) || 15);
   const v = Math.max(a + 1, parseInt(vermelho, 10) || 60);
 
@@ -77,7 +96,7 @@ export default function HumanHoursSettings() {
             <Switch id="hh-urgent" checked={urgent} onCheckedChange={setUrgent} disabled={!isAdmin} />
           </div>
           <div className="flex items-start justify-between gap-4 max-w-xl">
-            <div><Label htmlFor="hh-fac">Ponto facultativo é dia útil</Label><p className="text-xs text-muted-foreground">Vale quando os feriados passarem a vir do Google Agenda.</p></div>
+            <div><Label htmlFor="hh-fac">Ponto facultativo é dia útil</Label><p className="text-xs text-muted-foreground">Pontos facultativos e datas comemorativas do Google não bloqueiam; para bloquear, crie um evento de dia inteiro na agenda da Flora.</p></div>
             <Switch id="hh-fac" checked={facultativo} onCheckedChange={setFacultativo} disabled={!isAdmin} />
           </div>
           <div className="grid grid-cols-2 gap-4 max-w-sm">
@@ -94,12 +113,17 @@ export default function HumanHoursSettings() {
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2"><CalendarOff className="h-5 w-5 text-primary" />Próximos feriados</CardTitle></CardHeader>
         <CardContent>
-          <p className="text-xs text-muted-foreground mb-3">Por enquanto vêm do calendário atual do sistema. Passarão a vir do Google Agenda da Flora quando a conexão for feita.</p>
+          <div className="mb-3 space-y-1 text-xs text-muted-foreground">
+            <p>Fonte: Google Agenda {sync?.account_email ? `(${sync.account_email})` : ""} — "Feriados no Brasil" e dias inteiros da agenda da Flora. Somente leitura. Atualiza todo dia; compromissos com horário são consultados na hora.</p>
+            <p>Última sincronização: {fmt(sync?.last_success_at)}{sync?.last_error ? ` · Última falha: ${fmt(sync?.last_attempt_at)} (usando o último cache)` : ""}</p>
+            {!googleRows.length && <p>Ainda sem dados do Google; mostrando o calendário reserva do sistema.</p>}
+          </div>
+          {isAdmin && <Button size="sm" variant="outline" className="mb-3" onClick={syncNow} disabled={syncing}><RefreshCw className="h-4 w-4 mr-1" />{syncing ? "Sincronizando..." : "Sincronizar agora"}</Button>}
           {upcoming.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum feriado futuro cadastrado.</p> : (
             <ul className="divide-y divide-border text-sm">
               {upcoming.map((h) => (
                 <li key={`${h.date}-${h.name}`} className="py-2 flex justify-between gap-3">
-                  <span>{h.name}{h.city ? ` — ${h.city}` : ""}</span>
+                  <span>{h.kind === "bloqueio" ? "🔒 " : ""}{h.name}{h.city ? ` — só ${h.city}` : ""}</span>
                   <span className="text-muted-foreground tabular-nums">{new Date(`${h.date}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC", weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                 </li>
               ))}

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useOrganization } from "@/hooks/use-organizations";
 import { normalizeHumanHours, type ClosedDay } from "@/lib/business-hours";
 
-export interface UpcomingHoliday { date: string; name: string; city: string | null }
+export interface UpcomingHoliday { date: string; name: string; city: string | null; source?: string; kind?: string }
 
 /** Holidays that close human service (shared national/RJ + tenant). Source moves to the Google cache in Phase E. */
 export function useClosedDays() {
@@ -13,7 +13,7 @@ export function useClosedDays() {
     enabled: !!org?.id,
     queryFn: async (): Promise<UpcomingHoliday[]> => {
       const from = new Date(Date.now() - 60 * 86_400_000).toISOString().slice(0, 10);
-      const { data, error } = await supabase.from("holidays").select("date, name, city")
+      const { data, error } = await supabase.from("holidays").select("date, name, city, source, kind")
         .or(`organization_id.is.null,organization_id.eq.${org!.id}`).gte("date", from).order("date");
       if (error) throw error;
       return (data ?? []) as UpcomingHoliday[];
