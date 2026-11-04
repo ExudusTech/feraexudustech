@@ -3260,6 +3260,24 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261104_products_dispenser: {
+        Row: {
+          backed_up_at: string | null
+          dispenser_family_id: string | null
+          id: string | null
+        }
+        Insert: {
+          backed_up_at?: string | null
+          dispenser_family_id?: string | null
+          id?: string | null
+        }
+        Update: {
+          backed_up_at?: string | null
+          dispenser_family_id?: string | null
+          id?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
