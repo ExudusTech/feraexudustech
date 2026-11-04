@@ -32,7 +32,7 @@ export function evaluateCheckin(pos: { lat?: number | null; lng?: number | null 
   const valid = (v: unknown, limit: number): v is number => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= limit;
   const lat = pos?.lat; const lng = pos?.lng;
   if (!valid(lat, 90) || !valid(lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: error === "PERMISSION_DENIED", precisa_justificativa: true, destino_sem_coordenadas: !(valid(target.lat, 90) && valid(target.lng, 180)) };
-  if (!valid(target.lat, 90) || !valid(target.lng, 180)) // Unknown destination is NOT "inside the radius": flagged so consultant and manager see it was not verified.
+  // Unknown destination is NOT "inside the radius": flagged so consultant and manager see it was not verified.
   if (!valid(target.lat, 90) || !valid(target.lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: false, precisa_justificativa: false, destino_sem_coordenadas: true };
   const d = distanceMeters(lat, lng, target.lat, target.lng);
   const fora = d > raio;
