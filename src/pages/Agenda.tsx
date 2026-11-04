@@ -261,7 +261,7 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {daySchedules.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => setExecId(s.id)}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
                   <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
@@ -424,7 +424,7 @@ export default function Agenda() {
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : displayMode === "hoje" ? (
-          <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} onExecute={(s) => setExecId(s.id)} />
+          <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => setExecId(s.id)} onExecute={(s) => setExecId(s.id)} />
         ) : displayMode === "lista" ? (
           <div className="border rounded-lg overflow-x-auto">
             <Table className="table-cards">
@@ -446,7 +446,7 @@ export default function Agenda() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((s) => (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} className="cursor-pointer" onClick={() => setExecId(s.id)}>
                       <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="mr-1">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
@@ -462,7 +462,7 @@ export default function Agenda() {
                       <TableCell>{getStatusBadge(s.status)}{s.status === "agendado" && s.confirmacao_status && ["confirmado", "remarcar", "sem_resposta"].includes(s.confirmacao_status) && <Badge variant="outline" className="ml-1">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}</TableCell>
                       <TableCell>{userMap.get(s.assigned_to || "") || "Sem responsável"}</TableCell>
                       <TableCell className="max-w-[250px] truncate">{s.location || "—"}</TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
