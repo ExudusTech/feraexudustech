@@ -150,6 +150,9 @@ Deno.serve(async () => {
     } catch { console.error("[confirmar-visitas] daily maintenance failed"); }
   }
 
+  // Geocode clients/leads/schedules created or edited without coordinates (bounded per run).
+  try { out.geocode = await geocodePending(admin, 15); } catch { console.error("[confirmar-visitas] geocode failed"); }
+
   // Retention: once a day (03:00–03:15 São Paulo) drop raw coordinates and old photos per organization settings.
   const spHour = (now.getUTCHours() + 21) % 24;
   if (spHour === 3 && now.getUTCMinutes() < 15) {

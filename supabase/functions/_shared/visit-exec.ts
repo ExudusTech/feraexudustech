@@ -22,7 +22,7 @@ export function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: n
   return Math.round(2 * r * Math.asin(Math.sqrt(a)));
 }
 
-export interface CheckinEval { distancia_m: number | null; fora_do_raio: boolean; sem_permissao: boolean; precisa_justificativa: boolean }
+export interface CheckinEval { distancia_m: number | null; fora_do_raio: boolean; sem_permissao: boolean; precisa_justificativa: boolean; destino_sem_coordenadas: boolean }
 export const GEOLOCATION_ERRORS = ["PERMISSION_DENIED", "POSITION_UNAVAILABLE", "TIMEOUT", "UNSUPPORTED", "INVALID_POSITION", "UNKNOWN"] as const;
 export type GeolocationErrorType = typeof GEOLOCATION_ERRORS[number];
 
@@ -31,11 +31,12 @@ export function evaluateCheckin(pos: { lat?: number | null; lng?: number | null 
   raio = 300, error?: GeolocationErrorType | null): CheckinEval {
   const valid = (v: unknown, limit: number): v is number => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= limit;
   const lat = pos?.lat; const lng = pos?.lng;
-  if (!valid(lat, 90) || !valid(lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: error === "PERMISSION_DENIED", precisa_justificativa: true };
-  if (!valid(target.lat, 90) || !valid(target.lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: false, precisa_justificativa: false };
+  if (!valid(lat, 90) || !valid(lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: error === "PERMISSION_DENIED", precisa_justificativa: true, destino_sem_coordenadas: !(valid(target.lat, 90) && valid(target.lng, 180)) };
+  if (!valid(target.lat, 90) || !valid(target.lng, 180)) // Unknown destination is NOT "inside the radius": flagged so consultant and manager see it was not verified.
+  if (!valid(target.lat, 90) || !valid(target.lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: false, precisa_justificativa: false, destino_sem_coordenadas: true };
   const d = distanceMeters(lat, lng, target.lat, target.lng);
   const fora = d > raio;
-  return { distancia_m: d, fora_do_raio: fora, sem_permissao: false, precisa_justificativa: fora };
+  return { distancia_m: d, fora_do_raio: fora, sem_permissao: false, precisa_justificativa: fora, destino_sem_coordenadas: false };
 }
 
 export function durationMinutes(checkin: string | Date, checkout: string | Date): number {

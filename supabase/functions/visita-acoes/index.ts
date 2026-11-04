@@ -8,6 +8,7 @@ import {
 import { FREQ_RAPIDAS, pontosPendentes, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
+import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -29,7 +30,7 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
   if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
-  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, clients(name), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
+  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
   if (!s) return json({ error: "Agendamento não encontrado" }, 404);
   const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -57,7 +58,14 @@ Deno.serve(async (req) => {
     case "checkin": {
       if (!["agendado", "confirmado"].includes(s.status)) return json({ error: "Esta visita não pode ser iniciada" }, 409);
       const { data: org } = await admin.from("organizations").select("raio_checkin_m").eq("id", s.organization_id).maybeSingle();
-      const target = { lat: s.latitude ?? lead?.latitude, lng: s.longitude ?? lead?.longitude };
+      const cli: any = (s as any).clients;
+      // Destination priority: schedule → client → lead; geocode the address on demand when none has coordinates.
+      let target: { lat?: number | null; lng?: number | null } = s.latitude != null ? { lat: s.latitude, lng: s.longitude }
+        : cli?.latitude != null ? { lat: cli.latitude, lng: cli.longitude } : { lat: lead?.latitude, lng: lead?.longitude };
+      if (target.lat == null) {
+        const g = (s.client_id ? await geocodeClient(admin, s.client_id) : null) ?? (s.lead_id ? await geocodeLead(admin, s.lead_id) : null) ?? await geocodeSchedule(admin, s.id);
+        if (g) { target = g; await admin.from("schedules").update({ latitude: g.lat, longitude: g.lng }).eq("id", s.id).is("latitude", null); }
+      }
       if (b.geolocation_error != null && !GEOLOCATION_ERRORS.includes(b.geolocation_error)) return json({ error: "Diagnóstico de localização inválido" }, 400);
       const lat = num(b.lat); const lng = num(b.lng);
       const pos = lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
@@ -72,10 +80,10 @@ Deno.serve(async (req) => {
       const now = new Date().toISOString();
       const { error: e1 } = await admin.from("schedule_checkins").insert({ organization_id: s.organization_id, schedule_id: s.id, user_id: user.id, checkin_em: now,
         latitude: pos?.lat ?? null, longitude: pos?.lng ?? null, precisao_m: num(b.precisao), distancia_m: ev.distancia_m,
-        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, geolocation_error, justificativa: justificativa || null });
+        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, destino_sem_coordenadas: ev.destino_sem_coordenadas, geolocation_error, justificativa: justificativa || null });
       if (e1) { console.error("[visita-acoes] checkin", e1.code); return json({ error: e1.code === "23505" ? "Check-in já registrado" : "Não foi possível iniciar" }, 400); }
       await admin.from("schedules").update({ status: "em_atendimento", checkin_em: now }).eq("id", s.id);
-      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${ev.distancia_m} m do endereço` : !pos ? ` sem localização (${geolocation_error})` : ""}${justificativa ? ` — ${justificativa}` : ""}`);
+      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${ev.distancia_m} m do endereço` : !pos ? ` sem localização (${geolocation_error})` : ev.destino_sem_coordenadas ? " (local do cliente sem coordenadas — distância não verificada)" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
       if (ev.precisa_justificativa) {
         bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa, geolocation_error }),
           { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id" }));
