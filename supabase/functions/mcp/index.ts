@@ -313,6 +313,44 @@ async function loadHolidays(supabase: ReturnType<typeof getClient>, from: string
   return data ?? [];
 }
 
+// Google Calendar (Flora main calendar) busy slots — READ-ONLY: only GET is ever sent.
+// Live read with a short in-memory cache; on failure falls back to the google_calendar_busy cache table.
+const GCAL_BUSY_TTL_MS = 5 * 60_000;
+let gcalBusyCache: { at: number; from: string; to: string; slots: { start: number; end: number }[] } | null = null;
+
+async function googleBusy(supabase: ReturnType<typeof getClient>, fromDate: string, toDate: string): Promise<{ start: number; end: number }[]> {
+  if (gcalBusyCache && Date.now() - gcalBusyCache.at < GCAL_BUSY_TTL_MS && gcalBusyCache.from <= fromDate && gcalBusyCache.to >= toDate) return gcalBusyCache.slots;
+  const timeMin = new Date(`${fromDate}T00:00:00-03:00`).toISOString();
+  const timeMax = new Date(Date.parse(`${toDate}T00:00:00-03:00`) + 86_400_000).toISOString();
+  try {
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY"), connKey = Deno.env.get("GOOGLE_CALENDAR_API_KEY");
+    if (!lovableKey || !connKey) throw new Error("CONFIG_MISSING");
+    const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
+    const res = await fetch(`https://connector-gateway.lovable.dev/google_calendar/calendar/v3/calendars/primary/events?${q}`, {
+      method: "GET", headers: { Authorization: `Bearer ${lovableKey}`, "X-Connection-Api-Key": connKey }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) { await res.body?.cancel(); throw new Error(`HTTP ${res.status}`); }
+    const body = await res.json() as { items?: { status?: string; transparency?: string; start?: { dateTime?: string }; end?: { dateTime?: string } }[] };
+    const slots = (body.items ?? []).filter(ev => ev.status !== "cancelled" && ev.transparency !== "transparent" && ev.start?.dateTime && ev.end?.dateTime)
+      .map(ev => ({ start: Date.parse(ev.start!.dateTime!), end: Date.parse(ev.end!.dateTime!) }));
+    gcalBusyCache = { at: Date.now(), from: fromDate, to: toDate, slots };
+    return slots;
+  } catch (error) {
+    console.error("[gcal] live busy read failed, using cache:", error instanceof Error ? error.message : "erro");
+    try {
+      const { data } = await supabase.from("google_calendar_busy").select("start_at, end_at")
+        .eq("organization_id", NITSCLEAN_ORG_ID).lt("start_at", timeMax).gt("end_at", timeMin);
+      return Array.isArray(data) ? data.map((r: { start_at: string; end_at: string }) => ({ start: Date.parse(r.start_at), end: Date.parse(r.end_at) })) : [];
+    } catch { return []; }
+  }
+}
+
+/** True when [date hh:mm, +duration) overlaps a Google busy slot (São Paulo time). */
+function googleClash(slots: { start: number; end: number }[], date: string, startMin: number, durationMin: number): boolean {
+  const s = Date.parse(`${date}T${fromMin(startMin)}:00-03:00`);
+  const e = s + durationMin * 60_000;
+  return slots.some(b => s < b.end && b.start < e);
+}
+
 function holidayForDate(holidays: Holiday[], date: string, city?: string | null): Holiday | undefined {
   const cityKey = (value: string) => value.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return holidays.find(holiday => holiday.date === date &&
@@ -1689,6 +1727,7 @@ async function routeTimeOptions(
       .eq("organization_id", NITSCLEAN_ORG_ID).in("scheduled_date", dates).neq("status", "cancelado");
     existing = Array.isArray(data) ? data : [];
   } catch { console.error("[rota] schedules lookup failed"); }
+  const gBusy = await googleBusy(supabase, dates[0], dates[dates.length - 1]);
   const options: { data: string; hora: string; texto: string }[] = [];
   for (const date of dates) {
     if (options.length >= 3) break;
@@ -1704,7 +1743,7 @@ async function routeTimeOptions(
         const bs = toMin(s.start_time!); const be = s.end_time ? toMin(s.end_time) : bs + VISIT_DURATION_MIN;
         return t < be && bs < t + VISIT_DURATION_MIN;
       });
-      if (!clash) free.push(t);
+      if (!clash && !googleClash(gBusy, date, t, VISIT_DURATION_MIN)) free.push(t);
     }
     if (free.length === 0) continue;
     // Vary: 1st earliest, 2nd latest, 3rd middle (morning/afternoon when the band allows).
@@ -2424,6 +2463,14 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       data: { cidade, data_visita, janelas: windows, mensagem_para_lead: mensagemParaLead },
       next_action_hint: `Envie ao lead: "${mensagemParaLead}"`,
     };
+  }
+
+  // The Flora Google Calendar has a timed commitment at this time: reject before any write.
+  if (googleClash(await googleBusy(supabase, data_visita, data_visita), data_visita, requestedMinutes, VISIT_DURATION_MIN)) {
+    const mensagemParaLead = `Esse horário já está ocupado na nossa agenda. Posso te oferecer outro horário?`;
+    return { success: false, message: mensagemParaLead,
+      data: { data_visita, horario, ocupado_google: true, mensagem_para_lead: mensagemParaLead },
+      next_action_hint: "Chame consultar_rota_consultor para obter opcoes_horario livres e ofereça ao lead." };
   }
 
   // Resolve identity only after all route/window checks, before operational writes.
