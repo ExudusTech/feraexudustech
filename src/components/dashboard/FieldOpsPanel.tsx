@@ -57,7 +57,7 @@ export default function FieldOpsPanel() {
   const byConsultant = new Map<string, typeof todayList>();
   for (const s of todayList) { const k = s.assigned_to ?? ""; byConsultant.set(k, [...(byConsultant.get(k) ?? []), s]); }
   const filtered = filter ? schedules.filter((s) => (filter === "atrasadas" || filter === "fora_do_local" ? s.scheduled_date === today : s.scheduled_date >= weekStart && s.scheduled_date <= today)
-    && matchesFilter(s, filter, { atrasadas: m.atrasadas, foraDoLocal: m.foraDoLocal })) : [];
+    && matchesFilter(s, filter, { atrasadas: m.atrasadas, foraDoLocal: m.foraDoLocal, semCoordenadas: m.semCoordenadas })) : [];
   const points = checkins.filter((c) => typeof c.latitude === "number" && todayList.some((s) => s.id === c.schedule_id));
   const current = schedules.find((s) => s.id === selected) ?? null;
 
