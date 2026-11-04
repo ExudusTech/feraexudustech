@@ -13,6 +13,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import ClientFormDialog from "@/components/crm/ClientFormDialog";
 import ScheduleFormDialog from "@/components/ekkoa/ScheduleFormDialog";
 import { useClients, useDeleteClient, type Client } from "@/hooks/use-clients";
+import { useAuth } from "@/hooks/use-auth";
+import { canRegisterExistingClient } from "@/lib/empresa-contatos";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, Users, CalendarCheck } from "lucide-react";
 
 export default function Clientes() {
@@ -22,6 +24,8 @@ export default function Clientes() {
   const [search, setSearch] = useState("");
   const [agendarId, setAgendarId] = useState<string | null>(null);
   const [tab, setTab] = useState("clientes");
+  const { user } = useAuth();
+  const canRegister = canRegisterExistingClient((user?.roles ?? [user?.role ?? ""]) as string[]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -45,7 +49,12 @@ export default function Clientes() {
     <AppLayout
       title="Clientes"
       subtitle="Gerencie sua base de clientes e visitas"
-      actions={tab === "visitas" ? <Button asChild><Link to="/agenda"><Plus className="h-4 w-4 mr-2" />Nova Visita</Link></Button> : <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Novo Cliente</Button>}
+      actions={tab === "visitas" ? <Button asChild><Link to="/agenda"><Plus className="h-4 w-4 mr-2" />Nova Visita</Link></Button> : (
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant={canRegister ? "outline" : "default"}><Link to="/leads"><Plus className="h-4 w-4 mr-2" />Novo lead</Link></Button>
+          {canRegister && <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Cadastrar cliente já atendido</Button>}
+        </div>
+      )}
     >
       <Tabs value={tab} onValueChange={(v) => { setTab(v); setSearch(""); }} className="space-y-4">
         <TabsList>
