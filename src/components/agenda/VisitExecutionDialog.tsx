@@ -19,7 +19,8 @@ import {
   CONFIRMACAO_LABEL, ITEM_OPTIONS, NAO_REALIZADO_LABEL, NEXT_LABEL, RESULT_LABEL, STATUS_LABEL, getPosition, isTechnical,
   requiresPhoto, visitAction, VisitActionError,
 } from "@/lib/visit-exec";
-import { clearDraft, faltasParaEncerrar, readDraft, writeDraft } from "@/lib/visit-draft";
+import { clearDraft, faltasDetalhadas, readDraft, writeDraft, type FaltaAlvo } from "@/lib/visit-draft";
+import { FREQ_LABEL, FREQ_RAPIDAS } from "@/lib/base-instalada";
 import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
@@ -64,10 +65,22 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [obs, setObs] = useState(""); const [itens, setItens] = useState<string[]>([]); const [comodato, setComodato] = useState("");
   const [resultado, setResultado] = useState(""); const [resumo, setResumo] = useState(""); const [proximo, setProximo] = useState("");
   const [dataAlvo, setDataAlvo] = useState(""); const [motivoPerda, setMotivoPerda] = useState(""); const [confPerdido, setConfPerdido] = useState(false);
-  const [descricao, setDescricao] = useState("");
+  const [descricao, setDescricao] = useState(""); const [frequencia, setFrequencia] = useState("");
+  const usaPlano = tecnico && !!s?.client_id;
+  const { data: plano } = useQuery({
+    queryKey: ["plano-cliente", s?.client_id], enabled: open && usaPlano,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("planos_manutencao").select("id, frequencia").eq("client_id", s!.client_id).eq("ativo", true).limit(1).maybeSingle();
+      if (!data) return null;
+      const { data: prox } = await (supabase as any).from("schedules").select("scheduled_date").eq("plano_manutencao_id", data.id)
+        .gt("scheduled_date", s!.scheduled_date).in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle();
+      return { ...data, proxima: prox?.scheduled_date as string | undefined };
+    },
+  });
+  const proximoEfetivo = usaPlano ? (plano || frequencia ? "plano" : "") : proximo;
   const [pts, setPts] = useState({ pending: 0, total: 0 });
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
-  const [askLoc, setAskLoc] = useState(false);
+  const [askLoc, setAskLoc] = useState(false); const [registroAberto, setRegistroAberto] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState(""); const [showNao, setShowNao] = useState(false);
   useEffect(() => {
     setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false);
@@ -116,8 +129,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   });
 
   const checkout = () => run(async () => {
-    const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: confPerdido, descricao });
+    const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: proximoEfetivo, data_alvo: dataAlvo || null,
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao, frequencia: frequencia || undefined });
     setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
@@ -128,8 +141,12 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   if (!s) return null;
   const fotos = (exec?.evidencias ?? []).filter((e) => e.foto_path).length;
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
-  const faltas = faltasParaEncerrar({ finished, resultado, resumo, proximo, pendingPoints: pts.pending, totalPoints: pts.total,
-    fotoObrigatoria, fotos, dataAlvo, motivoPerda, confPerdido });
+  const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
+    fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
+  const irPara = (alvo: FaltaAlvo) => {
+    if (alvo === "registro") setRegistroAberto(true);
+    setTimeout(() => document.getElementById(`visita-${alvo}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -178,15 +195,18 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 </div>
               </div>)}
             {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
-            <section className="space-y-2 rounded-lg border p-3">
-              <h3 className="font-semibold text-sm">Registro {fotoObrigatoria && "(foto obrigatória)"}</h3>
+            {usaPlano && !registroAberto ? (
+              <Button variant="ghost" className="w-full" onClick={() => setRegistroAberto(true)}>+ Foto ou observação extra (opcional)</Button>
+            ) : (
+            <section id="visita-registro" className="space-y-2 rounded-lg border p-3 scroll-mt-4">
+              <h3 className="font-semibold text-sm">{usaPlano ? "Registro extra (opcional)" : `Registro${fotoObrigatoria ? " (foto obrigatória)" : ""}`}</h3>
               {loans.length > 0 && (
                 <Select value={comodato} onValueChange={setComodato}>
                   <SelectTrigger><SelectValue placeholder="Comodato (opcional)" /></SelectTrigger>
                   <SelectContent>{loans.map((c) => <SelectItem key={c.id} value={c.id}>{c.numero_contrato || c.linha_produto || "Comodato"}</SelectItem>)}</SelectContent>
                 </Select>
               )}
-              {tecnico && <div className="grid grid-cols-2 gap-2">{ITEM_OPTIONS.map((i) => (
+              {tecnico && !usaPlano && <div className="grid grid-cols-2 gap-2">{ITEM_OPTIONS.map((i) => (
                 <label key={i.value} className="flex items-center gap-2 text-sm min-h-9"><Checkbox checked={itens.includes(i.value)}
                   onCheckedChange={(v) => setItens((cur) => v ? [...cur, i.value] : cur.filter((x) => x !== i.value))} />{i.label}</label>))}</div>}
               <Textarea value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Observações" maxLength={1000} />
@@ -199,35 +219,38 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <Button variant="outline" className="min-h-11" onClick={() => addEvidence()} disabled={busy}>Salvar registro</Button>
               </div>
               <p className="text-xs text-muted-foreground">{fotos} foto(s) · {(exec?.evidencias ?? []).length} registro(s)</p>
-            </section>
+            </section>)}
 
             <section className="space-y-3 rounded-lg border p-3">
-              <h3 className="font-semibold text-sm">Encerrar</h3>
-              <div className="grid grid-cols-3 gap-2">{(tecnico ? ["concluida", "com_problema"] : ["boa", "mediana", "ruim"]).map((r) => (
-                <Button key={r} type="button" variant={resultado === r ? "default" : "outline"} className="min-h-11 text-xs" onClick={() => setResultado(r)}>{RESULT_LABEL[r]}</Button>))}</div>
-              <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo curto da visita" maxLength={500} />
-              <Label>Próximo passo</Label>
-              <Select value={proximo} onValueChange={setProximo}>
-                <SelectTrigger><SelectValue placeholder="Escolha o próximo passo" /></SelectTrigger>
-                <SelectContent>{Object.entries(NEXT_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
-              {(proximo === "follow_up" || proximo === "novo_agendamento") && (
-                <div><Label>{proximo === "follow_up" ? "Data do follow-up" : "Data sugerida (opcional)"}</Label>
-                  <Input type="date" value={dataAlvo} onChange={(e) => setDataAlvo(e.target.value)} />
-                  {proximo === "follow_up" && <div className="flex gap-2 mt-2">{[3, 6].map((m) => (
-                    <Button key={m} type="button" size="sm" variant="outline" onClick={() => { const d = new Date(); d.setMonth(d.getMonth() + m); setDataAlvo(d.toISOString().slice(0, 10)); }}>{m} meses</Button>))}</div>}
-                </div>)}
-              {proximo === "proposta" && <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="O que vai na proposta (opcional)" maxLength={300} />}
-              {proximo === "perdido" && (<div className="space-y-2">
-                <Input value={motivoPerda} onChange={(e) => setMotivoPerda(e.target.value)} placeholder="Motivo da perda" maxLength={200} />
-                <label className="flex items-center gap-2 text-sm"><Checkbox checked={confPerdido} onCheckedChange={(v) => setConfPerdido(!!v)} />Confirmo que o lead será marcado como perdido</label>
-              </div>)}
+              <h3 id="visita-resultado" className="font-semibold text-sm scroll-mt-4">Encerrar</h3>
+              <div className={tecnico ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>{(tecnico ? ["concluida", "com_problema"] : ["boa", "mediana", "ruim"]).map((r) => (
+                <Button key={r} type="button" variant={resultado === r ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal leading-tight text-sm" onClick={() => setResultado(r)}>{RESULT_LABEL[r]}</Button>))}</div>
+              <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
+              <div id="visita-proximo" className="space-y-2 scroll-mt-4">
+                <Label>Próximo passo</Label>
+                {usaPlano ? (plano ? (
+                  <p className="text-sm">Próxima visita do plano ({FREQ_LABEL[plano.frequencia] ?? plano.frequencia}){plano.proxima && `: ${plano.proxima.split("-").reverse().join("/")}`}. Nada a escolher.</p>
+                ) : (<>
+                  <p className="text-xs text-muted-foreground">Este cliente ainda não tem plano. De quanto em quanto tempo voltar?</p>
+                  <div className="grid grid-cols-3 gap-2">{FREQ_RAPIDAS.map((fq) => (
+                    <Button key={fq} type="button" variant={frequencia === fq ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal" onClick={() => setFrequencia(fq)}>{FREQ_LABEL[fq]}</Button>))}</div>
+                </>)) : (<>
+                  <div className="grid grid-cols-2 gap-2">{([["novo_agendamento", "Agendar nova visita"], ["proposta", "Enviar proposta"], ["follow_up", "Retornar em…"], ["perdido", "Perdido"]] as const).map(([k, l]) => (
+                    <Button key={k} type="button" variant={proximo === k ? (k === "perdido" ? "destructive" : "default") : "outline"} className="min-h-12 h-auto whitespace-normal leading-tight"
+                      onClick={() => { setProximo(k); setDataAlvo(""); }}>{l}</Button>))}</div>
+                  {(proximo === "follow_up" || proximo === "novo_agendamento") && (
+                    <Input type="date" aria-label={proximo === "follow_up" ? "Data do retorno" : "Data sugerida (opcional)"} value={dataAlvo} onChange={(e) => setDataAlvo(e.target.value)} />)}
+                  {proximo === "proposta" && <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="O que vai na proposta (opcional)" maxLength={300} />}
+                  {proximo === "perdido" && <Input value={motivoPerda} onChange={(e) => setMotivoPerda(e.target.value)} placeholder="Motivo da perda" maxLength={200} />}
+                </>)}
+              </div>
             </section>
             <Button variant="ghost" className="w-full" onClick={() => setShowNao((v) => !v)}>Não foi possível realizar</Button>
             {/* Fixed footer: what is still missing + the close button, always visible. */}
             <div className="sticky bottom-0 -mx-6 -mb-6 border-t bg-background/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] space-y-2">
               <p className={faltas.length ? "text-sm text-warning" : "text-sm text-success"} aria-live="polite">
-                {faltas.length ? `Para encerrar falta: ${faltas.join(" / ")}` : "Tudo pronto para encerrar."}</p>
+                {faltas.length ? <>Para encerrar falta:{" "}{faltas.map((f, i) => (
+                  <span key={f.label}>{i > 0 && " / "}<button type="button" className="underline font-medium" onClick={() => irPara(f.alvo)}>{f.label}</button></span>))}</> : "Tudo pronto para encerrar."}</p>
               <Button className="w-full min-h-12 text-base" onClick={checkout} disabled={busy || faltas.length > 0}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}Encerrar visita</Button>
             </div>
