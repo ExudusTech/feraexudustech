@@ -13,7 +13,7 @@ export function geocodeQuery(a: GeoAddress): string | null {
 }
 
 export async function geocode(a: GeoAddress, fetcher: typeof fetch = fetch): Promise<{ lat: number; lng: number } | null> {
-  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  const key = (globalThis as any).Deno?.env.get("GOOGLE_MAPS_API_KEY");
   const q = geocodeQuery(a);
   if (!key || !q) return null;
   try {
