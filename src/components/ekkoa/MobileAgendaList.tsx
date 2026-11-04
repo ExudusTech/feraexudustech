@@ -19,24 +19,27 @@ interface Props {
   onExecute?: (s: Schedule) => void;
   /** Hide the Hoje/Amanhã switch and show only today. */
   todayOnly?: boolean;
+  /** Show the given schedules as-is (no day filter, no day header); the date is shown on each card. */
+  noDateFilter?: boolean;
+  emptyText?: string;
 }
 
 /** Phone view: today/tomorrow visits sorted by time with large action buttons. */
-export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, todayOnly }: Props) {
+export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, todayOnly, noDateFilter, emptyText }: Props) {
   const [dayState, setDay] = useState<"hoje" | "amanha">("hoje");
   const day = todayOnly ? "hoje" : dayState;
   const target = day === "hoje" ? new Date() : addDays(new Date(), 1);
   const items = useMemo(
     () => schedules
-      .filter((s) => s.status !== "cancelado" && isSameDay(parseISO(s.scheduled_date), target))
+      .filter((s) => s.status !== "cancelado" && (noDateFilter || isSameDay(parseISO(s.scheduled_date), target)))
       .sort((a, b) => (a.start_time ?? "99").localeCompare(b.start_time ?? "99")),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schedules, day],
+    [schedules, day, noDateFilter],
   );
 
   return (
     <div className="space-y-3">
-      {!todayOnly && <div className="grid grid-cols-2 gap-2" role="tablist">
+      {!todayOnly && !noDateFilter && <div className="grid grid-cols-2 gap-2" role="tablist">
         {(["hoje", "amanha"] as const).map((d) => (
           <button key={d} role="tab" aria-selected={day === d} onClick={() => setDay(d)}
             className={cn("min-h-11 rounded-lg border text-base font-semibold", day === d ? "bg-primary text-primary-foreground border-primary" : "bg-card")}>
@@ -44,8 +47,8 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
           </button>
         ))}
       </div>}
-      <p className="text-sm text-muted-foreground capitalize">{format(target, "EEEE, dd 'de' MMMM", { locale: ptBR })}</p>
-      {items.length === 0 && <p className="text-muted-foreground py-6 text-center">Nenhuma visita {day === "hoje" ? "hoje" : "amanhã"}.</p>}
+      {!noDateFilter && <p className="text-sm text-muted-foreground capitalize">{format(target, "EEEE, dd 'de' MMMM", { locale: ptBR })}</p>}
+      {items.length === 0 && <p className="text-muted-foreground py-6 text-center">{emptyText ?? `Nenhuma visita ${day === "hoje" ? "hoje" : "amanhã"}.`}</p>}
       {items.map((s) => {
         const lead = s.lead_id ? leads.get(s.lead_id) : undefined;
         const phone = normalizePhoneBR(lead?.contact_phone || lead?.whatsapp || fromNotes(s.notes, "Telefone"));
@@ -54,7 +57,7 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
           <article key={s.id} className="rounded-xl border bg-card p-4 space-y-3">
             <button onClick={() => onOpen(s)} className="w-full text-left space-y-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-2xl font-bold text-primary">{s.start_time?.slice(0, 5) || "--:--"}</span>
+                <span className="text-2xl font-bold text-primary">{noDateFilter && <span className="text-base mr-2">{format(parseISO(s.scheduled_date), "dd/MM")}</span>}{s.start_time?.slice(0, 5) || "--:--"}</span>
                 <div className="flex gap-1 flex-wrap justify-end">
                   <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
