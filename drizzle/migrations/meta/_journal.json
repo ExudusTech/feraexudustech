@@ -232,6 +232,13 @@
       "when": 1793818663589,
       "tag": "0032_google_calendar_read_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793825189326,
+      "tag": "0033_checkin_destino_sem_coordenadas",
+      "breakpoints": true
     }
   ]
 }
