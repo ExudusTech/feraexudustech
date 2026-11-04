@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserProfile = async (authUser: User) => {
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", authUser.id)
@@ -59,10 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { data: roles } = await supabase
+      const { data: roles, error: rolesError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", authUser.id);
+      if ((profileError || rolesError) && loadedUserId.current === authUser.id) return;
 
       const roleList = (roles ?? []).map((r) => r.role as string);
       const primaryRole = pickPrimaryRole(roleList);
@@ -113,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
           }, 0);
         } else {
+          loadedUserId.current = null;
           setUser(null);
           sessionStorage.removeItem("super_admin_org_id");
           setIsLoading(false);
