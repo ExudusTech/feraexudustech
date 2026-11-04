@@ -2,7 +2,7 @@ import { lateMinutes } from "@/lib/visit-exec";
 
 export interface OpsSchedule { id: string; assigned_to: string | null; scheduled_date: string; start_time: string | null; status: string;
   duracao_min?: number | null; resultado?: string | null }
-export interface OpsCheckin { schedule_id: string; fora_do_raio: boolean; sem_permissao: boolean }
+export interface OpsCheckin { schedule_id: string; fora_do_raio: boolean; sem_permissao: boolean; geolocation_error?: string | null; latitude?: number | null }
 
 export type OpsFilter = "realizadas" | "nao_realizadas" | "atrasadas" | "fora_do_local" | `resultado:${string}`;
 
@@ -14,7 +14,7 @@ export function fieldMetrics(schedules: OpsSchedule[], checkins: OpsCheckin[], n
   const resultados: Record<string, number> = {};
   for (const s of realizadas) if (s.resultado) resultados[s.resultado] = (resultados[s.resultado] ?? 0) + 1;
   const todayList = schedules.filter((s) => s.scheduled_date === today && s.status !== "cancelado");
-  const fora = new Set(checkins.filter((c) => c.fora_do_raio || c.sem_permissao).map((c) => c.schedule_id));
+  const fora = new Set(checkins.filter((c) => c.fora_do_raio || c.sem_permissao || (c.geolocation_error && c.latitude == null)).map((c) => c.schedule_id));
   return {
     realizadas: realizadas.length,
     naoRealizadas: week.filter((s) => s.status === "nao_realizado").length,

@@ -20,6 +20,7 @@ import {
   requiresPhoto, visitAction, VisitActionError,
 } from "@/lib/visit-exec";
 import { clearDraft, faltasParaEncerrar, readDraft, writeDraft } from "@/lib/visit-draft";
+import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
 
@@ -45,10 +46,11 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const { data: exec, refetch } = useQuery({
     queryKey: ["visit-exec", s?.id], enabled: !!s?.id && open,
     queryFn: async () => {
+      if (!s) return { checkin: null, evidencias: [], proximo: null };
       const [ck, ev, pp] = await Promise.all([
-        (supabase as any).from("schedule_checkins").select("*").eq("schedule_id", s!.id).maybeSingle(),
-        (supabase as any).from("schedule_evidencias").select("*").eq("schedule_id", s!.id).order("created_at"),
-        (supabase as any).from("schedule_proximo_passo").select("*").eq("schedule_id", s!.id).maybeSingle(),
+        (supabase as any).from("schedule_checkins").select("*").eq("schedule_id", s.id).maybeSingle(),
+        (supabase as any).from("schedule_evidencias").select("*").eq("schedule_id", s.id).order("created_at"),
+        (supabase as any).from("schedule_proximo_passo").select("*").eq("schedule_id", s.id).maybeSingle(),
       ]);
       return { checkin: ck.data, evidencias: (ev.data ?? []) as any[], proximo: pp.data };
     },
@@ -58,7 +60,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [busy, setBusy] = useState(false);
   const [justificativa, setJustificativa] = useState("");
   const [askReason, setAskReason] = useState<string | null>(null);
-  const [lastPos, setLastPos] = useState<{ lat: number; lng: number; precisao: number } | null | undefined>(undefined);
+  const [lastLocation, setLastLocation] = useState<LocationResult | null>(null);
   const [obs, setObs] = useState(""); const [itens, setItens] = useState<string[]>([]); const [comodato, setComodato] = useState("");
   const [resultado, setResultado] = useState(""); const [resumo, setResumo] = useState(""); const [proximo, setProximo] = useState("");
   const [dataAlvo, setDataAlvo] = useState(""); const [motivoPerda, setMotivoPerda] = useState(""); const [confPerdido, setConfPerdido] = useState(false);
@@ -68,7 +70,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [askLoc, setAskLoc] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState(""); const [showNao, setShowNao] = useState(false);
   useEffect(() => {
-    setAskReason(null); setJustificativa(""); setLastPos(undefined); setShowNao(false);
+    setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false);
     const d = s?.id ? readDraft<Record<string, any>>(`encerrar:${s.id}`) : null;
     setResultado(d?.resultado ?? ""); setResumo(d?.resumo ?? ""); setProximo(d?.proximo ?? ""); setDataAlvo(d?.dataAlvo ?? "");
     setMotivoPerda(d?.motivoPerda ?? ""); setDescricao(d?.descricao ?? ""); setObs(d?.obs ?? ""); setConfPerdido(false);
@@ -80,13 +82,20 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
     toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
 
-  const checkin = () => run(async () => {
-    const pos = lastPos !== undefined ? lastPos : await getPosition();
-    setLastPos(pos);
+  const checkin = (retry = false) => run(async () => {
+    if (!s) return;
+    const reusable = lastLocation && (!lastLocation.position || Date.now() - lastLocation.position.timestamp <= RECENT_POSITION_MS);
+    const location = !retry && reusable ? lastLocation : await getPosition();
+    const pos = location.position;
+    setLastLocation(location);
+    if (!pos) {
+      setAskReason("Sem posição disponível: escreva uma justificativa para iniciar.");
+      if (retry || justificativa.trim().length < 3) return;
+    } else if (retry) { setAskReason(null); }
     try {
-      const r = await visitAction<{ distancia_m: number | null }>({ id: s!.id, action: "checkin", sem_permissao: !pos, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
+      const r = await visitAction<{ distancia_m: number | null }>({ id: s.id, action: "checkin", geolocation_error: location.error, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
       setStatus("em_atendimento"); done();
-      if (s!.client_id && pos && tecnico) setAskLoc(true);
+      if (s.client_id && pos && tecnico) setAskLoc(true);
       toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : undefined });
     } catch (e) {
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
@@ -136,7 +145,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {exec?.checkin && (
           <p className="text-sm">Check-in {new Date(exec.checkin.checkin_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-            {exec.checkin.distancia_m !== null ? ` · ${exec.checkin.distancia_m} m do endereço` : exec.checkin.sem_permissao ? " · sem localização" : ""}
+            {exec.checkin.distancia_m !== null ? ` · ${exec.checkin.distancia_m} m do endereço` : exec.checkin.latitude == null ? " · sem localização" : ""}
+            {exec.checkin.geolocation_error && <span className="block text-muted-foreground">{locationErrorMessage(exec.checkin.geolocation_error)}</span>}
             {exec.checkin.fora_do_raio && <Badge variant="destructive" className="ml-2">Fora do local</Badge>}
             {exec.checkin.justificativa && <span className="block text-muted-foreground">Justificativa: {exec.checkin.justificativa}</span>}</p>
         )}
@@ -144,9 +154,13 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         {(status === "agendado" || status === "confirmado") && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.</p>
+            {lastLocation?.error && <div role="status" className="space-y-2">
+              <p className="text-sm text-warning">{locationErrorMessage(lastLocation.error)}{lastLocation.cached && " Última posição recente recuperada."}</p>
+              <Button variant="outline" className="w-full min-h-11" disabled={busy} onClick={() => checkin(true)}><MapPin className="h-4 w-4" />Tentar de novo</Button>
+            </div>}
             {askReason && (<div className="space-y-2"><Label>{askReason}</Label>
               <Textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} maxLength={300} placeholder="Ex.: cliente pediu para encontrar no depósito" /></div>)}
-            <Button className="w-full min-h-12 text-base" onClick={checkin} disabled={busy}>
+            <Button className="w-full min-h-12 text-base" onClick={() => checkin()} disabled={busy}>
               {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlayCircle className="h-5 w-5" />}Iniciar atendimento</Button>
             <Button variant="outline" className="w-full min-h-11" onClick={() => setShowNao((v) => !v)}><XCircle className="h-4 w-4" />Não realizado</Button>
           </div>
