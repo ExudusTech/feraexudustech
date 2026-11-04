@@ -6,6 +6,8 @@ import { buildColumns, TIPO_DOT, type PipelineColumn } from "@/lib/lead-pipeline
 import { useIsMobile } from "@/hooks/use-mobile";
 import LeadCard from "./LeadCard";
 import LeadFormDialog from "./LeadFormDialog";
+import ConvertLeadDialog from "./ConvertLeadDialog";
+import { isConversionStageTipo } from "@/lib/empresa-contatos";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Loader2 } from "lucide-react";
@@ -21,6 +23,7 @@ export default function LeadPipeline() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [draggedLeadId, setDraggedLeadId] = useState<string | null>(null);
+  const [convertLead, setConvertLead] = useState<Lead | null>(null);
 
   const [searchParams] = useSearchParams();
   const linkedId = searchParams.get("lead");
@@ -37,8 +40,12 @@ export default function LeadPipeline() {
 
   const moveTo = (leadId: string, stageId: string) => {
     const lead = leads.find(l => l.id === leadId);
-    if (lead && lead.stage_id !== stageId) updateLead.mutate({ id: leadId, stage_id: stageId });
+    if (!lead || lead.stage_id === stageId) return;
+    updateLead.mutate({ id: leadId, stage_id: stageId });
+    const st = stages.find((s) => s.id === stageId);
+    if (isConversionStageTipo(st?.tipo) && !lead.client_id) setConvertLead(lead);
   };
+  const convertDialog = <ConvertLeadDialog leadId={convertLead?.id ?? null} nome={convertLead?.title} onOpenChange={(o) => !o && setConvertLead(null)} />;
   const open = (lead: Lead | null) => { setSelectedLead(lead); setDialogOpen(true); };
 
   if (isLoading || loadingStages) {
@@ -90,6 +97,7 @@ export default function LeadPipeline() {
           ))}
         </div>
         <LeadFormDialog open={dialogOpen} onOpenChange={setDialogOpen} lead={selectedLead} />
+        {convertDialog}
       </>
     );
   }
@@ -116,6 +124,7 @@ export default function LeadPipeline() {
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
       <LeadFormDialog open={dialogOpen} onOpenChange={setDialogOpen} lead={selectedLead} />
+      {convertDialog}
     </>
   );
 }
