@@ -2,7 +2,7 @@
 // maintenance_schedule (replacement work orders and urgent requests). No parallel tables.
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao } from "../_shared/base-instalada.ts";
+import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao } from "../_shared/base-instalada.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 
@@ -142,6 +142,8 @@ Deno.serve(async (req) => {
       const err = avaliacaoErro({ estado: b.estado, foto_path: foto, precisa_substituir: !!b.precisa_substituir, item: itemTxt });
       if (err) return json({ error: err }, 400);
       const manut = Array.isArray(b.manutencoes) ? b.manutencoes.filter((m: unknown) => MANUT.includes(m as string)) : [];
+      const acaoErr = acaoRevisitaErro(b.estado, manut.includes("consertado"), !!b.precisa_substituir);
+      if (acaoErr) return json({ error: acaoErr }, 400);
       const row = { estado: b.estado, itens: manut, precisa_substituir: !!b.precisa_substituir, foto_path: foto || null, observacoes: txt(b.observacao, 500) || null, autor_id: user.id };
       const { data: prev } = await admin.from("schedule_evidencias").select("id").eq("schedule_id", s.id).eq("comodato_id", p.id).not("estado", "is", null).maybeSingle();
       const { data: av, error } = prev

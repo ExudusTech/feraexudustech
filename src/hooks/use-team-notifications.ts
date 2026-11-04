@@ -3,7 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
 import { normalizeWhatsapp } from "@/lib/whatsapp";
-export const TEAM_EVENTS = { agendamento_comercial: "Agendamento — visita comercial", agendamento_tecnico: "Agendamento — visita técnica", transferencia: "Transferência", lead_matriz: "Lead da Matriz", visita_concluida: "Visita concluída (check-out)", checkin_fora_do_local: "Check-in fora do local", visita_atrasada: "Visita atrasada sem check-in", visita_sem_confirmacao: "Cliente não confirmou a visita", manutencao_do_dia: "Manutenções do dia (consultor, 7h)", pedido_emergencial: "Ocorrência urgente / visita emergencial", pedido_emergencial_decidido: "Visita emergencial aprovada ou recusada" };
+export const TEAM_EVENTS = { agendamento_comercial: "Agendamento — visita comercial", agendamento_tecnico: "Agendamento — visita técnica", transferencia: "Transferência", lead_matriz: "Lead da Matriz", visita_concluida: "Visita concluída (check-out)", checkin_fora_do_local: "Check-in fora do local", visita_atrasada: "Visita atrasada sem check-in", visita_sem_confirmacao: "Cliente não confirmou a visita", manutencao_do_dia: "Manutenções do dia (consultor, 7h)", pedido_emergencial: "Ocorrência urgente / visita emergencial", pedido_emergencial_decidido: "Visita emergencial aprovada ou recusada", visita_aberta: "Visita aberta há muitas horas" };
+/** Field-ops events pre-selected for managers (gestor / super admin). */
+export const MANAGER_DEFAULT_EVENTS = ["visita_concluida", "checkin_fora_do_local", "visita_atrasada", "visita_aberta"];
+export function defaultEventsFor(roles: string[], current: string[]): string[] {
+  return roles.some((r) => r === "gestor" || r === "super_admin") ? [...new Set([...current, ...MANAGER_DEFAULT_EVENTS])] : current;
+}
 export type TeamEvent = keyof typeof TEAM_EVENTS;
 export type RecipientKind = "usuario" | "externo";
 export interface TeamRecipient { id: string; tipo: RecipientKind; user_id: string | null; nome: string; whatsapp: string | null; email: string | null; papel: string; eventos: string[]; ativo: boolean }

@@ -1,7 +1,7 @@
 // Runs every 15 minutes: D-1 and same-day visit confirmations to the client's chat, "no answer" alert to the consultant,
 // late-visit alerts to managers, and daily retention cleanup of raw locations/photos. Every step is claimed per row, so reruns are harmless.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage } from "../_shared/visit-exec.ts";
+import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage, horasAberta, openVisitMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
 
@@ -82,6 +82,20 @@ Deno.serve(async () => {
       }
     } catch { console.error("[confirmar-visitas] row failed"); }
   }
+
+  // Visits left open too long (≥ 8 h or since an earlier day): one alert per visit to managers and the consultant.
+  try {
+    const { data: abertas } = await admin.from("schedules").select("id, organization_id, title, assigned_to, checkin_em, clients(name), leads(empresa_nome, company)")
+      .eq("status", "em_atendimento").not("checkin_em", "is", null).limit(500);
+    for (const s of abertas ?? []) {
+      const horas = horasAberta(s.checkin_em, now);
+      if (horas === null) continue;
+      const { data: who } = s.assigned_to ? await admin.from("profiles").select("name").eq("user_id", s.assigned_to).maybeSingle() : { data: null };
+      const l: any = s.leads;
+      await teamAlert(admin, s.organization_id, "visita_aberta", openVisitMessage({ id: s.id, cliente: (s as any).clients?.name || l?.empresa_nome || l?.company || s.title || "",
+        consultor: who?.name ?? "Sem responsável", tipo: "", horas }), { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id", extraUserIds: s.assigned_to ? [s.assigned_to] : [] });
+    }
+  } catch { console.error("[confirmar-visitas] open visits failed"); }
 
   const spH = (now.getUTCHours() + 21) % 24;
   // Maintenance plans: once a day (06:00–06:15 São Paulo) create the next visits inside each plan's horizon. Unique (plan, date) keeps reruns harmless.

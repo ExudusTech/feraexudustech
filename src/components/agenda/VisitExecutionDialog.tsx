@@ -21,6 +21,8 @@ import {
 } from "@/lib/visit-exec";
 import { clearDraft, faltasDetalhadas, readDraft, writeDraft, type FaltaAlvo } from "@/lib/visit-draft";
 import { FREQ_LABEL, FREQ_RAPIDAS } from "@/lib/base-instalada";
+import { serviceKind } from "@/lib/service-kind";
+import { spDate, sugestaoTermino } from "@/lib/visit-exec";
 import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
@@ -65,7 +67,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [obs, setObs] = useState(""); const [itens, setItens] = useState<string[]>([]); const [comodato, setComodato] = useState("");
   const [resultado, setResultado] = useState(""); const [resumo, setResumo] = useState(""); const [proximo, setProximo] = useState("");
   const [dataAlvo, setDataAlvo] = useState(""); const [motivoPerda, setMotivoPerda] = useState(""); const [confPerdido, setConfPerdido] = useState(false);
-  const [descricao, setDescricao] = useState(""); const [frequencia, setFrequencia] = useState("");
+  const [descricao, setDescricao] = useState(""); const [frequencia, setFrequencia] = useState(""); const [termino, setTermino] = useState("");
+  const checkinEm = (s as any)?.checkin_em as string | null | undefined;
+  const outroDia = !!checkinEm && spDate(checkinEm) < spDate(new Date());
+  useEffect(() => { if (outroDia && checkinEm) setTermino(sugestaoTermino(checkinEm, 60)); }, [outroDia, checkinEm]);
   const usaPlano = tecnico && !!s?.client_id;
   const { data: plano } = useQuery({
     queryKey: ["plano-cliente", s?.client_id], enabled: open && usaPlano,
@@ -130,7 +135,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
   const checkout = () => run(async () => {
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao, frequencia: frequencia || undefined });
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
     setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
@@ -143,6 +148,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
   const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
     fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
+  if (outroDia && !/^\d{2}:\d{2}$/.test(termino)) faltas.push({ label: "horário real de término", alvo: "resultado" });
   const irPara = (alvo: FaltaAlvo) => {
     if (alvo === "registro") setRegistroAberto(true);
     setTimeout(() => document.getElementById(`visita-${alvo}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -152,11 +158,11 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{clientName || s.title}</DialogTitle>
-          <DialogDescription>{s.scheduled_date.split("-").reverse().join("/")} {s.start_time?.slice(0, 5)} · {tecnico ? "Visita técnica" : "Visita comercial"}</DialogDescription>
+          <DialogDescription>{s.scheduled_date.split("-").reverse().join("/")} {s.start_time?.slice(0, 5)} · {serviceKind(s.schedule_type, s.schedule_subtype)}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-2">
           <Badge>{STATUS_LABEL[status] ?? status}</Badge>
-          {s.confirmacao_status && CONFIRMACAO_LABEL[s.confirmacao_status] && <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
+          {(status === "agendado" || status === "confirmado") && s.confirmacao_status && CONFIRMACAO_LABEL[s.confirmacao_status] && <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
         </div>
         {s.location && <p className="text-sm text-muted-foreground flex gap-1"><MapPin className="h-4 w-4 mt-0.5 shrink-0" />{s.location}</p>}
 
@@ -225,6 +231,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
               <h3 id="visita-resultado" className="font-semibold text-sm scroll-mt-4">Encerrar</h3>
               <div className={tecnico ? "grid grid-cols-2 gap-2" : "grid grid-cols-3 gap-2"}>{(tecnico ? ["concluida", "com_problema"] : ["boa", "mediana", "ruim"]).map((r) => (
                 <Button key={r} type="button" variant={resultado === r ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal leading-tight text-sm" onClick={() => setResultado(r)}>{RESULT_LABEL[r]}</Button>))}</div>
+              {outroDia && <div className="space-y-1 rounded-md border border-warning p-2">
+                <Label htmlFor="termino-real">A visita ficou aberta desde {checkinEm!.slice(8, 10)}/{checkinEm!.slice(5, 7)}. Que horas ela terminou de verdade?</Label>
+                <Input id="termino-real" type="time" value={termino} onChange={(e) => setTermino(e.target.value)} />
+                <p className="text-xs text-muted-foreground">Sugestão: check-in + 1 h. A duração é calculada por este horário.</p></div>}
               <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
               <div id="visita-proximo" className="space-y-2 scroll-mt-4">
                 <Label>Próximo passo</Label>

@@ -218,6 +218,13 @@
       "when": 1793757244758,
       "tag": "0030_checkin_geolocation_diagnostics",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793809580744,
+      "tag": "0031_team_events_all",
+      "breakpoints": true
     }
   ]
 }
