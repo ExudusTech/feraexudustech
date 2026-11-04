@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { usePermissions } from "@/hooks/use-permissions";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { toast } from "@/hooks/use-toast";
-import { TEAM_EVENTS, recipientConflict, useTeamRecipients, useSaveTeamRecipient, type RecipientInput, type TeamRecipient, type TeamEvent } from "@/hooks/use-team-notifications";
+import { TEAM_EVENTS, defaultEventsFor, recipientConflict, useTeamRecipients, useSaveTeamRecipient, type RecipientInput, type TeamRecipient, type TeamEvent } from "@/hooks/use-team-notifications";
 const empty: RecipientInput = { tipo: "usuario", user_id: null, nome: "", whatsapp: "", email: "", papel: "", eventos: [], ativo: true };
 export default function TeamNotifications() {
   const { isAdmin, role, getRoleLabel } = usePermissions(); const canEdit = isAdmin || role === "gestor";
