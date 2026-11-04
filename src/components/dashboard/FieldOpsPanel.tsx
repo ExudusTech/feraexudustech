@@ -34,7 +34,7 @@ export default function FieldOpsPanel() {
     queryKey: ["field-checkins", user?.organization_id, weekStart], enabled: !!user?.organization_id,
     queryFn: async () => {
       if (!user?.organization_id) return [];
-      const { data } = await (supabase as any).from("schedule_checkins").select("schedule_id, checkin_em, latitude, longitude, distancia_m, fora_do_raio, sem_permissao, geolocation_error, user_id")
+      const { data } = await (supabase as any).from("schedule_checkins").select("schedule_id, checkin_em, latitude, longitude, distancia_m, fora_do_raio, sem_permissao, geolocation_error, destino_sem_coordenadas, user_id")
         .eq("organization_id", user.organization_id).gte("checkin_em", `${weekStart}T00:00:00-03:00`);
       return (data ?? []) as any[];
     },
@@ -91,6 +91,7 @@ export default function FieldOpsPanel() {
         <Metric label="Duração média (min)" value={m.duracaoMedia} />
         <Metric label="Atrasadas sem check-in" value={m.atrasadas.length} f="atrasadas" tone="alert" />
         <Metric label="Check-in fora do local" value={m.foraDoLocal.length} f="fora_do_local" tone="alert" />
+        <Metric label="Local do cliente sem coordenadas" value={m.semCoordenadas.length} f="sem_coordenadas" tone="alert" />
         {Object.entries(m.resultados).map(([k, v]) => <Metric key={k} label={RESULT_LABEL[k] ?? k} value={v} f={`resultado:${k}`} />)}
       </div>
       {filter && (
@@ -116,8 +117,8 @@ export default function FieldOpsPanel() {
                 <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 {points.map((c) => (
                   <CircleMarker key={c.schedule_id} center={[c.latitude, c.longitude]} radius={9}
-                    pathOptions={{ color: c.fora_do_raio ? "hsl(var(--destructive))" : "hsl(var(--primary))" }} eventHandlers={{ click: () => setSelected(c.schedule_id) }}>
-                    <Tooltip>{names.get(c.user_id) ?? ""} · {todayList.find((s) => s.id === c.schedule_id)?.title}{c.distancia_m != null ? ` · ${c.distancia_m} m` : ""}</Tooltip>
+                    pathOptions={{ color: c.fora_do_raio ? "hsl(var(--destructive))" : c.destino_sem_coordenadas ? "hsl(var(--warning))" : "hsl(var(--primary))" }} eventHandlers={{ click: () => setSelected(c.schedule_id) }}>
+                    <Tooltip>{names.get(c.user_id) ?? ""} · {todayList.find((s) => s.id === c.schedule_id)?.title}{c.distancia_m != null ? ` · ${c.distancia_m} m` : c.destino_sem_coordenadas ? " · local do cliente sem coordenadas" : ""}</Tooltip>
                   </CircleMarker>
                 ))}
               </MapContainer>
