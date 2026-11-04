@@ -85,8 +85,8 @@ export interface Compativel { id: string; brand?: string | null; is_dispenser?: 
 const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 /**
- * Refills compatible with a dispenser: explicit family mapping (compatible_dispenser_families ∋ dispenser family),
- * else the refill specifications naming the dispenser, else the same brand. `mapeado` tells whether a real mapping was used.
+ * Refills compatible with a dispenser: refill specifications naming the dispenser, else the family mapping
+ * (compatible_dispenser_families ∋ dispenser family), else the same brand. `mapeado` tells whether a real mapping was used.
  */
 export function refisCompativeis<T extends Compativel>(disp: Compativel | null | undefined, refis: T[]): { lista: T[]; mapeado: boolean } {
   if (!disp) return { lista: refis, mapeado: false };
@@ -94,7 +94,8 @@ export function refisCompativeis<T extends Compativel>(disp: Compativel | null |
   const byFam = fam ? refis.filter((r) => (r.compatible_dispenser_families ?? []).includes(fam)) : [];
   const dn = norm(disp.name);
   const bySpec = dn.length >= 4 ? refis.filter((r) => norm(JSON.stringify(r.specifications ?? "")).includes(dn)) : [];
-  const mapped = [...new Map([...byFam, ...bySpec].map((r) => [r.id, r])).values()];
+  // The catalog naming this exact dispenser is the most specific mapping; the family mapping comes next.
+  const mapped = bySpec.length ? bySpec : byFam;
   if (mapped.length) return { lista: mapped, mapeado: true };
   const brand = norm(disp.brand);
   return { lista: brand ? refis.filter((r) => norm(r.brand) === brand) : refis, mapeado: false };
