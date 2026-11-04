@@ -82,7 +82,7 @@ export function proximaVisitaPlano(p: Plano, today: string): string {
 
 export interface Compativel { id: string; brand?: string | null; is_dispenser?: boolean | null; dispenser_family_id?: string | null;
   compatible_dispenser_families?: string[] | null; specifications?: unknown; linha_produto?: string | null; name?: string }
-const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const normTxt = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 /**
  * Refills compatible with a dispenser: refill specifications naming the dispenser, else the family mapping
@@ -92,13 +92,13 @@ export function refisCompativeis<T extends Compativel>(disp: Compativel | null |
   if (!disp) return { lista: refis, mapeado: false };
   const fam = disp.dispenser_family_id;
   const byFam = fam ? refis.filter((r) => (r.compatible_dispenser_families ?? []).includes(fam)) : [];
-  const dn = norm(disp.name);
-  const bySpec = dn.length >= 4 ? refis.filter((r) => norm(JSON.stringify(r.specifications ?? "")).includes(dn)) : [];
+  const dn = normTxt(disp.name);
+  const bySpec = dn.length >= 4 ? refis.filter((r) => normTxt(JSON.stringify(r.specifications ?? "")).includes(dn)) : [];
   // The catalog naming this exact dispenser is the most specific mapping; the family mapping comes next.
   const mapped = bySpec.length ? bySpec : byFam;
   if (mapped.length) return { lista: mapped, mapeado: true };
-  const brand = norm(disp.brand);
-  return { lista: brand ? refis.filter((r) => norm(r.brand) === brand) : refis, mapeado: false };
+  const brand = normTxt(disp.brand);
+  return { lista: brand ? refis.filter((r) => normTxt(r.brand) === brand) : refis, mapeado: false };
 }
 
 /** Ids of active points still without an evaluation in this visit. */
