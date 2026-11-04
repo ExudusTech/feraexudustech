@@ -125,3 +125,36 @@ describe("ajustes do teste em campo 04/11", () => {
     expect(g.map((x) => x.nome)).toEqual(["Arilson", "Marcos", "Sem responsável"]);
   });
 });
+
+import { horasAberta, duracaoComTermino, sugestaoTermino } from "@/lib/visit-exec";
+import { acaoRevisitaErro } from "@/lib/base-instalada";
+import { scheduleEvent, scheduleMessage, serviceLabel } from "../../supabase/functions/_shared/schedule-notify";
+import { defaultEventsFor } from "@/hooks/use-team-notifications";
+
+describe("complemento 04/11", () => {
+  it("revisita: OK sem foto; atenção/defeito exige o que foi feito", () => {
+    expect(acaoRevisitaErro("verde", false, false)).toBeNull();
+    expect(acaoRevisitaErro("amarelo", false, false)).toMatch(/o que foi feito/);
+    expect(acaoRevisitaErro("vermelho", false, true)).toBeNull();
+    expect(acaoRevisitaErro("amarelo", true, false)).toBeNull();
+  });
+  it("manutenção mostra 'Manutenção' e não avisa na criação pelo próprio consultor", () => {
+    expect(serviceLabel("manutencao", "MANUTENCAO")).toBe("Manutenção");
+    expect(scheduleEvent("manutencao", "MANUTENCAO", "campo")).toBeNull();
+    expect(scheduleEvent("manutencao", "MANUTENCAO", "manual", true)).toBeNull();
+    expect(scheduleEvent("manutencao", "MANUTENCAO", "manual", false)).toBe("agendamento_tecnico");
+    expect(scheduleMessage("agendamento_tecnico", { id: "1", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", link_path: "/x" })).toMatch(/^🔧 Nova manutenção agendada/);
+  });
+  it("visita aberta desde ontem é sinalizada e pede o término real", () => {
+    const now = new Date("2026-11-04T15:00:00Z");
+    expect(horasAberta("2026-11-03T18:00:00Z", now)).toBe(21);
+    expect(horasAberta("2026-11-04T13:00:00Z", now)).toBeNull();
+    expect(duracaoComTermino("2026-11-03T18:00:00Z", null, now)).toEqual({ error: "Informe o horário real de término da visita" });
+    expect(duracaoComTermino("2026-11-03T18:00:00Z", "16:00", now)).toEqual({ min: 60 });
+    expect(sugestaoTermino("2026-11-03T18:00:00Z", 60)).toBe("16:00");
+  });
+  it("gestor e super admin já vêm com os eventos de campo marcados", () => {
+    expect(defaultEventsFor(["gestor"], [])).toEqual(["visita_concluida", "checkin_fora_do_local", "visita_atrasada", "visita_aberta"]);
+    expect(defaultEventsFor(["vendedor"], [])).toEqual([]);
+  });
+});
