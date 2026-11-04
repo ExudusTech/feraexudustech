@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   // Visit the caller may execute (assigned consultant or manager).
   const loadVisit = async (id: unknown) => {
     if (!UUID.test(String(id ?? ""))) return null;
-    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, clients(name, latitude)").eq("id", id).maybeSingle();
+    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, clients(name, latitude)").eq("id", id).maybeSingle();
     if (!s) return null;
     if (!privileged && s.assigned_to !== user.id && !(s.assigned_to === null && s.created_by === user.id)) return null;
     return s as any;

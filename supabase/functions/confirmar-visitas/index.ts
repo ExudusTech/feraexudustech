@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage, horasAberta, openVisitMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
+import { geocodePending } from "../_shared/geocode.ts";
 
 const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "Content-Type": "application/json" } });
 
@@ -23,7 +24,7 @@ Deno.serve(async () => {
   const now = new Date();
   const today = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
   const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-  const out = { confirmacoes: 0, falhas: 0, sem_resposta: 0, atrasos: 0, limpeza: 0, manutencoes_geradas: 0, avisos_manutencao: 0 };
+  const out: Record<string, unknown> = { confirmacoes: 0, falhas: 0, sem_resposta: 0, atrasos: 0, limpeza: 0, manutencoes_geradas: 0, avisos_manutencao: 0 };
   const { data: rows } = await admin.from("schedules")
     .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, plano_manutencao_id, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
