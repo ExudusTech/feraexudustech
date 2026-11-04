@@ -29,7 +29,7 @@ describe("consultant field flow: start → new point with photo → evaluate →
 
     await visitAction({ id: "s1", action: "checkin", sem_permissao: true, justificativa: "Atendimento no rio" });
     // Before any point: the footer lists everything missing.
-    expect(faltasParaEncerrar(closing)).toEqual(["cadastrar um ponto ou tirar uma foto do equipamento", "resultado", "resumo", "próximo passo"]);
+    expect(faltasParaEncerrar(closing)).toEqual(["cadastrar um ponto ou tirar uma foto do equipamento", "resultado", "próximo passo"]);
 
     const ponto = await baseAction<{ id: string }>({ action: "ponto_novo", schedule_id: "s1", localizacao_interna: "Banheiro", foto_path: "org/s1/x.jpg" });
     expect(ponto.id).toBe("p1");
@@ -61,11 +61,11 @@ describe("consultant field flow: start → new point with photo → evaluate →
 });
 
 describe("closing requirements", () => {
-  it("follow-up needs a date; lost needs reason and confirmation", () => {
-    const b = { ...closing, fotoObrigatoria: false, resultado: "boa", resumo: "ok ok" };
-    expect(faltasParaEncerrar({ ...b, proximo: "follow_up" })).toEqual(["data do follow-up"]);
-    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço" })).toEqual(["motivo e confirmação da perda"]);
-    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço", confPerdido: true })).toEqual([]);
+  it("return needs a date; lost needs only a reason", () => {
+    const b = { ...closing, fotoObrigatoria: false, resultado: "boa", resumo: "" };
+    expect(faltasParaEncerrar({ ...b, proximo: "follow_up" })).toEqual(["data do retorno"]);
+    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "" })).toEqual(["motivo da perda"]);
+    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço" })).toEqual([]);
   });
   it("counts several pending points", () => {
     expect(faltasParaEncerrar({ ...closing, pendingPoints: 3, totalPoints: 3 })[0]).toBe("avaliar 3 pontos");
