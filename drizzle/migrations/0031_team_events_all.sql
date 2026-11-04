@@ -1,0 +1,2 @@
+ALTER TABLE public.notification_recipients DROP CONSTRAINT team_recipient_events_valid;
+ALTER TABLE public.notification_recipients ADD CONSTRAINT team_recipient_events_valid CHECK (eventos <@ ARRAY['agendamento_comercial','agendamento_tecnico','transferencia','lead_matriz','visita_concluida','checkin_fora_do_local','visita_atrasada','visita_sem_confirmacao','manutencao_do_dia','pedido_emergencial','pedido_emergencial_decidido','visita_aberta']::text[]);
