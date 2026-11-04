@@ -5,8 +5,8 @@ export type Estado = typeof ESTADOS[number];
 export const ESTADO_LABEL: Record<string, string> = { verde: "OK", amarelo: "Atenção", vermelho: "Ruim" };
 export const MANUTENCOES = ["refil_reposto", "limpeza", "aparelho_trocado", "problema"] as const;
 /** Also accepted from older clients. */
-export const MANUTENCOES_ACEITAS = [...MANUTENCOES, "ajuste"] as const;
-export const MANUTENCAO_LABEL: Record<string, string> = { refil_reposto: "Refil reposto", limpeza: "Limpeza", aparelho_trocado: "Aparelho trocado", problema: "Problema", ajuste: "Ajuste" };
+export const MANUTENCOES_ACEITAS = [...MANUTENCOES, "ajuste", "consertado"] as const;
+export const MANUTENCAO_LABEL: Record<string, string> = { refil_reposto: "Refil reposto", limpeza: "Limpeza", aparelho_trocado: "Aparelho trocado", problema: "Problema", ajuste: "Ajuste", consertado: "Consertado no local" };
 export const FREQUENCIAS = ["semanal", "quinzenal", "mensal", "personalizada"] as const;
 export type Frequencia = typeof FREQUENCIAS[number];
 export const FREQ_LABEL: Record<string, string> = { semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal", personalizada: "Personalizada" };
@@ -62,6 +62,11 @@ export function avaliacaoErro(a: AvaliacaoInput): string | null {
   if (a.estado !== "verde" && !a.foto_path) return "Tire uma foto do ponto em atenção ou ruim";
   if (a.precisa_substituir && !(a.item ?? "").trim()) return "Informe o item a levar para substituir";
   return null;
+}
+
+/** Revisit of an existing point in attention/defect: must say what was done (fixed on site or needs replacement). */
+export function acaoRevisitaErro(estado: string, consertado: boolean, substituir: boolean): string | null {
+  return estado !== "verde" && !consertado && !substituir ? "Diga o que foi feito: consertado no local ou precisa substituir" : null;
 }
 
 /** New point: internal location and photo are mandatory. */

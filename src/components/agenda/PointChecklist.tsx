@@ -63,7 +63,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
     toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
   const startEval = (id: string) => { setOpen(id); setF({ manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] }); };
 
-  const salvar = (id: string, over: { estado?: string; subst?: boolean; foto?: string } = {}) => run(async () => {
+  const salvar = (id: string, over: Partial<typeof f> = {}) => run(async () => {
     const v = { ...f, ...over };
     const r = await baseAction<{ pedido_id: string | null }>({ action: "avaliar", schedule_id: scheduleId, comodato_id: id, estado: v.estado,
       manutencoes: v.estado !== "verde" && v.acao === "consertado" ? [...v.manut, "consertado"] : v.manut, acao: v.estado === "verde" ? undefined : v.acao,
@@ -94,11 +94,15 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
         const ocs = (data?.ocorrencias ?? []).filter((o) => o.comodato_id === p.id);
         return (
           <div key={p.id} className="rounded-md border p-2 space-y-2">
-            <button type="button" className="w-full text-left flex items-center gap-2 min-h-11" onClick={() => open === p.id ? setOpen(null) : startEval(p.id)}>
+            <div className="flex items-center gap-2">
+            <button type="button" className="flex-1 min-w-0 text-left flex items-center gap-2 min-h-11" onClick={() => open === p.id ? setOpen(null) : startEval(p.id)}>
               {imageOf(p.product_id) && <img src={imageOf(p.product_id)!} alt="" className="h-10 w-10 rounded object-cover" loading="lazy" />}
               <span className="flex-1 text-sm"><strong>{p.localizacao_interna || "Ponto"}</strong> — {nameOf(p.product_id) ?? "Dispenser"}{nameOf(p.refil_product_id) && ` + ${nameOf(p.refil_product_id)}`}{p.quantidade && p.quantidade !== "1" && ` (${p.quantidade}x)`}</span>
-              {av ? <Badge className={ESTADO_CLASS[av.estado]}>{ESTADO_LABEL[av.estado]}</Badge> : <Badge variant="outline">Avaliar</Badge>}
+              {av && <Badge className={ESTADO_CLASS[av.estado]}>{ESTADO_LABEL[av.estado]}</Badge>}
             </button>
+            {!av && <Button type="button" size="sm" variant="outline" className="min-h-11 shrink-0" disabled={busy} aria-label={`OK: ${p.localizacao_interna || "ponto"}`}
+              onClick={() => salvar(p.id, { estado: "verde", subst: false, foto: undefined, manut: [], obs: "", resolver: [] })}>🟢 OK</Button>}
+            </div>
             {ocs.length > 0 && <p className="text-xs text-warning">Levar: {ocs.map((o) => `${o.quantidade}x ${o.item_descricao}`).join(", ")}</p>}
             {open === p.id && (
               <div className="space-y-2">
