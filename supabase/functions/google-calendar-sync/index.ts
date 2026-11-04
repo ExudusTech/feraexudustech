@@ -13,7 +13,10 @@ Deno.serve(async (req) => {
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const auth = req.headers.get("Authorization") ?? "";
   // A signed-in user may trigger the sync only as admin/gestor/super_admin of the NitsClean organization.
-  if (auth && !auth.includes(Deno.env.get("SUPABASE_ANON_KEY") ?? "__none__")) {
+  let role = "";
+  try { role = JSON.parse(atob(auth.replace(/^Bearer\s+/i, "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).role ?? ""; } catch { /* not a JWT */ }
+  // The daily cron calls with the project anon key (role anon); the 1-minute guard below limits repeat calls.
+  if (role !== "anon") {
     const caller = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
     const { data: { user } } = await caller.auth.getUser();
     if (!user) return json({ error: "Não autorizado" }, 401);
