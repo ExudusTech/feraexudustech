@@ -2,7 +2,7 @@
 // maintenance_schedule (replacement work orders and urgent requests). No parallel tables.
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { avaliacaoErro, ESTADO_LABEL, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao } from "../_shared/base-instalada.ts";
+import { avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao } from "../_shared/base-instalada.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 
@@ -13,7 +13,7 @@ const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
 const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar"];
-const MANUT = ["refil_reposto", "limpeza", "ajuste"];
+const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -114,6 +114,17 @@ Deno.serve(async (req) => {
         cidade: c?.city ?? null, estado: c?.state ?? null, endereco_instalacao: c?.address ?? null, status: "ATIVO", origem: "campo",
         periodicidade_manut: "mensal", data_inicio: new Date().toISOString().slice(0, 10), created_by: user.id }).select("id").single();
       if (error) { console.error("[base-instalada] ponto", error.code); return json({ error: "Não foi possível salvar o ponto" }, 400); }
+      // The new point leaves already evaluated (estado + checks + the same photo), so closing is never blocked by a hidden step.
+      if (b.estado !== undefined && b.estado !== null) {
+        const aErr = avaliacaoErro({ estado: b.estado, foto_path: foto });
+        if (!aErr) {
+          const manut = Array.isArray(b.manutencoes) ? b.manutencoes.filter((m: unknown) => MANUT.includes(m as string)) : [];
+          const { error: ae } = await admin.from("schedule_evidencias").insert({ organization_id: s.organization_id, schedule_id: s.id, comodato_id: data.id,
+            estado: b.estado, itens: manut, precisa_substituir: false, foto_path: foto, observacoes: txt(b.observacao, 500) || null, autor_id: user.id });
+          if (ae) console.error("[base-instalada] ponto aval", ae.code);
+          else await admin.from("comodatos").update({ estado_atual: b.estado, ultima_avaliacao_em: new Date().toISOString() }).eq("id", data.id);
+        }
+      }
       return json({ ok: true, id: data.id });
     }
     case "avaliar": {

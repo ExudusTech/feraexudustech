@@ -5,7 +5,7 @@ import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
   NEXT_LABEL, nextMaintenance, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
-import { pontosPendentes } from "../_shared/base-instalada.ts";
+import { FREQ_RAPIDAS, pontosPendentes, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -138,6 +138,25 @@ Deno.serve(async (req) => {
         const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id));
         if (pend.length) return json({ error: `Avalie todos os pontos antes de encerrar (${pend.length} pendente(s))` }, 400);
         checklist = (pts ?? []).some((p: any) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");
+      }
+      // Maintenance: the next step is the maintenance plan's next visit; without a plan, the consultant picks a frequency and the plan is created.
+      if (tecnico && s.client_id && (!b.proximo || b.proximo === "plano")) {
+        const today0 = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+        let { data: plano } = await admin.from("planos_manutencao").select("id, frequencia, intervalo_dias, dia_semana, data_inicio")
+          .eq("client_id", s.client_id).eq("organization_id", s.organization_id).eq("ativo", true).limit(1).maybeSingle();
+        if (!plano) {
+          if (!FREQ_RAPIDAS.includes(b.frequencia)) return json({ error: "Escolha a frequência da próxima visita" }, 400);
+          const { data: novo, error: pe0 } = await admin.from("planos_manutencao").insert({ organization_id: s.organization_id, client_id: s.client_id,
+            frequencia: b.frequencia, dia_semana: new Date(`${today0}T12:00:00Z`).getUTCDay(), hora_inicio: String(s.start_time ?? "09:00").slice(0, 5),
+            consultor_id: s.assigned_to ?? user.id, data_inicio: today0, created_by: user.id }).select("id, frequencia, intervalo_dias, dia_semana, data_inicio").single();
+          if (pe0) { console.error("[visita-acoes] plano", pe0.code); return json({ error: "Não foi possível criar o plano de manutenção" }, 400); }
+          plano = novo;
+        }
+        const { data: prox } = await admin.from("schedules").select("scheduled_date").eq("client_id", s.client_id).eq("plano_manutencao_id", plano!.id)
+          .gt("scheduled_date", today0).in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle();
+        b.proximo = "novo_agendamento";
+        b.data_alvo = prox?.scheduled_date ?? proximaVisitaPlano(plano as any, today0);
+        b.descricao = "Próxima visita do plano de manutenção";
       }
       const err = validateCheckout({ status: s.status, resultado: b.resultado, resumo: b.resumo, proximo: b.proximo, data_alvo: b.data_alvo,
         motivo_perda: b.motivo_perda, confirmar_perdido: b.confirmar_perdido, commercial: !tecnico, fotos: count ?? 0,
