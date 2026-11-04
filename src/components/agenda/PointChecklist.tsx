@@ -56,16 +56,18 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
 
   const [open, setOpen] = useDraftState<string | null>(`pt-open:${scheduleId}`, null);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useDraftState<{ estado?: string; manut: string[]; subst: boolean; item: string; itemId: string; qtd: string; urg: boolean; foto?: string; obs: string; resolver: string[] }>(`pt-aval:${scheduleId}`, { manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] });
+  const [f, setF] = useDraftState<{ estado?: string; acao?: string; manut: string[]; subst: boolean; item: string; itemId: string; qtd: string; urg: boolean; foto?: string; obs: string; resolver: string[] }>(`pt-aval:${scheduleId}`, { manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] });
   const [novo, setNovo] = useDraftState<{ local: string; disp: string; refil: string; qtd: string; foto?: string; obs: string; estado?: string; manut?: string[] } | null>(`pt-novo:${scheduleId}`, null);
 
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
     toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
   const startEval = (id: string) => { setOpen(id); setF({ manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] }); };
 
-  const salvar = (id: string) => run(async () => {
-    const r = await baseAction<{ pedido_id: string | null }>({ action: "avaliar", schedule_id: scheduleId, comodato_id: id, estado: f.estado, manutencoes: f.manut,
-      precisa_substituir: f.subst, item_product_id: f.itemId || undefined, item_descricao: f.item, quantidade: f.qtd, urgente: f.urg, foto_path: f.foto, observacao: f.obs, resolver_ocorrencias: f.resolver });
+  const salvar = (id: string, over: { estado?: string; subst?: boolean; foto?: string } = {}) => run(async () => {
+    const v = { ...f, ...over };
+    const r = await baseAction<{ pedido_id: string | null }>({ action: "avaliar", schedule_id: scheduleId, comodato_id: id, estado: v.estado,
+      manutencoes: v.estado !== "verde" && v.acao === "consertado" ? [...v.manut, "consertado"] : v.manut, acao: v.estado === "verde" ? undefined : v.acao,
+      precisa_substituir: v.subst, item_product_id: v.subst ? v.itemId || undefined : undefined, item_descricao: v.item, quantidade: v.qtd, urgente: v.subst && v.urg, foto_path: v.foto, observacao: v.obs, resolver_ocorrencias: v.resolver });
     setOpen(null); clearDraft(`pt-aval:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["ocorrencias"] });
     toast({ title: "Ponto avaliado", description: r.pedido_id ? "Pedido de visita emergencial enviado ao gestor" : undefined });
   });
@@ -100,31 +102,41 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
             {ocs.length > 0 && <p className="text-xs text-warning">Levar: {ocs.map((o) => `${o.quantidade}x ${o.item_descricao}`).join(", ")}</p>}
             {open === p.id && (
               <div className="space-y-2">
-                <div className="grid grid-cols-3 gap-2">{(["verde", "amarelo", "vermelho"] as const).map((e) => (
-                  <Button key={e} type="button" variant="outline" className={cn("min-h-12 h-auto whitespace-normal", f.estado === e && ESTADO_CLASS[e])} onClick={() => setF({ ...f, estado: e })}>{ESTADO_LABEL[e]}</Button>))}</div>
                 <div className="grid grid-cols-2 gap-2">{MANUTENCOES.map((m) => (
                   <label key={m} className="flex items-center gap-2 text-sm min-h-9"><Checkbox checked={f.manut.includes(m)}
                     onCheckedChange={(v) => setF({ ...f, manut: v ? [...f.manut, m] : f.manut.filter((x) => x !== m) })} />{MANUTENCAO_LABEL[m]}</label>))}</div>
                 {ocs.length > 0 && <div className="space-y-1">{ocs.map((o) => (
                   <label key={o.id} className="flex items-center gap-2 text-sm"><Checkbox checked={f.resolver.includes(o.id)}
                     onCheckedChange={(v) => setF({ ...f, resolver: v ? [...f.resolver, o.id] : f.resolver.filter((x) => x !== o.id) })} />Resolvido: {o.quantidade}x {o.item_descricao}</label>))}</div>}
-                <label className="flex items-center gap-2 text-sm"><Checkbox checked={f.subst} onCheckedChange={(v) => setF({ ...f, subst: !!v })} />Precisa substituir?</label>
-                {f.subst && <div className="space-y-2 pl-6">
-                  <Select value={f.itemId} onValueChange={(v) => setF({ ...f, itemId: v, item: products.find((p) => p.id === v)?.name ?? f.item })}>
-                    <SelectTrigger><SelectValue placeholder="Item do catálogo" /></SelectTrigger>
-                    <SelectContent>{products.filter((p) => p.is_active).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <div className="flex gap-2"><Input value={f.item} onChange={(e) => setF({ ...f, item: e.target.value })} placeholder="Ou descreva o item" maxLength={160} />
-                    <Input value={f.qtd} onChange={(e) => setF({ ...f, qtd: e.target.value.replace(/\D/g, "").slice(0, 4) })} className="w-20" inputMode="numeric" aria-label="Quantidade" /></div>
-                  <label className="flex items-center gap-2 text-sm"><Checkbox checked={f.urg} onCheckedChange={(v) => setF({ ...f, urg: !!v })} />Urgente (pede visita emergencial)</label>
-                </div>}
-                <Textarea value={f.obs} onChange={(e) => setF({ ...f, obs: e.target.value })} placeholder="Observação (opcional)" maxLength={500} />
-                <div className="grid grid-cols-2 gap-2">
-                  <PhotoButton label={f.foto ? "Foto ✓" : "Foto"} busy={busy} onFile={(file) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setF((x) => ({ ...x, foto: path })); })} />
-                  <Button className="min-h-11" disabled={busy || !f.estado || (f.estado !== "verde" && !f.foto)} onClick={() => salvar(p.id)}>
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Salvar</Button>
-                </div>
-                {f.estado && f.estado !== "verde" && !f.foto && <p className="text-xs text-muted-foreground">Foto obrigatória para atenção ou ruim.</p>}
+                <div className="grid grid-cols-3 gap-2">{(["verde", "amarelo", "vermelho"] as const).map((e) => (
+                  <Button key={e} type="button" variant="outline" disabled={busy} className={cn("min-h-12 h-auto whitespace-normal", f.estado === e && ESTADO_CLASS[e])}
+                    onClick={() => e === "verde" ? salvar(p.id, { estado: "verde", subst: false, foto: undefined }) : setF({ ...f, estado: e, itemId: f.itemId || p.product_id || "", item: f.item || nameOf(p.product_id) || "" })}>
+                    {e === "verde" ? "🟢 OK" : e === "amarelo" ? "🟡 Atenção" : "🔴 Defeito"}</Button>))}</div>
+                <p className="text-xs text-muted-foreground">🟢 OK salva na hora. 🟡/🔴 pedem foto e o que foi feito.</p>
+                {f.estado && f.estado !== "verde" && <>
+                  <Label>O que foi feito?</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" variant={f.acao === "consertado" ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal" onClick={() => setF({ ...f, acao: "consertado", subst: false })}>Consertado no local</Button>
+                    <Button type="button" variant={f.acao === "substituir" ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal" onClick={() => setF({ ...f, acao: "substituir", subst: true })}>Precisa substituir</Button>
+                  </div>
+                  {f.subst && <div className="space-y-2">
+                    <Select value={f.itemId} onValueChange={(v) => setF({ ...f, itemId: v, item: products.find((x) => x.id === v)?.name ?? f.item })}>
+                      <SelectTrigger><SelectValue placeholder="Equipamento a levar" /></SelectTrigger>
+                      <SelectContent>{products.filter((x) => x.is_active).map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent>
+                    </Select>
+                    <div className="flex gap-2"><Input value={f.item} onChange={(e) => setF({ ...f, item: e.target.value })} placeholder="Ou descreva o item" maxLength={160} />
+                      <Input value={f.qtd} onChange={(e) => setF({ ...f, qtd: e.target.value.replace(/\D/g, "").slice(0, 4) })} className="w-20" inputMode="numeric" aria-label="Quantidade" /></div>
+                    <label className="flex items-center gap-2 text-sm"><Checkbox checked={f.urg} onCheckedChange={(v) => setF({ ...f, urg: !!v })} />Urgente (pede visita emergencial)</label>
+                    <p className="text-xs text-muted-foreground">Vai para "Levar na próxima visita" e para Inventário → separar equipamento.</p>
+                  </div>}
+                  <Textarea value={f.obs} onChange={(e) => setF({ ...f, obs: e.target.value })} placeholder="Observação (opcional)" maxLength={500} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <PhotoButton label={f.foto ? "Foto ✓" : "Foto (obrigatória)"} busy={busy} onFile={(file) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setF((x) => ({ ...x, foto: path })); })} />
+                    <Button className="min-h-11 h-auto whitespace-normal" disabled={busy || !f.foto || !f.acao || (f.subst && !f.item.trim())} onClick={() => salvar(p.id)}>
+                      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Salvar</Button>
+                  </div>
+                  {(!f.foto || !f.acao) && <p className="text-xs text-warning">Falta: {[!f.foto && "foto", !f.acao && "o que foi feito"].filter(Boolean).join(" e ")}.</p>}
+                </>}
               </div>)}
           </div>);
       })}
