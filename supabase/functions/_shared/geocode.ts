@@ -31,11 +31,12 @@ export async function geocode(a: GeoAddress, fetcher: typeof fetch = fetch): Pro
 }
 
 type Admin = any;
-const now = () => new Date().toISOString();
+// Stamped 1 min ahead: the updated_at trigger fires on this same write and must not look like a later edit.
+const now = () => new Date(Date.now() + 60_000).toISOString();
 
 export async function geocodeClient(admin: Admin, id: string) {
   const { data: c } = await admin.from("clients").select("id, address, city, state, zip_code, latitude").eq("id", id).maybeSingle();
-  if (!c || c.latitude != null) return c?.latitude != null ? null : null;
+  if (!c || c.latitude != null) return null;
   const p = await geocode({ endereco: c.address, cidade: c.city, estado: c.state, cep: c.zip_code });
   await admin.from("clients").update(p ? { latitude: p.lat, longitude: p.lng, localizacao_origem: "google", geocode_tentado_em: now() } : { geocode_tentado_em: now() }).eq("id", id);
   return p;
@@ -63,7 +64,7 @@ export async function geocodePending(admin: Admin, limit = 15) {
   const pick = async (table: string, fn: (a: Admin, id: string) => Promise<unknown>) => {
     const { data } = await admin.from(table).select("id, updated_at, geocode_tentado_em").is("latitude", null)
       .order("geocode_tentado_em", { ascending: true, nullsFirst: true }).limit(limit * 3);
-    const rows = (data ?? []).filter((r: any) => !r.geocode_tentado_em || r.updated_at > r.geocode_tentado_em).slice(0, limit - n);
+    const rows = (data ?? []).filter((r: any) => !r.geocode_tentado_em || r.updated_at > r.geocode_tentado_em).slice(0, limit);
     for (const r of rows) { if (await fn(admin, r.id)) n++; }
     return rows.length;
   };
