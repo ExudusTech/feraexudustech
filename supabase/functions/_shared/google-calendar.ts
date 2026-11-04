@@ -14,6 +14,10 @@ export interface BusySlot { google_event_id: string; start_at: string; end_at: s
 
 type Fetch = (url: string, init: { method: "GET"; headers: Record<string, string>; signal?: AbortSignal }) => Promise<Response>;
 
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  try { return AbortSignal.timeout(ms); } catch { return undefined; }
+}
+
 /** Lists events (single instances) of a calendar between two instants. Only GET is used. */
 export async function listEvents(calendarId: string, timeMin: string, timeMax: string,
   creds: { lovableKey: string; connKey: string }, fetchFn: Fetch = fetch as unknown as Fetch): Promise<GEvent[]> {
@@ -23,7 +27,7 @@ export async function listEvents(calendarId: string, timeMin: string, timeMax: s
     const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
     if (pageToken) q.set("pageToken", pageToken);
     const res = await fetchFn(`${GCAL_GATEWAY}/calendars/${encodeURIComponent(calendarId)}/events?${q}`, {
-      method: READ_ONLY_METHOD, signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(10000) : undefined,
+      method: READ_ONLY_METHOD, signal: timeoutSignal(10000),
       headers: { Authorization: `Bearer ${creds.lovableKey}`, "X-Connection-Api-Key": creds.connKey } });
     if (!res.ok) { const body = await res.text(); throw new Error(`Google Calendar HTTP ${res.status}: ${body.slice(0, 200)}`); }
     const json = await res.json() as { items?: GEvent[]; nextPageToken?: string };
