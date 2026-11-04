@@ -111,10 +111,11 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       if (retry || justificativa.trim().length < 3) return;
     } else if (retry) { setAskReason(null); }
     try {
-      const r = await visitAction<{ distancia_m: number | null }>({ id: s.id, action: "checkin", geolocation_error: location.error, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
+      const r = await visitAction<{ distancia_m: number | null; destino_sem_coordenadas?: boolean }>({ id: s.id, action: "checkin", geolocation_error: location.error, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
       setStatus("em_atendimento"); done();
-      if (s.client_id && pos && tecnico) setAskLoc(true);
-      toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : undefined });
+      // Destination without coordinates: offer this position as the client/lead address (consultant confirms).
+      if ((s.client_id || s.lead_id) && pos && r.destino_sem_coordenadas) setAskLoc(true);
+      toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
     } catch (e) {
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
       throw e;
@@ -171,6 +172,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
             {exec.checkin.distancia_m !== null ? ` · ${exec.checkin.distancia_m} m do endereço` : exec.checkin.latitude == null ? " · sem localização" : ""}
             {exec.checkin.geolocation_error && <span className="block text-muted-foreground">{locationErrorMessage(exec.checkin.geolocation_error)}</span>}
             {exec.checkin.fora_do_raio && <Badge variant="destructive" className="ml-2">Fora do local</Badge>}
+            {exec.checkin.destino_sem_coordenadas && exec.checkin.latitude != null && <Badge variant="outline" className="ml-2 border-warning text-warning">Local do cliente sem coordenadas</Badge>}
             {exec.checkin.justificativa && <span className="block text-muted-foreground">Justificativa: {exec.checkin.justificativa}</span>}</p>
         )}
 
@@ -193,7 +195,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
           <div className="space-y-4">
             {askLoc && (
               <div className="rounded-lg border p-3 space-y-2">
-                <p className="text-sm">Usar esta localização como endereço do cliente?</p>
+                <p className="text-sm">Este é o endereço do cliente? O cadastro não tem coordenadas; se você está no local, use sua posição atual (fica registrado que veio do check-in).</p>
                 <div className="grid grid-cols-2 gap-2">
                   <Button className="min-h-11" disabled={busy} onClick={() => run(async () => { await baseAction({ action: "localizacao_cliente", schedule_id: s.id, confirmar: true });
                     setAskLoc(false); toast({ title: "Localização do cliente atualizada" }); })}>Sim, usar</Button>
