@@ -1,6 +1,6 @@
 # Lotes 13 e 14 — Plano (sem implementar)
 
-Princípio: nada duplicado. Agendamento = `schedules`; material = `inventory_items` + pendência "Separar equipamento" do Lote 11; tarefas de faturamento estendem `maintenance_schedule`? Não — ver decisão D1. Histórico = `lead_timeline`; avisos = `notification_recipients` + `notification_logs`.
+Princípio: nada duplicado. Agendamento = `schedules`; material = `inventory_items` + pendência "Separar equipamento" do Lote 11; tarefas de faturamento ganham tabela própria (justificada no item 2). Histórico = `lead_timeline`; avisos = `notification_recipients` + `notification_logs`.
 
 ## LOTE 13
 
@@ -38,24 +38,48 @@ Princípio: nada duplicado. Agendamento = `schedules`; material = `inventory_ite
 - Sugestão de mix: regras simples num arquivo compartilhado (ex.: odor → Ekkoa; banheiro com público → papel toalha + sabonete; cozinha → Diversey), sugerindo produtos ativos do catálogo, sem preços.
 - Encerrar visita comercial ganha 5º botão "Instalação de teste": itens (sugestão pré-marcada) + data → cria o agendamento com prontidão (itens 1–4, incluindo CNPJ).
 
-## LOTE 14 — Flora Equipe
-- Função própria `equipe` (recomendado) com secret novo `EQUIPE_BEARER_TOKEN`, separada da `mcp` dos clientes para que um vazamento de um token não abra o outro. Mesmo formato JSON-RPC, mesmo log `mcp_request_log` (campo origem = equipe).
-- Identificação: telefone normalizado contra `profiles.phone` da organização, usuário ativo; desconhecido/inativo = recusa. Papéis lidos de `user_roles`; permissões reaproveitam as regras de visibilidade já existentes (consultor/vendedor: só o seu; gestor/admin: tudo; financeiro: tarefas).
-- Ferramentas:
-  - `identificar_usuario`, `minha_agenda`, `agenda_equipe` (só gestor), `listar_pendencias` (movida/compartilhada: atendimentos + visitas + tarefas de nota para financeiro), `consultar_cliente_ou_lead`, `criar_lead`, `agendar_visita` (mesmas validações do formulário: CNPJ, rota, conflito, Google), `registrar_localizacao_checkin` (grava na visita em andamento do próprio usuário com origem "whatsapp"), `registrar_nota_visita` em 2 passos (preview com token de confirmação válido 10 min → grava só no "sim"), `assumir_atendimento`/`resolver_atendimento`.
-  - Respostas curtas com link para a tela exata.
-- Sem service-role amplo nas consultas: cada ferramenta filtra explicitamente por organização + regra do papel; testes cobrem vendedor não vendo dados de outro.
+## LOTE 14 — Flora Equipe (mesma Flora, mesmo número)
+Decisão do PH: sem agente nem token separado. A mesma Flora atende clientes e equipe; tudo fica na função `mcp`.
+
+### Identificação (sempre no servidor)
+- Telefone = parte do `chat_id` após o "-", normalizado, comparado com `profiles.phone` de usuários ativos; papéis lidos de `user_roles`.
+- Telefone/nome enviados como parâmetro pela IA são ignorados.
+- Helper central `resolverEquipe(chat_id)` → `{ user_id, nome, papeis, organization_id }` ou nulo. Toda ferramenta de equipe valida usuário e papel; se não for equipe → "não autorizado", sem nenhum dado.
+- Mesmo telefone em mais de uma organização: recusa com orientação (evita misturar empresas).
+
+### Ferramentas de cliente existentes
+- `buscar_contato`, `consultar_produto`, `localizar_estabelecimento`: além de `contato_conhecido`, devolvem `equipe: { nome, papeis }` quando o chat é de usuário do Fera (no mesmo ponto central de enriquecimento).
+- `criar_lead`, `agendar_visita_tecnica` (fluxo cliente) e `solicitar_atendimento_humano`: para chat de equipe recusam com `use_ferramentas_equipe: true` e orientação, sem criar pessoa, lead, atendimento ou timeline.
+
+### Ferramentas de equipe (identificação só por `chat_id`)
+- `minha_agenda(data)`; `agenda_equipe(data, consultor?)` só gestor/admin/super_admin.
+- `listar_pendencias` (já existe): filtrada pelo usuário do chat — consultor as suas, gestor todas, financeiro tarefas de nota.
+- `consultar_cliente_ou_lead(termo)`: contatos, último histórico, pontos, próxima visita + link.
+- `criar_lead_equipe`, `agendar_visita_equipe`: mesmas validações do formulário (CNPJ quando exige nota, rota, conflito, Google).
+- `registrar_localizacao_checkin(latitude, longitude)`: só na visita em andamento do próprio usuário, origem "whatsapp".
+- `registrar_nota_visita(texto)` em 2 passos: devolve "Entendi: ... Confirma?" com código válido por 10 min; grava só no "sim".
+- `assumir_atendimento` / `resolver_atendimento` com link.
+- Vendedor/consultor nunca recebem dados de outros consultores (mesma regra das telas). Respostas curtas com link. Logs no `mcp_request_log`.
+
+### Avisos da equipe no mesmo chat
+- Os avisos que o Fera manda (visita concluída, check-in fora do local, tarefa de nota, D-1 etc.) passam a terminar com um código curto (ex.: `#V-8261` visita, `#T-12` tarefa, `#A-31` atendimento) além do link.
+- Nova ferramenta `contexto_aviso(codigo)` e lista `ultimos_avisos` (24h, de `notification_logs` daquele usuário) no retorno de `identificar_usuario`: se o Marquinho responder "já separei", a Flora sabe a que aviso se refere e chama a ação certa.
+
+### Retomada e transferência
+- Dá para tratar pelo Fera: nenhum atendimento é criado para chat de equipe; o lembrete de espera (`release-notification-queue`) ignora telefones de equipe; confirmações D-1/dia (`confirmar-visitas`) nunca vão para chat de equipe.
+- Retomada automática configurada dentro do próprio GPT Maker o Fera não controla: precisa ser desligada lá para esses contatos ou condicionada ao campo `equipe`.
 
 ## Testes
 - Prontidão (combinações tipo × nota × material), trigger e alerta D-1 único.
 - Ciclo da tarefa de nota (cria/atualiza/cancela/concluir exige PDF+número), RLS financeiro/consultor.
 - CNPJ: dígitos, situação baixada bloqueia, BrasilAPI fora do ar.
 - Regras de mix por segmento.
-- Equipe: telefone desconhecido recusa, visibilidade por papel, confirmação em 2 passos, check-in por WhatsApp só na própria visita, log gravado.
+- Equipe: telefone desconhecido recusa sem dados; telefone/nome vindos da IA ignorados; ferramentas de cliente recusam lead/atendimento para equipe; visibilidade por papel; confirmação em 2 passos; check-in por WhatsApp só na própria visita; código de aviso resolve contexto; log gravado.
 
 ## Riscos / LGPD
 - PDFs de nota contêm dados fiscais: bucket privado, acesso por papel, retenção (sugiro 5 anos, prazo fiscal).
-- Telefone como identidade: risco de chip clonado/troca de número → token separado, só usuários ativos, ações destrutivas fora (sem cancelar/apagar).
+- Telefone do chat como identidade: validado sempre no servidor; troca de chip → só usuários ativos; ações destrutivas (cancelar/apagar) fora da Flora.
+- Funcionário que também é cliente: o perfil de equipe prevalece naquele número.
 - Localização por WhatsApp é declarada pelo usuário: marcar origem e mostrar ao gestor.
 - Transcrições de áudio: gravar só o texto confirmado, nunca o áudio.
 - BrasilAPI é terceiro: só CNPJ enviado, sem dados pessoais.
@@ -65,6 +89,6 @@ Princípio: nada duplicado. Agendamento = `schedules`; material = `inventory_ite
 2. Tipos de nota: Remessa comodato, Remessa teste/demonstração, Venda, Retorno — está certo? Falta algum?
 3. Manutenção exige nota quando há reposição de refil (venda) ou só material?
 4. Prazo da tarefa: D-1 até qual hora (ex.: 12h)?
-5. Flora Equipe: função separada com token próprio (recomendado) ou dentro da `mcp`?
-6. Vendedor pode usar `agendar_visita` para manutenção/entrega ou só visita comercial?
+5. Telefone de equipe em mais de uma organização: recusar (proposto) ou perguntar a empresa?
+6. Vendedor pode usar `agendar_visita_equipe` para manutenção/entrega ou só visita comercial?
 7. Retenção dos PDFs de nota: 5 anos?
