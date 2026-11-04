@@ -204,6 +204,13 @@
       "when": 1793751436012,
       "tag": "0028_lote12_lead_cnpj_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793751744690,
+      "tag": "0029_lote12_lead_contato_trigger",
+      "breakpoints": true
     }
   ]
 }
