@@ -25,6 +25,14 @@ import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock, X, MessageCircle, Instagram } from "lucide-react";
 import { formatCEP, formatPhone, validateEmail, validatePhone } from "@/lib/validations";
 import { useCoverageValidation } from "@/hooks/use-coverage-validation";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/use-auth";
+import { toast } from "@/hooks/use-toast";
+import ContatosEditor from "@/components/crm/ContatosEditor";
+import PlaceSearch from "@/components/crm/PlaceSearch";
+import ConvertLeadDialog from "@/components/crm/ConvertLeadDialog";
+import { useEmpresaContatos, saveEmpresaContatos, useInvalidateContatos } from "@/hooks/use-empresa-contatos";
+import { emptyContato, normalizePrimary, validateContatos, type ContatoDraft } from "@/lib/empresa-contatos";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
 
 interface Props {
@@ -119,7 +127,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
   const leadCepOutOfCoverage = hasCoverageAreas && leadCoverageResult && !leadCoverageResult.isValid && leadCepNormalized.length === 8;
 
   const isEdit = !!lead;
-  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
+  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_perdido";
   const hasCategories = form.categories.length > 0;
 
   const leadSearchToken = (lead?.contact_name || lead?.title || "").toLowerCase();
@@ -671,9 +679,23 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <Label>Nome do Cliente/Empresa *</Label>
-              <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
+              <Label>Empresa *</Label>
+              <PlaceSearch onPick={(p) => {
+                setForm((f) => ({ ...f, title: f.title || p.nome, endereco: p.endereco, city: p.cidade || f.city, latitude: p.lat, longitude: p.lng, place_id: p.place_id }));
+                setFormErrors((e) => { const n = { ...e }; delete n.title; delete n.city; return n; });
+              }} />
+              <Input className="mt-2" aria-label="Nome da empresa" placeholder="Nome da empresa (ex.: Clínica Pró Vida)" value={form.title} onChange={(e) => set("title", e.target.value)} />
               {formErrors.title && <p className="text-xs text-destructive mt-1">{formErrors.title}</p>}
+              {form.endereco && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><MapPin className="h-3 w-3" />{form.endereco}</p>}
+            </div>
+            <div>
+              <Label>Cidade</Label>
+              <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+              {formErrors.city && <p className="text-xs text-destructive mt-1">{formErrors.city}</p>}
+            </div>
+            <div>
+              <Label>CNPJ (opcional)</Label>
+              <Input value={form.cnpj} onChange={(e) => set("cnpj", e.target.value)} maxLength={18} placeholder="00.000.000/0000-00" />
             </div>
             <div className="sm:col-span-2">
               <Label>Categorias</Label>
@@ -701,7 +723,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
               </div>
             </div>
             <div>
-              <Label>CEP do local *</Label>
+              <Label>CEP do local</Label>
               <Input
                 value={form.zip_code}
                 onChange={(e) => set("zip_code", formatCEP(e.target.value))}
@@ -741,25 +763,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
               <Label>Origem</Label>
               <Input value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="Site, indicação..." />
             </div>
-            <div>
-              <Label>Nome do contato *</Label>
-              <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
-              {formErrors.contact_name && <p className="text-xs text-destructive mt-1">{formErrors.contact_name}</p>}
-            </div>
-            <div>
-              <Label>Telefone contato *</Label>
-              <Input
-                value={form.contact_phone}
-                onChange={(e) => set("contact_phone", formatPhone(e.target.value))}
-                placeholder="(00) 00000-0000"
-                maxLength={15}
-              />
-              {formErrors.contact_phone && <p className="text-xs text-destructive mt-1">{formErrors.contact_phone}</p>}
-            </div>
-            <div>
-              <Label>E-mail contato *</Label>
-              <Input type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} />
-              {formErrors.contact_email && <p className="text-xs text-destructive mt-1">{formErrors.contact_email}</p>}
+            <div className="sm:col-span-2">
+              <ContatosEditor value={contatos} onChange={(v) => { setContatos(v); setContatoErrors({}); }} errors={contatoErrors} required />
             </div>
             <div className="sm:col-span-2">
               <Label>Descrição</Label>
@@ -787,6 +792,10 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
           />
         )}
 
+        {isEdit && lead?.client_id && (
+          <p className="text-sm text-muted-foreground">Já é cliente: <Link className="underline" to="/clientes">ver em Clientes</Link></p>
+        )}
+        <ConvertLeadDialog leadId={convertOpen && lead ? lead.id : null} nome={lead?.title} onOpenChange={setConvertOpen} onDone={() => onOpenChange(false)} />
         {isEdit && (canConvert || canManageTest) && (
           <>
             <div className="flex flex-wrap gap-2">
