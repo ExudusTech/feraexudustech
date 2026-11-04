@@ -1498,13 +1498,26 @@ const GENERIC_BUSINESS_TYPES: Record<string, string> = {
   barbearia: "barbearia", petshop: "pet shop", igreja: "igreja", resort: "resort", spa: "spa", buffet: "buffet", laboratorio: "laboratório",
 };
 /** Business type when the name is only a generic type ("hotel em Búzios", "minha clínica"); null for real names. */
-function genericBusinessType(nome: string): string | null {
-  const words = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-  const cut = words.findIndex(w => ["em", "de", "do", "da", "no", "na", "aqui", "la"].includes(w));
-  const core = (cut >= 0 ? words.slice(0, cut) : words).filter(w => !["meu", "minha", "nosso", "nossa", "o", "a", "um", "uma", "e"].includes(w));
-  if (core.length !== 1) return null;
-  const singular = core[0].replace(/(oes|aes)$/, "ao").replace(/s$/, "");
-  return GENERIC_BUSINESS_TYPES[core[0]] ?? GENERIC_BUSINESS_TYPES[singular] ?? null;
+// Generic only when nothing remains after removing business types, articles/prepositions/possessives
+// and the city phrase. Any leftover word (short, foreign, digits) is a real name: "La Gare", "Bar do Zé", "Pousada 7".
+function genericBusinessType(nome: string, cidade?: string | null): string | null {
+  const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  let words = fold(nome);
+  for (const c of [cidade ?? "", "rj", "rio de janeiro"].map(fold).filter(c => c.length)) {
+    for (let i = 0; i + c.length <= words.length; i++) {
+      if (c.every((w, j) => words[i + j] === w)) { words = [...words.slice(0, i), ...words.slice(i + c.length)]; i--; }
+    }
+  }
+  const STOP = new Set(["em", "de", "do", "da", "dos", "das", "no", "na", "nos", "nas", "o", "a", "os", "as", "um", "uma", "meu", "minha", "meus", "minhas", "nosso", "nossa", "e", "aqui"]);
+  const typeOf = (w: string) => GENERIC_BUSINESS_TYPES[w] ?? GENERIC_BUSINESS_TYPES[w.replace(/(oes|aes)$/, "ao").replace(/s$/, "")] ?? null;
+  let tipo: string | null = null;
+  for (const w of words) {
+    if (STOP.has(w)) continue;
+    const t = typeOf(w);
+    if (!t) return null;
+    tipo ??= t;
+  }
+  return tipo;
 }
 
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
@@ -1515,7 +1528,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.bairro != null && !bairro) return fail("bairro inválido");
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
   // Generic type only (no proper name): never search Google, ask the lead for the name.
-  const tipoGenerico = params.cep ? null : genericBusinessType(nome);
+  const tipoGenerico = params.cep ? null : genericBusinessType(nome, cidade);
   if (tipoGenerico) return ok({ encontrado: false, precisa_nome: true, candidatos: [],
     mensagem_para_lead: `Qual é o nome ${["pousada", "clínica", "academia", "loja", "empresa", "padaria", "lanchonete", "cafeteria", "farmácia", "escola", "oficina", "pizzaria", "sorveteria", "lavanderia", "barbearia", "igreja"].includes(tipoGenerico) ? "da" : "do"} ${tipoGenerico}? Assim já vejo o melhor dia para a visita.` });
   const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
