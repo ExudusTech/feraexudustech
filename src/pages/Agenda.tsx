@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import { useClients } from "@/hooks/use-clients";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
+import { openVisitFromSession, rememberOpenVisit } from "@/lib/visit-draft";
 import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
 import { CONFIRMACAO_LABEL } from "@/lib/visit-exec";
 import PainelAgora from "@/components/atendimentos/PainelAgora";
@@ -58,7 +59,8 @@ export default function Agenda() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<Schedule | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [execId, setExecId] = useState<string | null>(null);
+  const [execId, setExecIdRaw] = useState<string | null>(() => openVisitFromSession());
+  const setExecId = (id: string | null) => { rememberOpenVisit(id); setExecIdRaw(id); };
   const execItem = schedules.find((x) => x.id === execId) ?? null;
 
   const [searchParams] = useSearchParams();
@@ -425,7 +427,7 @@ export default function Agenda() {
           <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} onExecute={(s) => setExecId(s.id)} />
         ) : displayMode === "lista" ? (
           <div className="border rounded-lg overflow-x-auto">
-            <Table>
+            <Table className="table-cards">
               <TableHeader>
                 <TableRow>
                   <TableHead>Título</TableHead>

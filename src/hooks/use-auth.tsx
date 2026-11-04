@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
@@ -35,10 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const loadedUserId = useRef<string | null>(null);
 
   const fetchUserProfile = async (authUser: User) => {
     try {
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", authUser.id)
@@ -58,10 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { data: roles } = await supabase
+      const { data: roles, error: rolesError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", authUser.id);
+      if ((profileError || rolesError) && loadedUserId.current === authUser.id) return;
 
       const roleList = (roles ?? []).map((r) => r.role as string);
       const primaryRole = pickPrimaryRole(roleList);
@@ -71,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedOrgId = sessionStorage.getItem("super_admin_org_id");
       const effectiveOrgId = primaryRole === "super_admin" && storedOrgId ? storedOrgId : orgId;
 
+      loadedUserId.current = authUser.id;
       setUser({
         id: authUser.id,
         email: authUser.email || "",
@@ -82,6 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         avatar_url: profile?.avatar_url || null,
       });
     } catch {
+      // A transient network failure must not downgrade a user who is already loaded (that bounced people off the screen).
+      if (loadedUserId.current === authUser.id) return;
       setUser({
         id: authUser.id,
         email: authUser.email || "",
@@ -99,6 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
+        // Token refreshes and focus-triggered SIGNED_IN for the same user (e.g. returning from the phone camera)
+        // must not show the full-screen loader: that unmounts open forms and loses what was filled in.
+        if (session?.user && loadedUserId.current === session.user.id && event !== "USER_UPDATED") return;
         if (session?.user) {
           setIsLoading(true);
           setTimeout(async () => {
@@ -106,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
           }, 0);
         } else {
+          loadedUserId.current = null;
           setUser(null);
           sessionStorage.removeItem("super_admin_org_id");
           setIsLoading(false);

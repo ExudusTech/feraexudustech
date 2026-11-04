@@ -1,16 +1,10 @@
 export * from "../../supabase/functions/_shared/base-instalada";
 import { supabase } from "@/integrations/supabase/client";
-import { VisitActionError } from "@/lib/visit-exec";
+import { invokeAction } from "@/lib/visit-exec";
 
 /** Calls the installed-base backend function and surfaces its friendly error message. */
-export async function baseAction<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("base-instalada", { body });
-  if (error) {
-    let payload: Record<string, unknown> | undefined;
-    try { payload = await (error as { context?: Response }).context?.json(); } catch { payload = undefined; }
-    throw new VisitActionError(typeof payload?.error === "string" ? payload.error : "Não foi possível concluir. Tente de novo.", payload);
-  }
-  return data as T;
+export function baseAction<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
+  return invokeAction<T>("base-instalada", body);
 }
 
 /** Shrinks a phone photo to at most 1600px JPEG and uploads it under the visit's private folder. */

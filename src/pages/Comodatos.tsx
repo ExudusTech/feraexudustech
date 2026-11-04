@@ -93,7 +93,7 @@ export default function Comodatos() {
       </div>
 
       <div className="rounded-lg border">
-        <Table>
+        <Table className="table-cards">
           <TableHeader>
             <TableRow>
               <TableHead>Nº Contrato</TableHead>
@@ -117,17 +117,17 @@ export default function Comodatos() {
               <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground py-8">Nenhum comodato cadastrado.</TableCell></TableRow>
             ) : filtered.map((c) => (
               <TableRow key={c.id}>
-                <TableCell className="font-mono text-xs">{c.numero_contrato ?? "—"}</TableCell>
-                <TableCell>{c.client_id ? (clientMap.get(c.client_id) ?? "—") : "—"}</TableCell>
+                <TableCell data-label="Contrato" className="font-mono text-xs">{c.numero_contrato ?? "—"}</TableCell>
+                <TableCell data-card="title">{c.client_id ? (clientMap.get(c.client_id) ?? "—") : "—"}</TableCell>
                 <TableCell>{c.inventory_item_id ? (equipMap.get(c.inventory_item_id)?.name ?? "—") : "—"}{c.inventory_item_id && equipMap.get(c.inventory_item_id)?.serial_number ? <span className="block font-mono text-xs text-muted-foreground">{equipMap.get(c.inventory_item_id)?.serial_number}</span> : null}</TableCell>
-                <TableCell>{c.fabricante ?? "—"}</TableCell>
-                <TableCell>{c.product_id ? (prodMap.get(c.product_id) ?? "—") : "—"}</TableCell>
+                <TableCell data-label="Fabricante">{c.fabricante ?? "—"}</TableCell>
+                <TableCell data-label="Consumível">{c.product_id ? (prodMap.get(c.product_id) ?? "—") : "—"}</TableCell>
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", linhaBadgeClass(c.linha_produto))}>{linhaLabel(c.linha_produto)}</span></TableCell>
                 <TableCell>{c.localizacao_interna ?? c.endereco_instalacao ?? "—"}{((c as any).refil_product_id || ((c as any).quantidade && (c as any).quantidade !== "1")) && <span className="block text-xs text-muted-foreground">{(c as any).refil_product_id ? `Refil: ${prodMap.get((c as any).refil_product_id) ?? "—"}` : ""} {(c as any).quantidade !== "1" ? `${(c as any).quantidade}x` : ""}</span>}{(c as any).estado_atual && <span className={cn("ml-1 px-2 py-0.5 rounded-full text-xs", ESTADO_CLASS[(c as any).estado_atual])}>{ESTADO_LABEL[(c as any).estado_atual]}</span>}</TableCell>
-                <TableCell>{c.consumo_minimo != null ? `${c.consumo_minimo} ${c.unidade_consumo ?? ""}` : "—"}</TableCell>
-                {canSeeRevenue && <TableCell>{BRL(c.valor_mensal)}</TableCell>}
+                <TableCell data-label="Consumo mín.">{c.consumo_minimo != null ? `${c.consumo_minimo} ${c.unidade_consumo ?? ""}` : "—"}</TableCell>
+                {canSeeRevenue && <TableCell data-label="Mensal">{BRL(c.valor_mensal)}</TableCell>}
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", COMODATO_STATUS_BADGE[c.status] ?? COMODATO_STATUS_BADGE.ENCERRADO)}>{c.status}</span></TableCell>
-                <TableCell>{c.proxima_manutencao ? new Date(c.proxima_manutencao).toLocaleDateString("pt-BR") : "—"}</TableCell>
+                <TableCell data-label="Próx. manutenção">{c.proxima_manutencao ? new Date(c.proxima_manutencao).toLocaleDateString("pt-BR") : "—"}</TableCell>
                 <TableCell>
                   {canEdit && <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>

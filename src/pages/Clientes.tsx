@@ -80,7 +80,7 @@ export default function Clientes() {
             </div>
           ) : (
             <div className="rounded-lg border bg-card">
-              <Table>
+              <Table className="table-cards">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead><TableHead>E-mail</TableHead><TableHead>Telefone</TableHead>

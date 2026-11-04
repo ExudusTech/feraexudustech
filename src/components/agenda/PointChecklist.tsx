@@ -14,6 +14,7 @@ import { useProducts } from "@/hooks/use-products";
 import { useProductImageUrls } from "@/hooks/use-product-images";
 import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, pontosPendentes, uploadVisitPhoto } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
+import { clearDraft, useDraftState } from "@/lib/visit-draft";
 
 interface Props { scheduleId: string; orgId: string; clientId: string; onPendingChange?: (pending: number, total: number) => void }
 
@@ -52,25 +53,25 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
   const { data: signed } = useProductImageUrls(pontos.map((p) => products.find((x) => x.id === p.product_id)?.image_url));
   const imageOf = (id?: string | null) => { const path = products.find((p) => p.id === id)?.image_url; return path ? (signed as any)?.[path] ?? null : null; };
 
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useDraftState<string | null>(`pt-open:${scheduleId}`, null);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState<{ estado?: string; manut: string[]; subst: boolean; item: string; itemId: string; qtd: string; urg: boolean; foto?: string; obs: string; resolver: string[] }>({ manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] });
-  const [novo, setNovo] = useState<{ local: string; disp: string; refil: string; qtd: string; foto?: string; obs: string } | null>(null);
+  const [f, setF] = useDraftState<{ estado?: string; manut: string[]; subst: boolean; item: string; itemId: string; qtd: string; urg: boolean; foto?: string; obs: string; resolver: string[] }>(`pt-aval:${scheduleId}`, { manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] });
+  const [novo, setNovo] = useDraftState<{ local: string; disp: string; refil: string; qtd: string; foto?: string; obs: string } | null>(`pt-novo:${scheduleId}`, null);
 
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
-    toast({ title: "Atenção", description: e instanceof Error ? e.message : "Erro", variant: "destructive" }); } finally { setBusy(false); } };
+    toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
   const startEval = (id: string) => { setOpen(id); setF({ manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] }); };
 
   const salvar = (id: string) => run(async () => {
     const r = await baseAction<{ pedido_id: string | null }>({ action: "avaliar", schedule_id: scheduleId, comodato_id: id, estado: f.estado, manutencoes: f.manut,
       precisa_substituir: f.subst, item_product_id: f.itemId || undefined, item_descricao: f.item, quantidade: f.qtd, urgente: f.urg, foto_path: f.foto, observacao: f.obs, resolver_ocorrencias: f.resolver });
-    setOpen(null); refetch(); qc.invalidateQueries({ queryKey: ["ocorrencias"] });
+    setOpen(null); clearDraft(`pt-aval:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["ocorrencias"] });
     toast({ title: "Ponto avaliado", description: r.pedido_id ? "Pedido de visita emergencial enviado ao gestor" : undefined });
   });
   const criar = () => run(async () => {
     await baseAction({ action: "ponto_novo", schedule_id: scheduleId, localizacao_interna: novo!.local, product_id: novo!.disp || undefined,
       refil_product_id: novo!.refil || undefined, quantidade: novo!.qtd, foto_path: novo!.foto, observacao: novo!.obs });
-    setNovo(null); refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); toast({ title: "Ponto cadastrado" });
+    setNovo(null); clearDraft(`pt-novo:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); toast({ title: "Ponto cadastrado" });
   });
 
   return (
@@ -124,6 +125,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
       {novo ? (
         <div className="rounded-md border p-2 space-y-2">
           <Label>Novo ponto</Label>
+          {novo.foto && <p className="text-xs text-warning">Foto já enviada — falta tocar em "Salvar ponto".</p>}
           <Input value={novo.local} onChange={(e) => setNovo({ ...novo, local: e.target.value })} placeholder="Local interno (ex.: Banheiro feminino — público)" maxLength={120} />
           <Select value={novo.disp} onValueChange={(v) => setNovo({ ...novo, disp: v })}>
             <SelectTrigger><SelectValue placeholder="Dispenser" /></SelectTrigger>

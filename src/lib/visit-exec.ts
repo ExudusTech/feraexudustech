@@ -17,15 +17,34 @@ export const ITEM_OPTIONS: { value: string; label: string }[] = [
 
 export class VisitActionError extends Error { constructor(message: string, public data?: Record<string, unknown>) { super(message); } }
 
-/** Calls the visit-actions backend function and surfaces its friendly error message. */
-export async function visitAction<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke("visita-acoes", { body });
-  if (error) {
+/** Friendly Portuguese message for a failed backend call (no connection, expired session, server error). */
+export function friendlyActionError(status: number | undefined, serverMessage: unknown, offline = false): string {
+  if (offline) return "Sem conexão com a internet. O que você preencheu foi mantido; tente salvar de novo quando o sinal voltar.";
+  if (typeof serverMessage === "string" && serverMessage.trim() && status !== 401) return serverMessage;
+  if (status === 401) return "Sua sessão precisou ser renovada. O que você preencheu foi mantido; toque em salvar de novo.";
+  if (!status) return "Não foi possível falar com o servidor. Verifique a conexão; o que você preencheu foi mantido.";
+  return "Não foi possível concluir agora. O que você preencheu foi mantido; tente de novo.";
+}
+
+/** Calls a backend function; on an expired token it refreshes the session once and retries, never signing the user out. */
+export async function invokeAction<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, error } = await supabase.functions.invoke(fn, { body });
+    if (!error) return data as T;
+    const ctx = (error as { context?: Response }).context;
+    const status = ctx && typeof ctx.status === "number" ? ctx.status : undefined;
     let payload: Record<string, unknown> | undefined;
-    try { payload = await (error as { context?: Response }).context?.json(); } catch { payload = undefined; }
-    throw new VisitActionError(typeof payload?.error === "string" ? payload.error : "Não foi possível concluir. Tente de novo.", payload);
+    try { payload = await ctx?.json(); } catch { payload = undefined; }
+    if (status === 401 && attempt === 0) { await supabase.auth.refreshSession().catch(() => undefined); continue; }
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    throw new VisitActionError(friendlyActionError(status, payload?.error, offline), payload);
   }
-  return data as T;
+  throw new VisitActionError(friendlyActionError(401, undefined));
+}
+
+/** Calls the visit-actions backend function and surfaces its friendly error message. */
+export function visitAction<T = Record<string, unknown>>(body: Record<string, unknown>): Promise<T> {
+  return invokeAction<T>("visita-acoes", body);
 }
 
 export function getPosition(): Promise<{ lat: number; lng: number; precisao: number } | null> {

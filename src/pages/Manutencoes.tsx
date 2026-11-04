@@ -84,7 +84,7 @@ export default function Manutencoes() {
       </div>
 
       <div className="rounded-lg border">
-        <Table>
+        <Table className="table-cards">
           <TableHeader>
             <TableRow>
               <TableHead>Título</TableHead>
@@ -107,7 +107,7 @@ export default function Manutencoes() {
                 <TableCell className="font-medium">{m.title}</TableCell>
                 <TableCell>{TIPOS_OS[(m.tipo_os ?? "manutencao") as TipoOS] ?? m.tipo_os}{m.fabricante ? <span className="block text-xs text-muted-foreground">{m.fabricante}</span> : null}{m.tipo_os === "substituicao" ? <span className="block text-xs">{(m as any).quantidade}x {(m as any).item_descricao}{(m as any).urgente && <Badge variant="destructive" className="ml-1">Urgente{(m as any).aprovacao_status ? ` · ${(m as any).aprovacao_status}` : ""}</Badge>}</span> : null}{m.tipo_os === "retirada" && m.motivo_retirada ? <span className="block text-xs text-muted-foreground">Motivo: {m.motivo_retirada}</span> : null}</TableCell>
                 <TableCell><span className={cn("px-2 py-0.5 rounded-full text-xs", linhaBadgeClass(m.linha_produto))}>{linhaLabel(m.linha_produto)}</span></TableCell>
-                <TableCell>{m.inventory_item_id ? (invMap.get(m.inventory_item_id) ?? "—") : "—"}</TableCell>
+                <TableCell data-label="Equipamento">{m.inventory_item_id ? (invMap.get(m.inventory_item_id) ?? "—") : "—"}</TableCell>
                 <TableCell>
                   {m.comodato_id ? (
                     <Link to="/comodatos" className="inline-flex items-center gap-1 text-primary hover:underline">
@@ -116,7 +116,7 @@ export default function Manutencoes() {
                     </Link>
                   ) : "—"}
                 </TableCell>
-                <TableCell>{new Date(m.scheduled_date).toLocaleDateString("pt-BR")}</TableCell>
+                <TableCell data-label="Data">{new Date(m.scheduled_date).toLocaleDateString("pt-BR")}</TableCell>
                 <TableCell><Badge variant="outline">{m.tipo_os === "substituicao" ? ({ agendada: "A levar", em_andamento: "Separado", concluida: "Resolvida", cancelada: "Cancelada" } as Record<string, string>)[m.status] ?? m.status : m.status}</Badge></TableCell>
                 <TableCell>
                   {canEdit && <DropdownMenu>

@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/AppLayout";
 import PainelAgora from "@/components/atendimentos/PainelAgora";
 import MobileAgendaList from "@/components/ekkoa/MobileAgendaList";
+import { openVisitFromSession, rememberOpenVisit } from "@/lib/visit-draft";
 import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
 import { useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useLeads } from "@/hooks/use-leads";
@@ -19,7 +20,8 @@ export default function Hoje() {
   const qc = useQueryClient();
   const { data: schedules = [] } = useSchedules();
   const { data: leads = [] } = useLeads();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedRaw] = useState<string | null>(() => openVisitFromSession());
+  const setSelected = (id: string | null) => { rememberOpenVisit(id); setSelectedRaw(id); };
   const [novaOpen, setNovaOpen] = useState(false);
   const mine = useMemo(() => schedules.filter((s) => s.assigned_to === user?.id || (!s.assigned_to && s.created_by === user?.id)), [schedules, user?.id]);
   const leadInfo = useMemo(() => {

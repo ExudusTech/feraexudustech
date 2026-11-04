@@ -185,7 +185,7 @@ export default function Produtos() {
           </div>
         ) : view === "table" ? (
           <div className="rounded-lg border bg-card">
-            <Table>
+            <Table className="table-cards">
               <TableHeader>
                 <TableRow>
                   {canEditProducts && <TableHead className="w-10"><Checkbox aria-label="Selecionar todos" checked={allSel}
@@ -197,9 +197,9 @@ export default function Produtos() {
               <TableBody>
                 {filtered.map((p) => (
                   <TableRow key={p.id} className="cursor-pointer" onClick={() => handleEdit(p)}>
-                    {canEditProducts && <TableCell onClick={(e) => e.stopPropagation()}>
+                    {canEditProducts && <TableCell data-card="hide" onClick={(e) => e.stopPropagation()}>
                       <Checkbox aria-label={`Selecionar ${p.name}`} checked={sel.has(p.id)} onCheckedChange={() => toggle(p.id)} /></TableCell>}
-                    <TableCell>
+                    <TableCell data-card="title">
                       <div className="flex items-center gap-3">{thumb(p, "h-10 w-10")}<div>
                         <div className="flex items-center gap-2">
                           <p className="font-medium">{p.name}</p>
@@ -212,11 +212,11 @@ export default function Produtos() {
                       </div></div>
                     </TableCell>
 
-                    <TableCell className="text-muted-foreground">{p.sku || "—"}</TableCell>
+                    <TableCell data-label="SKU" className="text-muted-foreground">{p.sku || "—"}</TableCell>
                     <TableCell>{p.category || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>
-                    <TableCell className="font-medium">{fmt(p.price)}</TableCell>
-                    <TableCell>
+                    <TableCell data-label="Fornecedor" className="text-muted-foreground">{p.fornecedor || "—"}</TableCell>
+                    <TableCell data-label="Preço" className="font-medium">{fmt(p.price)}</TableCell>
+                    <TableCell data-label="Estoque">
                       <div className="flex items-center gap-1">
                         {p.stock} {p.unit}
                         {p.stock <= p.min_stock && p.min_stock > 0 && <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}

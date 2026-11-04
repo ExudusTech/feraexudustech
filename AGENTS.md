@@ -30,3 +30,5 @@
 - Maintenance plans generate visits inside confirmar-visitas (daily step, unique plan+date) and plan visits never get client confirmations; editing a plan cancels its future unexecuted visits so the generator rebuilds them.
 - Company contacts are pessoas linked through empresa_contatos (lead or client, one primary mirrored to leads.pessoa_id/contact_*); client_contacts is DEPRECATED, so one person can represent many companies without duplicate person rows.
 - Leads become clients only via converter_lead_em_cliente (dedupe CNPJ > place_id > name+city, copies contacts, idempotent); direct client inserts are privileged or origem base_existente, so prospects never bypass the lead pipeline.
+- Same-user auth events (token refresh, focus SIGNED_IN) never show the global loader or downgrade a loaded user, and visit forms keep local drafts (src/lib/visit-draft.ts); returning from the phone camera previously unmounted the visit and lost data.
+- Phone lists opt into the .table-cards CSS (index.css) so table rows render as one-column cards; mark cells with data-card (title/actions/hide) and data-label instead of building separate mobile markup.
