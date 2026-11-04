@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { evaluateCheckin, checkinAlertMessage } from "../../supabase/functions/_shared/visit-exec";
+import { evaluateCheckin } from "../../supabase/functions/_shared/visit-exec";
 import { fieldMetrics } from "@/lib/field-ops";
 
 const position = (timestamp = Date.now(), accuracy = 12) => ({ coords: { latitude: -22.88, longitude: -42.02, accuracy }, timestamp } as GeolocationPosition);
 const fakeGeo = (...outcomes: (number | GeolocationPosition)[]) => {
-  const getCurrentPosition = vi.fn((success: PositionCallback, failure: PositionErrorCallback) => {
+  const getCurrentPosition = vi.fn((success: PositionCallback, failure: PositionErrorCallback, _options?: PositionOptions) => {
     const outcome = outcomes.shift();
     if (typeof outcome === "number") failure({ code: outcome } as GeolocationPositionError);
     else if (outcome) success(outcome);
