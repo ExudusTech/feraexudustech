@@ -250,7 +250,14 @@ async function pessoaWithLeads(supabase: ReturnType<typeof getClient>, pessoa: P
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id)
     .order("created_at", { ascending: false }).limit(5);
   if (error) throw new Error(dbFail("consultar leads da pessoa", error));
+  // Companies (clients) this person represents — one person may represent several companies.
+  const { data: links } = await supabase.from("empresa_contatos")
+    .select("client_id, cargo, clients(id, name, city)")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", pessoa.id).limit(10);
+  const clientes = ((links as Record<string, any>[] | null) ?? []).filter((l) => l?.client_id && l.clients)
+    .map((l) => ({ cliente_id: l.client_id, empresa: l.clients.name ?? null, cidade: l.clients.city ?? null, cargo: l.cargo ?? null }));
   return {
+    ...(clientes.length ? { clientes_da_pessoa: clientes } : {}),
     encontrado: true,
     pessoa: { id: pessoa.id, nome: pessoa.nome },
     contato: {
