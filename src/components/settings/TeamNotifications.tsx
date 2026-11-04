@@ -59,7 +59,7 @@ export default function TeamNotifications() {
           </Select></div>
         {form.tipo === "usuario" ? <>
           <div className="space-y-2"><Label htmlFor="recipient-user">Usuário</Label>
-            <Select value={form.user_id ?? undefined} onValueChange={user_id => setForm({ ...form, user_id })}>
+            <Select value={form.user_id ?? undefined} onValueChange={user_id => setForm({ ...form, user_id, eventos: form.id ? form.eventos : defaultEventsFor(usersById[user_id]?.roles ?? [], form.eventos) })}>
               <SelectTrigger id="recipient-user" aria-label="Usuário"><SelectValue placeholder="Escolha um usuário" /></SelectTrigger>
               <SelectContent>{activeUsers.map(u => <SelectItem key={u.user_id} value={u.user_id}>{u.name}</SelectItem>)}</SelectContent>
             </Select></div>
