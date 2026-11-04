@@ -103,6 +103,35 @@ export function lateAlertMessage(v: VisitInfo & { hora: string; minutos: number 
   return [`⏱️ Visita sem check-in há ${v.minutos} min`, `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`,
     `Horário: ${clean(v.hora).slice(0, 5)}`, `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
+/** São Paulo calendar date (UTC-3) of an instant. */
+export const spDate = (d: string | Date) => new Date(new Date(d).getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+
+/** Hours a visit has been open when it should be flagged (≥ limit hours or started on an earlier day), else null. */
+export function horasAberta(checkin: string | null | undefined, now: Date, limite = 8): number | null {
+  if (!checkin) return null;
+  const h = (now.getTime() - new Date(checkin).getTime()) / 3_600_000;
+  if (!Number.isFinite(h) || h < 0) return null;
+  return h >= limite || spDate(checkin) < spDate(now) ? Math.floor(h) : null;
+}
+export function openVisitMessage(v: VisitInfo & { horas: number }): string {
+  return [`⏳ Visita aberta há mais de ${v.horas} h`, `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`,
+    "Encerre a visita e informe o horário real de término.", `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
+}
+
+/** Closing on a later day needs the real end time (HH:MM on the check-in day); returns minutes or an error. */
+export function duracaoComTermino(checkin: string, termino: string | null | undefined, now: Date): { min: number } | { error: string } {
+  if (spDate(checkin) === spDate(now)) return { min: durationMinutes(checkin, now) };
+  if (!/^\d{2}:\d{2}$/.test(termino ?? "")) return { error: "Informe o horário real de término da visita" };
+  const end = new Date(`${spDate(checkin)}T${termino}:00-03:00`);
+  if (end.getTime() <= new Date(checkin).getTime()) return { error: "O término deve ser depois do check-in" };
+  return { min: durationMinutes(checkin, end) };
+}
+
+/** Suggested end time (HH:MM, São Paulo) = check-in + default duration. */
+export function sugestaoTermino(checkin: string, duracaoMin = 60): string {
+  return new Date(new Date(checkin).getTime() + duracaoMin * 60_000 - 3 * 3_600_000).toISOString().slice(11, 16);
+}
+
 export function noConfirmationMessage(v: VisitInfo & { hora: string }): string {
   return ["❔ Cliente não confirmou a visita", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Horário: hoje às ${clean(v.hora).slice(0, 5)}`,
     "Vale ligar antes de sair.", `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
