@@ -4892,30 +4892,115 @@ export type Database = {
           },
         ]
       }
+      google_calendar_busy: {
+        Row: {
+          end_at: string
+          google_event_id: string
+          id: string
+          organization_id: string
+          start_at: string
+          synced_at: string
+        }
+        Insert: {
+          end_at: string
+          google_event_id: string
+          id?: string
+          organization_id: string
+          start_at: string
+          synced_at?: string
+        }
+        Update: {
+          end_at?: string
+          google_event_id?: string
+          id?: string
+          organization_id?: string
+          start_at?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_busy_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_calendar_sync_status: {
+        Row: {
+          account_email: string | null
+          blocks_count: number
+          busy_count: number
+          holidays_count: number
+          last_attempt_at: string | null
+          last_error: string | null
+          last_success_at: string | null
+          organization_id: string
+        }
+        Insert: {
+          account_email?: string | null
+          blocks_count?: number
+          busy_count?: number
+          holidays_count?: number
+          last_attempt_at?: string | null
+          last_error?: string | null
+          last_success_at?: string | null
+          organization_id: string
+        }
+        Update: {
+          account_email?: string | null
+          blocks_count?: number
+          busy_count?: number
+          holidays_count?: number
+          last_attempt_at?: string | null
+          last_error?: string | null
+          last_success_at?: string | null
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_calendar_sync_status_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       holidays: {
         Row: {
           city: string | null
           created_at: string
           date: string
+          google_event_id: string | null
           id: string
+          kind: string
           name: string
           organization_id: string | null
+          source: string
         }
         Insert: {
           city?: string | null
           created_at?: string
           date: string
+          google_event_id?: string | null
           id?: string
+          kind?: string
           name: string
           organization_id?: string | null
+          source?: string
         }
         Update: {
           city?: string | null
           created_at?: string
           date?: string
+          google_event_id?: string | null
           id?: string
+          kind?: string
           name?: string
           organization_id?: string | null
+          source?: string
         }
         Relationships: [
           {

@@ -7,7 +7,8 @@
 - [ ] Verificar ao vivo histórico/envio/pausa da Flora num chat real (blocked: precisa de login e de um chat de teste).
 - [x] Lote 9 Fase D: métricas, etapas editáveis do lead (9 etapas propostas), movimento automático em agendamento, mcp listar_pendencias; 354 testes passam.
 - [ ] Trocar o quadro de leads para as novas etapas (blocked: validação da lista com o gestor).
-- [ ] Lote 8 Fase E: ler "Feriados no Brasil" + agenda principal da Flora (dia inteiro = bloqueio; com horário = ocupado em opcoes_horario); sem agenda NitsClean separada (blocked: falta conectar o Google Calendar da conta flora.nitsclean@gmail.com).
+- [x] Lote 8 Fase E: Google Agenda (flora.nitsclean@gmail.com) só leitura; feriados/bloqueios em cache diário + sob demanda; ocupados ao vivo (cache 5 min) em opcoes_horario e agendar_visita_tecnica; 480 testes.
+- [x] Nome genérico: só genérico se nada sobrar após tipo/artigos/cidade (La Gare busca).
 - [x] Lote 7: lead timeline, resumo_conversa/proximo_passo, contexto_anterior, Histórico tab; 15-min follow-up alert limit; outside-coverage company/city isolation; 330 tests passed, mcp deployed.
 - [ ] Publish frontend for the Histórico tab (waits on user publishing).
 - [x] Flora: product fallback params → same-company lead → successful 24h chat lookup; name-only known contact; 307 tests passed, mcp deployed, four live read-only checks passed (no bookings/messages).

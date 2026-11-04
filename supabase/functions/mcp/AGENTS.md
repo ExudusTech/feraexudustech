@@ -14,3 +14,5 @@
 - consultar_rota_consultor computes opcoes_horario server-side (3 distinct days, band start to end minus visit duration, skipping the area consultant's existing schedules) so Flora never invents out-of-band times.
 - A visit whose client asked to reschedule is cancelled by an AFTER INSERT trigger on schedules, so the old and new visit can never both stay active.
 - Booking moves the lead only through stage_id ("Visita agendada"); the database trigger keeps the legacy stage column in sync.
+- Google Calendar is read-only (GET only, test-enforced): all-day/holiday blocks come from the holidays table (source='google', synced by google-calendar-sync daily + on demand), timed Flora events are read live with a 5-min in-memory cache and fall back to google_calendar_busy, so Google failures never block Flora.
+- localizar_estabelecimento treats a name as generic only when nothing remains after removing business types, articles/prepositions/possessives and the city phrase.
