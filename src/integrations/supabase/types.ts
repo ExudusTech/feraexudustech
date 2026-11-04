@@ -3460,12 +3460,14 @@ export type Database = {
           email: string | null
           id: string
           latitude: number | null
+          lead_origem_id: string | null
           localizacao_confirmada_em: string | null
           localizacao_origem: string | null
           longitude: number | null
           name: string
           notes: string | null
           organization_id: string
+          origem: string
           phone: string | null
           place_id: string | null
           produto_linhas: string[] | null
@@ -3488,12 +3490,14 @@ export type Database = {
           email?: string | null
           id?: string
           latitude?: number | null
+          lead_origem_id?: string | null
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
           name: string
           notes?: string | null
           organization_id: string
+          origem?: string
           phone?: string | null
           place_id?: string | null
           produto_linhas?: string[] | null
@@ -3516,12 +3520,14 @@ export type Database = {
           email?: string | null
           id?: string
           latitude?: number | null
+          lead_origem_id?: string | null
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
           name?: string
           notes?: string | null
           organization_id?: string
+          origem?: string
           phone?: string | null
           place_id?: string | null
           produto_linhas?: string[] | null
@@ -3538,6 +3544,13 @@ export type Database = {
             columns: ["coverage_area_id"]
             isOneToOne: false
             referencedRelation: "ekkoa_coverage_areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_lead_origem_id_fkey"
+            columns: ["lead_origem_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
           {
@@ -4589,6 +4602,71 @@ export type Database = {
           },
         ]
       }
+      empresa_contatos: {
+        Row: {
+          cargo: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_primary: boolean
+          lead_id: string | null
+          organization_id: string
+          pessoa_id: string
+        }
+        Insert: {
+          cargo?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_primary?: boolean
+          lead_id?: string | null
+          organization_id: string
+          pessoa_id: string
+        }
+        Update: {
+          cargo?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_primary?: boolean
+          lead_id?: string | null
+          organization_id?: string
+          pessoa_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "empresa_contatos_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "empresa_contatos_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "empresa_contatos_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "empresa_contatos_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_transactions: {
         Row: {
           amount: number
@@ -5064,10 +5142,13 @@ export type Database = {
           city: string | null
           client_contact_id: string | null
           client_id: string | null
+          cnpj: string | null
           company: string | null
           contact_email: string | null
           contact_name: string | null
           contact_phone: string | null
+          converted_at: string | null
+          converted_by: string | null
           created_at: string
           created_by: string | null
           created_by_flora: boolean | null
@@ -5111,10 +5192,13 @@ export type Database = {
           city?: string | null
           client_contact_id?: string | null
           client_id?: string | null
+          cnpj?: string | null
           company?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          converted_at?: string | null
+          converted_by?: string | null
           created_at?: string
           created_by?: string | null
           created_by_flora?: boolean | null
@@ -5158,10 +5242,13 @@ export type Database = {
           city?: string | null
           client_contact_id?: string | null
           client_id?: string | null
+          cnpj?: string | null
           company?: string | null
           contact_email?: string | null
           contact_name?: string | null
           contact_phone?: string | null
+          converted_at?: string | null
+          converted_by?: string | null
           created_at?: string
           created_by?: string | null
           created_by_flora?: boolean | null
@@ -7417,9 +7504,18 @@ export type Database = {
         Args: { _client: string; _user: string }
         Returns: boolean
       }
+      can_see_lead: { Args: { _lead: string; _user: string }; Returns: boolean }
       can_see_schedule: {
         Args: { _schedule: string; _user: string }
         Returns: boolean
+      }
+      converter_lead_em_cliente: {
+        Args: {
+          _cliente_existente?: string
+          _ignorar_duplicados?: boolean
+          _lead: string
+        }
+        Returns: Json
       }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       has_role: {

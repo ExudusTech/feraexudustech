@@ -25,6 +25,14 @@ import { useOrganizationUsers } from "@/hooks/use-users";
 import { UserPlus, FlaskConical, MapPin, AlertTriangle, CheckCircle, Clock, X, MessageCircle, Instagram } from "lucide-react";
 import { formatCEP, formatPhone, validateEmail, validatePhone } from "@/lib/validations";
 import { useCoverageValidation } from "@/hooks/use-coverage-validation";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/hooks/use-auth";
+import { toast } from "@/hooks/use-toast";
+import ContatosEditor from "@/components/crm/ContatosEditor";
+import PlaceSearch from "@/components/crm/PlaceSearch";
+import ConvertLeadDialog from "@/components/crm/ConvertLeadDialog";
+import { useEmpresaContatos, saveEmpresaContatos, useInvalidateContatos } from "@/hooks/use-empresa-contatos";
+import { emptyContato, normalizePrimary, validateContatos, type ContatoDraft } from "@/lib/empresa-contatos";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, generateTimeSlots, hasScheduleOverlap } from "@/lib/scheduling-utils";
 
 interface Props {
@@ -32,12 +40,15 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   lead?: Lead | null;
   defaultStage?: LeadStage;
+  /** Called with the new lead after creation (e.g. "+ Novo lead" inside the Agenda form). */
+  onCreated?: (lead: Lead) => void;
 }
 
 const empty = {
   title: "", description: "", stage: "novo" as LeadStage,
   source: "", contact_name: "", contact_email: "", contact_phone: "",
   categories: [] as string[], zip_code: "",
+  cnpj: "", endereco: "", city: "", latitude: null as number | null, longitude: null as number | null, place_id: "",
 };
 
 const emptyTestForm = {
@@ -69,8 +80,14 @@ function addDays(dateStr: string, days: number): string {
   return date.toISOString().split("T")[0];
 }
 
-export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage }: Props) {
+export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage, onCreated }: Props) {
   const [form, setForm] = useState(empty);
+  const [contatos, setContatos] = useState<ContatoDraft[]>([emptyContato(true)]);
+  const [contatoErrors, setContatoErrors] = useState<Record<string, string>>({});
+  const [convertOpen, setConvertOpen] = useState(false);
+  const { user: authUser } = useAuth();
+  const invalidateContatos = useInvalidateContatos();
+  const { data: savedContatos } = useEmpresaContatos(open && lead ? { lead_id: lead.id } : null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [showTestForm, setShowTestForm] = useState(false);
   const [testForm, setTestForm] = useState(emptyTestForm);
@@ -110,7 +127,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
   const leadCepOutOfCoverage = hasCoverageAreas && leadCoverageResult && !leadCoverageResult.isValid && leadCepNormalized.length === 8;
 
   const isEdit = !!lead;
-  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_ganho" && lead.stage !== "fechado_perdido";
+  const canConvert = isEdit && lead && !lead.client_id && lead.stage !== "fechado_perdido";
   const hasCategories = form.categories.length > 0;
 
   const leadSearchToken = (lead?.contact_name || lead?.title || "").toLowerCase();
@@ -181,10 +198,14 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         contact_phone: lead.contact_phone || "",
         categories: parseCategories(lead.category),
         zip_code: lead.zip_code || "",
+        cnpj: (lead as any).cnpj || "", endereco: (lead as any).endereco || "", city: (lead as any).city || "",
+        latitude: (lead as any).latitude ?? null, longitude: (lead as any).longitude ?? null, place_id: (lead as any).place_id || "",
       });
     } else {
       setForm({ ...empty, stage: defaultStage || "novo" });
+      setContatos([emptyContato(true)]);
     }
+    setContatoErrors({});
     setShowTestForm(false);
     setTestForm(emptyTestForm);
     setShowSchedulePrompt(false);
@@ -216,6 +237,14 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       }));
     }
   }, [showTestForm, existingInstallation, existingConsultantSchedule, form.zip_code, lead, savedLead]);
+
+  // Load the company's contacts; legacy leads fall back to their single contact fields.
+  useEffect(() => {
+    if (!open || !lead || !savedContatos) return;
+    if (savedContatos.length) setContatos(savedContatos);
+    else if (lead.contact_name || lead.contact_phone) setContatos([{ ...emptyContato(true), nome: lead.contact_name || "", telefone: lead.contact_phone || "", email: lead.contact_email || "", cargo: (lead as any).cargo_contato || "" }]);
+    else setContatos([emptyContato(true)]);
+  }, [open, lead, savedContatos]);
 
   const set = (k: string, v: string) => {
     setForm((p) => ({ ...p, [k]: v }));
@@ -280,14 +309,12 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     e.preventDefault();
     const errors: Record<string, string> = {};
     
-    if (!form.title.trim()) errors.title = "Nome do Cliente/Empresa é obrigatório";
-    if (!form.contact_name.trim()) errors.contact_name = "Nome do contato é obrigatório";
-    if (!form.contact_phone.trim()) errors.contact_phone = "Telefone é obrigatório";
-    else if (!validatePhone(form.contact_phone)) errors.contact_phone = "Telefone inválido";
-    if (!form.zip_code.trim()) errors.zip_code = "CEP é obrigatório";
-    else if (form.zip_code.replace(/\D/g, "").length !== 8) errors.zip_code = "CEP inválido (8 dígitos)";
-    if (!form.contact_email.trim()) errors.contact_email = "E-mail é obrigatório";
-    else if (!validateEmail(form.contact_email)) errors.contact_email = "E-mail inválido";
+    if (!form.title.trim()) errors.title = "Nome da empresa é obrigatório";
+    if (!form.city.trim() && !form.zip_code.trim()) errors.city = "Busque a empresa no Google ou informe cidade/CEP";
+    if (form.zip_code.trim() && form.zip_code.replace(/\D/g, "").length !== 8) errors.zip_code = "CEP inválido (8 dígitos)";
+    const cErr = validateContatos(contatos, { minOne: true });
+    contatos.forEach((c, i) => { if (c.email.trim() && !validateEmail(c.email)) cErr[`${i}.email`] = "E-mail inválido"; });
+    setContatoErrors(cErr);
     
     if (hasCoverageAreas && leadCepNormalized.length === 8 && leadViaCep.loading) {
       errors.zip_code = "Validando CEP, aguarde um instante";
@@ -296,9 +323,10 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
     }
     
     setFormErrors(errors);
-    if (Object.keys(errors).length > 0) return;
+    if (Object.keys(errors).length > 0 || Object.keys(cErr).length > 0) return;
 
     const categoryStr = form.categories.length > 0 ? form.categories.join(", ") : null;
+    const principal = normalizePrimary(contatos).find((c) => c.is_primary);
 
     const payload: any = {
       title: form.title,
@@ -306,19 +334,32 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
       stage: form.stage,
       value: 0,
       source: form.source || null,
-      contact_name: form.contact_name || null,
-      contact_email: form.contact_email || null,
-      contact_phone: form.contact_phone || null,
+      contact_name: principal?.nome || null,
+      contact_email: principal?.email || null,
+      contact_phone: principal?.telefone || null,
       expected_close_date: null,
       category: categoryStr,
       zip_code: form.zip_code || null,
+      empresa_nome: form.title.trim(),
+      cnpj: form.cnpj.trim() || null,
+      endereco: form.endereco || null,
+      city: form.city || null,
+      latitude: form.latitude,
+      longitude: form.longitude,
+      place_id: form.place_id || null,
     };
 
+    const orgId = authUser?.organization_id;
     if (isEdit) {
       await update.mutateAsync({ id: lead!.id, ...payload });
+      if (orgId) await saveEmpresaContatos(orgId, { lead_id: lead!.id }, contatos, authUser?.id).catch((e) => toast({ title: "Erro ao salvar contatos", description: e.message, variant: "destructive" }));
+      invalidateContatos();
       onOpenChange(false);
     } else {
       const result = await create.mutateAsync(payload);
+      if (orgId && result) await saveEmpresaContatos(orgId, { lead_id: (result as Lead).id }, contatos, authUser?.id).catch((e) => toast({ title: "Erro ao salvar contatos", description: e.message, variant: "destructive" }));
+      invalidateContatos();
+      if (onCreated && result) { onCreated(result as Lead); onOpenChange(false); return; }
       // After creating, show schedule prompt
       setSavedLead(result as Lead);
       setShowSchedulePrompt(true);
@@ -327,8 +368,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
 
   const handleConvert = async () => {
     if (!lead) return;
-    await convert.mutateAsync(lead);
-    onOpenChange(false);
+    setConvertOpen(true);
   };
 
   const handleSchedulePromptYes = () => {
@@ -639,9 +679,23 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <Label>Nome do Cliente/Empresa *</Label>
-              <Input value={form.title} onChange={(e) => set("title", e.target.value)} />
+              <Label>Empresa *</Label>
+              <PlaceSearch onPick={(p) => {
+                setForm((f) => ({ ...f, title: f.title || p.nome, endereco: p.endereco, city: p.cidade || f.city, latitude: p.lat, longitude: p.lng, place_id: p.place_id }));
+                setFormErrors((e) => { const n = { ...e }; delete n.title; delete n.city; return n; });
+              }} />
+              <Input className="mt-2" aria-label="Nome da empresa" placeholder="Nome da empresa (ex.: Clínica Pró Vida)" value={form.title} onChange={(e) => set("title", e.target.value)} />
               {formErrors.title && <p className="text-xs text-destructive mt-1">{formErrors.title}</p>}
+              {form.endereco && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><MapPin className="h-3 w-3" />{form.endereco}</p>}
+            </div>
+            <div>
+              <Label>Cidade</Label>
+              <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+              {formErrors.city && <p className="text-xs text-destructive mt-1">{formErrors.city}</p>}
+            </div>
+            <div>
+              <Label>CNPJ (opcional)</Label>
+              <Input value={form.cnpj} onChange={(e) => set("cnpj", e.target.value)} maxLength={18} placeholder="00.000.000/0000-00" />
             </div>
             <div className="sm:col-span-2">
               <Label>Categorias</Label>
@@ -669,7 +723,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               </div>
             </div>
             <div>
-              <Label>CEP do local *</Label>
+              <Label>CEP do local</Label>
               <Input
                 value={form.zip_code}
                 onChange={(e) => set("zip_code", formatCEP(e.target.value))}
@@ -709,25 +763,8 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
               <Label>Origem</Label>
               <Input value={form.source} onChange={(e) => set("source", e.target.value)} placeholder="Site, indicação..." />
             </div>
-            <div>
-              <Label>Nome do contato *</Label>
-              <Input value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
-              {formErrors.contact_name && <p className="text-xs text-destructive mt-1">{formErrors.contact_name}</p>}
-            </div>
-            <div>
-              <Label>Telefone contato *</Label>
-              <Input
-                value={form.contact_phone}
-                onChange={(e) => set("contact_phone", formatPhone(e.target.value))}
-                placeholder="(00) 00000-0000"
-                maxLength={15}
-              />
-              {formErrors.contact_phone && <p className="text-xs text-destructive mt-1">{formErrors.contact_phone}</p>}
-            </div>
-            <div>
-              <Label>E-mail contato *</Label>
-              <Input type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} />
-              {formErrors.contact_email && <p className="text-xs text-destructive mt-1">{formErrors.contact_email}</p>}
+            <div className="sm:col-span-2">
+              <ContatosEditor value={contatos} onChange={(v) => { setContatos(v); setContatoErrors({}); }} errors={contatoErrors} required />
             </div>
             <div className="sm:col-span-2">
               <Label>Descrição</Label>
@@ -755,6 +792,10 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage 
           />
         )}
 
+        {isEdit && lead?.client_id && (
+          <p className="text-sm text-muted-foreground">Já é cliente: <Link className="underline" to="/clientes">ver em Clientes</Link></p>
+        )}
+        <ConvertLeadDialog leadId={convertOpen && lead ? lead.id : null} nome={lead?.title} onOpenChange={setConvertOpen} onDone={() => onOpenChange(false)} />
         {isEdit && (canConvert || canManageTest) && (
           <>
             <div className="flex flex-wrap gap-2">

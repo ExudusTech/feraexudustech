@@ -190,6 +190,27 @@
       "when": 1793732967263,
       "tag": "0026_lote11_consolidar_estruturas",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793751401540,
+      "tag": "0027_lote12_empresa_contatos",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793751436012,
+      "tag": "0028_lote12_lead_cnpj_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793751744690,
+      "tag": "0029_lote12_lead_contato_trigger",
+      "breakpoints": true
     }
   ]
 }
