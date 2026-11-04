@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import ContactActions from "@/components/ContactActions";
 import ClientFormDialog from "@/components/crm/ClientFormDialog";
+import LeadFormDialog from "@/components/crm/LeadFormDialog";
+import { canRegisterExistingClient } from "@/lib/empresa-contatos";
 import { SCHEDULE_TYPE_OPTIONS, fromNotes, mapsLink } from "@/lib/service-kind";
 import { Badge } from "@/components/ui/badge";
 import { useCreateSchedule, useUpdateSchedule, useSchedules, type Schedule } from "@/hooks/use-schedules";
@@ -50,6 +52,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
   const [titleTouched, setTitleTouched] = useState(false);
   const [endTouched, setEndTouched] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [triedSubmit, setTriedSubmit] = useState(false);
   const create = useCreateSchedule();
@@ -228,7 +231,11 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
                       </button>
                     ))}
                   </div>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setNewClientOpen(true)}><Plus className="h-4 w-4 mr-1" /> Novo cliente</Button>
+                  {!needsClient ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setNewLeadOpen(true)}><Plus className="h-4 w-4 mr-1" /> Novo lead</Button>
+                  ) : canRegisterExistingClient(roles) ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setNewClientOpen(true)}><Plus className="h-4 w-4 mr-1" /> Cliente já atendido</Button>
+                  ) : null}
                 </>
               )}
               {target && !targetOk && <p className="text-xs text-destructive">Este tipo de serviço exige um cliente (não lead).</p>}
@@ -321,6 +328,10 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
         </form>
       </DialogContent>
       <ClientFormDialog open={newClientOpen} onOpenChange={setNewClientOpen} onSaved={(c) => applyTarget(clientTarget(c))} />
+      <LeadFormDialog open={newLeadOpen} onOpenChange={setNewLeadOpen} onCreated={(l: any) => applyTarget({
+        kind: "lead", id: l.id, name: l.empresa_nome || l.title, city: l.city ?? null, address: l.endereco ?? null,
+        zip_code: l.zip_code ?? null, latitude: l.latitude ?? null, longitude: l.longitude ?? null,
+      })} />
     </Dialog>
   );
 }
