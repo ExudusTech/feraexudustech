@@ -2,9 +2,9 @@ import { lateMinutes } from "@/lib/visit-exec";
 
 export interface OpsSchedule { id: string; assigned_to: string | null; scheduled_date: string; start_time: string | null; status: string;
   duracao_min?: number | null; resultado?: string | null }
-export interface OpsCheckin { schedule_id: string; fora_do_raio: boolean; sem_permissao: boolean; geolocation_error?: string | null; latitude?: number | null }
+export interface OpsCheckin { schedule_id: string; fora_do_raio: boolean; sem_permissao: boolean; geolocation_error?: string | null; latitude?: number | null; destino_sem_coordenadas?: boolean | null }
 
-export type OpsFilter = "realizadas" | "nao_realizadas" | "atrasadas" | "fora_do_local" | `resultado:${string}`;
+export type OpsFilter = "realizadas" | "nao_realizadas" | "atrasadas" | "fora_do_local" | "sem_coordenadas" | `resultado:${string}`;
 
 /** Week metrics and today's alerts for the manager dashboard. */
 export function fieldMetrics(schedules: OpsSchedule[], checkins: OpsCheckin[], now: Date, today: string, weekStart: string) {
@@ -15,6 +15,7 @@ export function fieldMetrics(schedules: OpsSchedule[], checkins: OpsCheckin[], n
   for (const s of realizadas) if (s.resultado) resultados[s.resultado] = (resultados[s.resultado] ?? 0) + 1;
   const todayList = schedules.filter((s) => s.scheduled_date === today && s.status !== "cancelado");
   const fora = new Set(checkins.filter((c) => c.fora_do_raio || c.sem_permissao || (c.geolocation_error && c.latitude == null)).map((c) => c.schedule_id));
+  const semCoord = new Set(checkins.filter((c) => c.destino_sem_coordenadas && c.latitude != null).map((c) => c.schedule_id));
   return {
     realizadas: realizadas.length,
     naoRealizadas: week.filter((s) => s.status === "nao_realizado").length,
@@ -22,14 +23,17 @@ export function fieldMetrics(schedules: OpsSchedule[], checkins: OpsCheckin[], n
     resultados,
     atrasadas: todayList.filter((s) => lateMinutes(now, s) >= 15).map((s) => s.id),
     foraDoLocal: todayList.filter((s) => fora.has(s.id)).map((s) => s.id),
+    // Check-ins whose distance could not be verified because the client has no coordinates.
+    semCoordenadas: todayList.filter((s) => semCoord.has(s.id)).map((s) => s.id),
   };
 }
 
-export function matchesFilter(s: OpsSchedule, f: OpsFilter | null, ctx: { atrasadas: string[]; foraDoLocal: string[] }): boolean {
+export function matchesFilter(s: OpsSchedule, f: OpsFilter | null, ctx: { atrasadas: string[]; foraDoLocal: string[]; semCoordenadas?: string[] }): boolean {
   if (!f) return true;
   if (f === "realizadas") return s.status === "concluido";
   if (f === "nao_realizadas") return s.status === "nao_realizado";
   if (f === "atrasadas") return ctx.atrasadas.includes(s.id);
   if (f === "fora_do_local") return ctx.foraDoLocal.includes(s.id);
+  if (f === "sem_coordenadas") return (ctx.semCoordenadas ?? []).includes(s.id);
   return s.status === "concluido" && s.resultado === f.slice("resultado:".length);
 }

@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage, horasAberta, openVisitMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
+import { geocodePending } from "../_shared/geocode.ts";
 
 const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "Content-Type": "application/json" } });
 
@@ -149,6 +150,9 @@ Deno.serve(async () => {
       }
     } catch { console.error("[confirmar-visitas] daily maintenance failed"); }
   }
+
+  // Geocode clients/leads/schedules created or edited without coordinates (bounded per run).
+  try { (out as any).geocode = await geocodePending(admin, 15); } catch { console.error("[confirmar-visitas] geocode failed"); }
 
   // Retention: once a day (03:00–03:15 São Paulo) drop raw coordinates and old photos per organization settings.
   const spHour = (now.getUTCHours() + 21) % 24;

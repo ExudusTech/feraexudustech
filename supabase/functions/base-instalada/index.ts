@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   // Visit the caller may execute (assigned consultant or manager).
   const loadVisit = async (id: unknown) => {
     if (!UUID.test(String(id ?? ""))) return null;
-    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, clients(name, latitude)").eq("id", id).maybeSingle();
+    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, clients(name, latitude)").eq("id", id).maybeSingle();
     if (!s) return null;
     if (!privileged && s.assigned_to !== user.id && !(s.assigned_to === null && s.created_by === user.id)) return null;
     return s as any;
@@ -180,12 +180,14 @@ Deno.serve(async (req) => {
     }
     case "localizacao_cliente": {
       const s = await loadVisit(b.schedule_id);
-      if (!s || !s.client_id) return json({ error: "Visita não encontrada" }, 404);
+      if (!s || (!s.client_id && !s.lead_id)) return json({ error: "Visita não encontrada" }, 404);
       if (!podeGravarLocalizacao(s.clients, b.confirmar === true)) return json({ error: "Confirme para usar esta localização" }, 400);
-      const { data: ck } = await admin.from("schedule_checkins").select("latitude, longitude").eq("schedule_id", s.id).maybeSingle();
+      const { data: ck } = await admin.from("schedule_checkins").select("id, latitude, longitude").eq("schedule_id", s.id).maybeSingle();
       if (ck?.latitude == null) return json({ error: "O check-in não tem localização" }, 409);
-      await admin.from("clients").update({ latitude: ck.latitude, longitude: ck.longitude, localizacao_origem: "checkin",
-        localizacao_confirmada_em: new Date().toISOString() }).eq("id", s.client_id);
+      // Only fills a missing location; origin "checkin" records it came from the consultant's confirmed position.
+      if (s.client_id) await admin.from("clients").update({ latitude: ck.latitude, longitude: ck.longitude, localizacao_origem: "checkin",
+        localizacao_confirmada_em: new Date().toISOString() }).eq("id", s.client_id).is("latitude", null);
+      else await admin.from("leads").update({ latitude: ck.latitude, longitude: ck.longitude, localizacao_origem: "checkin" }).eq("id", s.lead_id).is("latitude", null);
       await admin.from("schedules").update({ latitude: ck.latitude, longitude: ck.longitude }).eq("id", s.id);
       return json({ ok: true });
     }

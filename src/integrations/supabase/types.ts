@@ -3530,6 +3530,7 @@ export type Database = {
           created_by: string
           document: string | null
           email: string | null
+          geocode_tentado_em: string | null
           id: string
           latitude: number | null
           lead_origem_id: string | null
@@ -3560,6 +3561,7 @@ export type Database = {
           created_by: string
           document?: string | null
           email?: string | null
+          geocode_tentado_em?: string | null
           id?: string
           latitude?: number | null
           lead_origem_id?: string | null
@@ -3590,6 +3592,7 @@ export type Database = {
           created_by?: string
           document?: string | null
           email?: string | null
+          geocode_tentado_em?: string | null
           id?: string
           latitude?: number | null
           lead_origem_id?: string | null
@@ -5315,11 +5318,13 @@ export type Database = {
           expected_close_date: string | null
           flora_tags: string[] | null
           fora_cobertura: boolean | null
+          geocode_tentado_em: string | null
           gptmaker_chat_id: string | null
           id: string
           instagram_handle: string | null
           interaction_id: string | null
           latitude: number | null
+          localizacao_origem: string | null
           longitude: number | null
           maps_url: string | null
           organization_id: string
@@ -5365,11 +5370,13 @@ export type Database = {
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
+          geocode_tentado_em?: string | null
           gptmaker_chat_id?: string | null
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
           latitude?: number | null
+          localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
           organization_id: string
@@ -5415,11 +5422,13 @@ export type Database = {
           expected_close_date?: string | null
           flora_tags?: string[] | null
           fora_cobertura?: boolean | null
+          geocode_tentado_em?: string | null
           gptmaker_chat_id?: string | null
           id?: string
           instagram_handle?: string | null
           interaction_id?: string | null
           latitude?: number | null
+          localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
           organization_id?: string
@@ -7202,6 +7211,7 @@ export type Database = {
         Row: {
           checkin_em: string
           created_at: string
+          destino_sem_coordenadas: boolean
           distancia_m: number | null
           fora_do_raio: boolean
           geolocation_error: string | null
@@ -7218,6 +7228,7 @@ export type Database = {
         Insert: {
           checkin_em?: string
           created_at?: string
+          destino_sem_coordenadas?: boolean
           distancia_m?: number | null
           fora_do_raio?: boolean
           geolocation_error?: string | null
@@ -7234,6 +7245,7 @@ export type Database = {
         Update: {
           checkin_em?: string
           created_at?: string
+          destino_sem_coordenadas?: boolean
           distancia_m?: number | null
           fora_do_raio?: boolean
           geolocation_error?: string | null
@@ -7403,6 +7415,7 @@ export type Database = {
           description: string | null
           duracao_min: number | null
           end_time: string | null
+          geocode_tentado_em: string | null
           id: string
           latitude: number | null
           lead_id: string | null
@@ -7443,6 +7456,7 @@ export type Database = {
           description?: string | null
           duracao_min?: number | null
           end_time?: string | null
+          geocode_tentado_em?: string | null
           id?: string
           latitude?: number | null
           lead_id?: string | null
@@ -7483,6 +7497,7 @@ export type Database = {
           description?: string | null
           duracao_min?: number | null
           end_time?: string | null
+          geocode_tentado_em?: string | null
           id?: string
           latitude?: number | null
           lead_id?: string | null
