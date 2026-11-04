@@ -255,12 +255,26 @@ describe("nome genérico", () => {
       expect(h.requests).toHaveLength(0);
     });
   }
-  for (const nome of ["Hotel Viareggio", "Pousada Casas Brancas", "Clínica São Lucas", "Restaurante Sabor do Mar"]) {
+  for (const nome of ["Hotel Viareggio", "Pousada Casas Brancas", "Clínica São Lucas", "Restaurante Sabor do Mar", "Restaurante La Gare", "Hotel Ville", "Bar do Zé", "Pousada 7 Mares", "Restaurante Le Blanc", "Pousada 7", "Bar Zé", "Hotel X", "Restaurante 東京"]) {
     it(`${nome} busca normalmente`, async () => {
       const h = harness();
-      const r = JSON.parse(JSON.stringify(await h.route("localizar_estabelecimento", { nome, cidade: "Cabo Frio" })));
+      const r = JSON.parse(JSON.stringify(await h.route("localizar_estabelecimento", { nome, cidade: "Búzios" })));
       expect(r.data.precisa_nome).toBeUndefined();
       expect(h.requests.some((q: any) => q.url.includes("places"))).toBe(true);
+      expect(JSON.parse(h.requests[0].init.body).textQuery).toBe(`${nome} Búzios RJ`);
     });
   }
+  it.each(["hotel de Búzios", "restaurante Búzios", "o meu hotel em BÚZIOS!"])('%s removes only the city and generic words', async nome => {
+    const h = harness();
+    const r = await h.route("localizar_estabelecimento", { nome, cidade: "Búzios" });
+    expect(r.data.precisa_nome).toBe(true);
+    expect(h.requests).toHaveLength(0);
+  });
+  it("removes a multiword city without discarding other words", async () => {
+    const h = harness();
+    expect((await h.route("localizar_estabelecimento", { nome: "hotel em Cabo Frio", cidade: "Cabo Frio" })).data.precisa_nome).toBe(true);
+    expect(h.requests).toHaveLength(0);
+    expect((await h.route("localizar_estabelecimento", { nome: "Hotel do Cabo", cidade: "Cabo Frio" })).data.precisa_nome).toBeUndefined();
+    expect(h.requests).toHaveLength(1);
+  });
 });
