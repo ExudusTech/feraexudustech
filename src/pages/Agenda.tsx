@@ -427,7 +427,7 @@ export default function Agenda() {
           <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => { setEditItem(s); setDialogOpen(true); }} onExecute={(s) => setExecId(s.id)} />
         ) : displayMode === "lista" ? (
           <div className="border rounded-lg overflow-x-auto">
-            <Table>
+            <Table className="table-cards">
               <TableHeader>
                 <TableRow>
                   <TableHead>Título</TableHead>
