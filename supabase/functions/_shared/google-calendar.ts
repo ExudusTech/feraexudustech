@@ -23,7 +23,7 @@ export async function listEvents(calendarId: string, timeMin: string, timeMax: s
     const q = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", maxResults: "250" });
     if (pageToken) q.set("pageToken", pageToken);
     const res = await fetchFn(`${GCAL_GATEWAY}/calendars/${encodeURIComponent(calendarId)}/events?${q}`, {
-      method: READ_ONLY_METHOD, signal: AbortSignal.timeout(10000),
+      method: READ_ONLY_METHOD, signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(10000) : undefined,
       headers: { Authorization: `Bearer ${creds.lovableKey}`, "X-Connection-Api-Key": creds.connKey } });
     if (!res.ok) { const body = await res.text(); throw new Error(`Google Calendar HTTP ${res.status}: ${body.slice(0, 200)}`); }
     const json = await res.json() as { items?: GEvent[]; nextPageToken?: string };
