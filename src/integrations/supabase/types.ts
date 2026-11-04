@@ -3260,6 +3260,60 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261104_notification_recipients: {
+        Row: {
+          ativo: boolean | null
+          backed_up_at: string | null
+          created_at: string | null
+          email: string | null
+          eventos: string[] | null
+          id: string | null
+          nome: string | null
+          notes: string | null
+          organization_id: string | null
+          papel: string | null
+          roles: string[] | null
+          tipo: string | null
+          updated_at: string | null
+          user_id: string | null
+          whatsapp: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          backed_up_at?: string | null
+          created_at?: string | null
+          email?: string | null
+          eventos?: string[] | null
+          id?: string | null
+          nome?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          papel?: string | null
+          roles?: string[] | null
+          tipo?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          whatsapp?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          backed_up_at?: string | null
+          created_at?: string | null
+          email?: string | null
+          eventos?: string[] | null
+          id?: string | null
+          nome?: string | null
+          notes?: string | null
+          organization_id?: string | null
+          papel?: string | null
+          roles?: string[] | null
+          tipo?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          whatsapp?: string | null
+        }
+        Relationships: []
+      }
       backup_20261104_products_dispenser: {
         Row: {
           backed_up_at: string | null
