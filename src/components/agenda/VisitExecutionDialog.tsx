@@ -19,6 +19,7 @@ import {
   CONFIRMACAO_LABEL, ITEM_OPTIONS, NAO_REALIZADO_LABEL, NEXT_LABEL, RESULT_LABEL, STATUS_LABEL, getPosition, isTechnical,
   requiresPhoto, visitAction, VisitActionError,
 } from "@/lib/visit-exec";
+import { clearDraft, faltasParaEncerrar, readDraft, writeDraft } from "@/lib/visit-draft";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
 
@@ -66,11 +67,18 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
   const [askLoc, setAskLoc] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState(""); const [showNao, setShowNao] = useState(false);
-  useEffect(() => { setAskReason(null); setJustificativa(""); setLastPos(undefined); setShowNao(false); setResultado(""); setResumo(""); setProximo(""); }, [s?.id]);
+  useEffect(() => {
+    setAskReason(null); setJustificativa(""); setLastPos(undefined); setShowNao(false);
+    const d = s?.id ? readDraft<Record<string, any>>(`encerrar:${s.id}`) : null;
+    setResultado(d?.resultado ?? ""); setResumo(d?.resumo ?? ""); setProximo(d?.proximo ?? ""); setDataAlvo(d?.dataAlvo ?? "");
+    setMotivoPerda(d?.motivoPerda ?? ""); setDescricao(d?.descricao ?? ""); setObs(d?.obs ?? ""); setConfPerdido(false);
+  }, [s?.id]);
+  useEffect(() => { if (s?.id) writeDraft(`encerrar:${s.id}`, { resultado, resumo, proximo, dataAlvo, motivoPerda, descricao, obs }); },
+    [s?.id, resultado, resumo, proximo, dataAlvo, motivoPerda, descricao, obs]);
 
   const done = () => { qc.invalidateQueries({ queryKey: ["schedules"] }); refetch(); };
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
-    toast({ title: "Atenção", description: e instanceof Error ? e.message : "Erro", variant: "destructive" }); } finally { setBusy(false); } };
+    toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
 
   const checkin = () => run(async () => {
     const pos = lastPos !== undefined ? lastPos : await getPosition();
@@ -101,7 +109,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const checkout = () => run(async () => {
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo, data_alvo: dataAlvo || null,
       motivo_perda: motivoPerda, confirmar_perdido: confPerdido, descricao });
-    setStatus("concluido"); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
+    setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
     await visitAction({ id: s!.id, action: "nao_realizado", motivo: naoMotivo, observacao: obs });
@@ -111,6 +119,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   if (!s) return null;
   const fotos = (exec?.evidencias ?? []).filter((e) => e.foto_path).length;
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
+  const faltas = faltasParaEncerrar({ finished, resultado, resumo, proximo, pendingPoints: pts.pending, totalPoints: pts.total,
+    fotoObrigatoria, fotos, dataAlvo, motivoPerda, confPerdido });
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -198,12 +208,15 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <Input value={motivoPerda} onChange={(e) => setMotivoPerda(e.target.value)} placeholder="Motivo da perda" maxLength={200} />
                 <label className="flex items-center gap-2 text-sm"><Checkbox checked={confPerdido} onCheckedChange={(v) => setConfPerdido(!!v)} />Confirmo que o lead será marcado como perdido</label>
               </div>)}
-              <Button className="w-full min-h-12 text-base" onClick={checkout} disabled={busy || !resultado || !proximo || resumo.trim().length < 3 || pts.pending > 0 || (fotoObrigatoria && !pts.total && fotos < 1)}>
-                {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}Encerrar visita</Button>
-              {pts.pending > 0 && <p className="text-xs text-muted-foreground">Avalie todos os pontos para encerrar ({pts.pending} pendente(s)).</p>}
-              {fotoObrigatoria && !pts.total && fotos < 1 && <p className="text-xs text-muted-foreground">Tire ao menos uma foto do equipamento para encerrar.</p>}
             </section>
             <Button variant="ghost" className="w-full" onClick={() => setShowNao((v) => !v)}>Não foi possível realizar</Button>
+            {/* Fixed footer: what is still missing + the close button, always visible. */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 border-t bg-background/95 backdrop-blur px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] space-y-2">
+              <p className={faltas.length ? "text-sm text-warning" : "text-sm text-success"} aria-live="polite">
+                {faltas.length ? `Para encerrar falta: ${faltas.join(" / ")}` : "Tudo pronto para encerrar."}</p>
+              <Button className="w-full min-h-12 text-base" onClick={checkout} disabled={busy || faltas.length > 0}>
+                {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}Encerrar visita</Button>
+            </div>
           </div>
         )}
 
