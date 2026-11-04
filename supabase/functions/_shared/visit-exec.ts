@@ -23,14 +23,17 @@ export function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: n
 }
 
 export interface CheckinEval { distancia_m: number | null; fora_do_raio: boolean; sem_permissao: boolean; precisa_justificativa: boolean }
+export const GEOLOCATION_ERRORS = ["PERMISSION_DENIED", "POSITION_UNAVAILABLE", "TIMEOUT", "UNSUPPORTED", "INVALID_POSITION", "UNKNOWN"] as const;
+export type GeolocationErrorType = typeof GEOLOCATION_ERRORS[number];
 
-/** Decides whether a check-in needs a written reason: no location permission, or farther than the allowed radius. */
+/** Missing position is not evidence of denied permission. */
 export function evaluateCheckin(pos: { lat?: number | null; lng?: number | null } | null, target: { lat?: number | null; lng?: number | null },
-  raio = 300): CheckinEval {
-  const valid = (v: unknown) => typeof v === "number" && Number.isFinite(v);
-  if (!pos || !valid(pos.lat) || !valid(pos.lng)) return { distancia_m: null, fora_do_raio: false, sem_permissao: true, precisa_justificativa: true };
-  if (!valid(target.lat) || !valid(target.lng)) return { distancia_m: null, fora_do_raio: false, sem_permissao: false, precisa_justificativa: false };
-  const d = distanceMeters(pos.lat!, pos.lng!, target.lat!, target.lng!);
+  raio = 300, error?: GeolocationErrorType | null): CheckinEval {
+  const valid = (v: unknown, limit: number): v is number => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= limit;
+  const lat = pos?.lat; const lng = pos?.lng;
+  if (!valid(lat, 90) || !valid(lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: error === "PERMISSION_DENIED", precisa_justificativa: true };
+  if (!valid(target.lat, 90) || !valid(target.lng, 180)) return { distancia_m: null, fora_do_raio: false, sem_permissao: false, precisa_justificativa: false };
+  const d = distanceMeters(lat, lng, target.lat, target.lng);
   const fora = d > raio;
   return { distancia_m: d, fora_do_raio: fora, sem_permissao: false, precisa_justificativa: fora };
 }
@@ -91,9 +94,9 @@ export function checkoutMessage(v: VisitInfo & { resultado: string; duracao: num
     `Próximo passo: ${NEXT_LABEL[v.proximo] ?? clean(v.proximo)}${v.detalhe ? ` (${clean(v.detalhe)})` : ""}`,
     `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
-export function checkinAlertMessage(v: VisitInfo & { distancia: number | null; justificativa: string }): string {
+export function checkinAlertMessage(v: VisitInfo & { distancia: number | null; justificativa: string; geolocation_error?: string | null }): string {
   return ["📍 Check-in fora do local", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`,
-    v.distancia === null ? "Localização: não autorizada" : `Distância: ${v.distancia} m do endereço`, `Justificativa: ${clean(v.justificativa)}`,
+    v.distancia === null ? `Localização: indisponível${v.geolocation_error ? ` (${clean(v.geolocation_error)})` : ""}` : `Distância: ${v.distancia} m do endereço`, `Justificativa: ${clean(v.justificativa)}`,
     `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
 export function lateAlertMessage(v: VisitInfo & { hora: string; minutos: number }): string {

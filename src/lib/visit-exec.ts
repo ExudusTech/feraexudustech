@@ -47,11 +47,4 @@ export function visitAction<T = Record<string, unknown>>(body: Record<string, un
   return invokeAction<T>("visita-acoes", body);
 }
 
-export function getPosition(): Promise<{ lat: number; lng: number; precisao: number } | null> {
-  return new Promise((resolve) => {
-    if (!("geolocation" in navigator)) return resolve(null);
-    navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy }),
-      () => resolve(null), { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
-  });
-}
+export { getPosition } from "./geolocation";

@@ -32,3 +32,4 @@
 - Leads become clients only via converter_lead_em_cliente (dedupe CNPJ > place_id > name+city, copies contacts, idempotent); direct client inserts are privileged or origem base_existente, so prospects never bypass the lead pipeline.
 - Same-user auth events (token refresh, focus SIGNED_IN) never show the global loader or downgrade a loaded user, and visit forms keep local drafts (src/lib/visit-draft.ts); returning from the phone camera previously unmounted the visit and lost data.
 - Phone lists opt into the .table-cards CSS (index.css) so table rows render as one-column cards; mark cells with data-card (title/actions/hide) and data-label instead of building separate mobile markup.
+- Check-in geolocation uses the typed capture helper with memory-only recent-position fallback; the server validates diagnostics and marks sem_permissao only for explicit denial, because missing GPS does not establish permission state.

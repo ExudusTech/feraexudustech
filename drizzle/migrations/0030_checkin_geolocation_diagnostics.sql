@@ -1,0 +1,4 @@
+ALTER TABLE public.schedule_checkins ADD COLUMN IF NOT EXISTS geolocation_error text;
+ALTER TABLE public.schedule_checkins ADD CONSTRAINT schedule_checkins_geolocation_error_check CHECK (geolocation_error IS NULL OR geolocation_error IN ('PERMISSION_DENIED', 'POSITION_UNAVAILABLE', 'TIMEOUT', 'UNSUPPORTED', 'INVALID_POSITION', 'UNKNOWN'));
+COMMENT ON COLUMN public.schedule_checkins.geolocation_error IS 'Browser geolocation failure code, including failures recovered using a recent position. NULL on success or legacy check-ins whose failure cause is unknown.';
+COMMENT ON COLUMN public.schedule_checkins.sem_permissao IS 'For new check-ins, true only when the browser explicitly reports PERMISSION_DENIED. Legacy rows conflated all location failures; their original cause cannot be recovered.';

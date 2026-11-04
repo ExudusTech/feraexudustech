@@ -3,8 +3,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
-  NEXT_LABEL, nextMaintenance, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout,
+  NEXT_LABEL, nextMaintenance, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
+import { pontosPendentes } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -56,22 +57,26 @@ Deno.serve(async (req) => {
       if (!["agendado", "confirmado"].includes(s.status)) return json({ error: "Esta visita não pode ser iniciada" }, 409);
       const { data: org } = await admin.from("organizations").select("raio_checkin_m").eq("id", s.organization_id).maybeSingle();
       const target = { lat: s.latitude ?? lead?.latitude, lng: s.longitude ?? lead?.longitude };
-      const pos = b.sem_permissao ? null : { lat: num(b.lat), lng: num(b.lng) };
-      const ev = evaluateCheckin(pos, target, Number(org?.raio_checkin_m ?? 300) || 300);
+      if (b.geolocation_error != null && !GEOLOCATION_ERRORS.includes(b.geolocation_error)) return json({ error: "Diagnóstico de localização inválido" }, 400);
+      const lat = num(b.lat); const lng = num(b.lng);
+      const pos = lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+      // Older clients send sem_permissao for every failure; never infer denial from that flag.
+      const geolocation_error = b.geolocation_error ?? (pos ? null : "UNKNOWN");
+      const ev = evaluateCheckin(pos, target, Number(org?.raio_checkin_m ?? 300) || 300, geolocation_error);
       const justificativa = txt(b.justificativa, 300);
       if (ev.precisa_justificativa && justificativa.length < 3) {
-        return json({ error: ev.sem_permissao ? "Sem localização: escreva uma justificativa" : `Você está a ${ev.distancia_m} m do endereço: escreva uma justificativa`,
+        return json({ error: !pos ? "Sem localização: escreva uma justificativa" : `Você está a ${ev.distancia_m} m do endereço: escreva uma justificativa`,
           precisa_justificativa: true, distancia_m: ev.distancia_m }, 422);
       }
       const now = new Date().toISOString();
       const { error: e1 } = await admin.from("schedule_checkins").insert({ organization_id: s.organization_id, schedule_id: s.id, user_id: user.id, checkin_em: now,
         latitude: pos?.lat ?? null, longitude: pos?.lng ?? null, precisao_m: num(b.precisao), distancia_m: ev.distancia_m,
-        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, justificativa: justificativa || null });
+        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, geolocation_error, justificativa: justificativa || null });
       if (e1) { console.error("[visita-acoes] checkin", e1.code); return json({ error: e1.code === "23505" ? "Check-in já registrado" : "Não foi possível iniciar" }, 400); }
       await admin.from("schedules").update({ status: "em_atendimento", checkin_em: now }).eq("id", s.id);
-      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${ev.distancia_m} m do endereço` : ev.sem_permissao ? " sem localização" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
+      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${ev.distancia_m} m do endereço` : !pos ? ` sem localização (${geolocation_error})` : ""}${justificativa ? ` — ${justificativa}` : ""}`);
       if (ev.precisa_justificativa) {
-        bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa }),
+        bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa, geolocation_error }),
           { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id" }));
       }
       return json({ ok: true, ...ev });

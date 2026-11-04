@@ -1,4 +1,6 @@
 # Tasks
+- [x] Corrigir localização no check-in: erros distintos, captura 20s/45s, posição recente até 60s em memória, diagnóstico validado/gravado; 452 testes + 3 Deno, build OK; fluxo móvel autenticado como Marcos com GPS/gravação simulados, sem alterar visita real.
+- [ ] Validar localização no app instalado em Android/Chrome e iPhone/Safari (blocked: aparelhos físicos indisponíveis no ambiente).
 - [x] Lote 8 Fase A: horário humano configurável, utilitário de horário útil, fila de avisos fora do horário (checagem a cada 5 min), mensagens mcp; 10 testes de horário + 7 de mcp.
 - [x] Lote 9 Fase B: Atendimentos (tabela, criação/agregação pela mcp, tela, painel Agora, Assumir/Resolver, gravidade e reavisos); testes de ordenação e gravidade.
 - [x] Lote 9 Fase C: responder pelo Fera via GPT Maker (histórico, enviar, start/stop-human) na função atendimento-acoes.

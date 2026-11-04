@@ -7047,6 +7047,7 @@ export type Database = {
           created_at: string
           distancia_m: number | null
           fora_do_raio: boolean
+          geolocation_error: string | null
           id: string
           justificativa: string | null
           latitude: number | null
@@ -7062,6 +7063,7 @@ export type Database = {
           created_at?: string
           distancia_m?: number | null
           fora_do_raio?: boolean
+          geolocation_error?: string | null
           id?: string
           justificativa?: string | null
           latitude?: number | null
@@ -7077,6 +7079,7 @@ export type Database = {
           created_at?: string
           distancia_m?: number | null
           fora_do_raio?: boolean
+          geolocation_error?: string | null
           id?: string
           justificativa?: string | null
           latitude?: number | null
