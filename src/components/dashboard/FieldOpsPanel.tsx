@@ -33,8 +33,9 @@ export default function FieldOpsPanel() {
   const { data: checkins = [] } = useQuery({
     queryKey: ["field-checkins", user?.organization_id, weekStart], enabled: !!user?.organization_id,
     queryFn: async () => {
-      const { data } = await (supabase as any).from("schedule_checkins").select("schedule_id, checkin_em, latitude, longitude, distancia_m, fora_do_raio, sem_permissao, user_id")
-        .eq("organization_id", user!.organization_id).gte("checkin_em", `${weekStart}T00:00:00-03:00`);
+      if (!user?.organization_id) return [];
+      const { data } = await (supabase as any).from("schedule_checkins").select("schedule_id, checkin_em, latitude, longitude, distancia_m, fora_do_raio, sem_permissao, geolocation_error, user_id")
+        .eq("organization_id", user.organization_id).gte("checkin_em", `${weekStart}T00:00:00-03:00`);
       return (data ?? []) as any[];
     },
   });
