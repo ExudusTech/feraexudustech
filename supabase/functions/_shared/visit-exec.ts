@@ -10,7 +10,7 @@ export type ProximoPasso = typeof PROXIMOS[number];
 export const NAO_REALIZADO = ["cliente_ausente", "cancelado_no_local", "reagendar"] as const;
 
 export const RESULT_LABEL: Record<string, string> = { boa: "Visita boa", mediana: "Visita mediana", ruim: "Visita ruim",
-  concluida: "Concluída", com_problema: "Concluída com problema" };
+  concluida: "Concluída", com_problema: "Com problema" };
 export const NEXT_LABEL: Record<string, string> = { novo_agendamento: "Novo agendamento", proposta: "Enviar proposta",
   follow_up: "Follow-up", perdido: "Perdido" };
 export const NAO_REALIZADO_LABEL: Record<string, string> = { cliente_ausente: "Cliente ausente", cancelado_no_local: "Cancelado no local", reagendar: "Reagendar" };
@@ -76,7 +76,7 @@ export function validateCheckout(i: CheckoutInput): string | null {
   const allowed: readonly string[] = i.commercial ? RESULTADOS_COMERCIAL : RESULTADOS_TECNICO;
   if (!allowed.includes(i.resultado ?? "")) return "Escolha o resultado";
   const resumo = (i.resumo ?? "").trim();
-  if (resumo.length < 3 || resumo.length > 500) return "Escreva um resumo curto";
+  if (resumo.length > 500) return "Resumo muito longo";
   if (!PROXIMOS.includes(i.proximo as ProximoPasso)) return "Defina o próximo passo";
   if (i.proximo === "follow_up" && !/^\d{4}-\d{2}-\d{2}$/.test(i.data_alvo ?? "")) return "Informe a data do follow-up";
   if (i.proximo === "perdido" && ((i.motivo_perda ?? "").trim().length < 3 || i.confirmar_perdido !== true)) return "Informe e confirme o motivo da perda";

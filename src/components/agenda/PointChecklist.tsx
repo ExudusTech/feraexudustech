@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useProducts } from "@/hooks/use-products";
 import { useProductImageUrls } from "@/hooks/use-product-images";
+import { refisCompativeis } from "@/lib/base-instalada";
 import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, pontosPendentes, uploadVisitPhoto } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 import { clearDraft, useDraftState } from "@/lib/visit-draft";
@@ -56,7 +57,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
   const [open, setOpen] = useDraftState<string | null>(`pt-open:${scheduleId}`, null);
   const [busy, setBusy] = useState(false);
   const [f, setF] = useDraftState<{ estado?: string; manut: string[]; subst: boolean; item: string; itemId: string; qtd: string; urg: boolean; foto?: string; obs: string; resolver: string[] }>(`pt-aval:${scheduleId}`, { manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] });
-  const [novo, setNovo] = useDraftState<{ local: string; disp: string; refil: string; qtd: string; foto?: string; obs: string } | null>(`pt-novo:${scheduleId}`, null);
+  const [novo, setNovo] = useDraftState<{ local: string; disp: string; refil: string; qtd: string; foto?: string; obs: string; estado?: string; manut?: string[] } | null>(`pt-novo:${scheduleId}`, null);
 
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
     toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
@@ -70,12 +71,17 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
   });
   const criar = () => run(async () => {
     await baseAction({ action: "ponto_novo", schedule_id: scheduleId, localizacao_interna: novo!.local, product_id: novo!.disp || undefined,
-      refil_product_id: novo!.refil || undefined, quantidade: novo!.qtd, foto_path: novo!.foto, observacao: novo!.obs });
-    setNovo(null); clearDraft(`pt-novo:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); toast({ title: "Ponto cadastrado" });
+      refil_product_id: novo!.refil || undefined, quantidade: novo!.qtd, foto_path: novo!.foto, observacao: novo!.obs, estado: novo!.estado, manutencoes: novo!.manut ?? [] });
+    setNovo(null); clearDraft(`pt-novo:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); toast({ title: "Ponto cadastrado e avaliado" });
   });
 
+  const [todosRefis, setTodosRefis] = useState(false);
+  const compat = novo ? refisCompativeis(products.find((p) => p.id === novo.disp) as any, refis as any[]) : { lista: refis, mapeado: false };
+  const refisLista = (novo?.disp && !todosRefis ? compat.lista : refis) as typeof refis;
+  const novoFalta = !novo ? null : novo.local.trim().length < 2 ? "Informe o local do ponto" : !novo.estado ? "Escolha o estado do ponto" : !novo.foto ? "Tire a foto do ponto" : null;
+
   return (
-    <section className="space-y-3 rounded-lg border p-3">
+    <section id="visita-pontos" className="space-y-3 rounded-lg border p-3 scroll-mt-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">Pontos do cliente</h3>
         <Badge variant={pend ? "outline" : "default"}>{pontos.length - pend}/{pontos.length} avaliados</Badge>
@@ -95,8 +101,8 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
             {open === p.id && (
               <div className="space-y-2">
                 <div className="grid grid-cols-3 gap-2">{(["verde", "amarelo", "vermelho"] as const).map((e) => (
-                  <Button key={e} type="button" variant="outline" className={cn("min-h-12", f.estado === e && ESTADO_CLASS[e])} onClick={() => setF({ ...f, estado: e })}>{ESTADO_LABEL[e]}</Button>))}</div>
-                <div className="flex flex-wrap gap-3">{MANUTENCOES.map((m) => (
+                  <Button key={e} type="button" variant="outline" className={cn("min-h-12 h-auto whitespace-normal", f.estado === e && ESTADO_CLASS[e])} onClick={() => setF({ ...f, estado: e })}>{ESTADO_LABEL[e]}</Button>))}</div>
+                <div className="grid grid-cols-2 gap-2">{MANUTENCOES.map((m) => (
                   <label key={m} className="flex items-center gap-2 text-sm min-h-9"><Checkbox checked={f.manut.includes(m)}
                     onCheckedChange={(v) => setF({ ...f, manut: v ? [...f.manut, m] : f.manut.filter((x) => x !== m) })} />{MANUTENCAO_LABEL[m]}</label>))}</div>
                 {ocs.length > 0 && <div className="space-y-1">{ocs.map((o) => (
@@ -127,24 +133,34 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
           <Label>Novo ponto</Label>
           {novo.foto && <p className="text-xs text-warning">Foto já enviada — falta tocar em "Salvar ponto".</p>}
           <Input value={novo.local} onChange={(e) => setNovo({ ...novo, local: e.target.value })} placeholder="Local interno (ex.: Banheiro feminino — público)" maxLength={120} />
-          <Select value={novo.disp} onValueChange={(v) => setNovo({ ...novo, disp: v })}>
-            <SelectTrigger><SelectValue placeholder="Dispenser" /></SelectTrigger>
+          <Select value={novo.disp} onValueChange={(v) => { setTodosRefis(false); setNovo({ ...novo, disp: v, refil: "" }); }}>
+            <SelectTrigger><SelectValue placeholder="Aparelho / dispenser" /></SelectTrigger>
             <SelectContent>{dispensers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
           <Select value={novo.refil} onValueChange={(v) => setNovo({ ...novo, refil: v })}>
             <SelectTrigger><SelectValue placeholder="Refil / produto usado" /></SelectTrigger>
-            <SelectContent>{refis.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{refisLista.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
+          {novo.disp && <p className="text-xs text-muted-foreground">
+            {todosRefis ? "Mostrando todos os refis." : compat.mapeado ? `${compat.lista.length} refil(is) compatível(is) com este aparelho.` : "Sem compatibilidade cadastrada: mostrando refis da mesma marca."}{" "}
+            <button type="button" className="underline" onClick={() => setTodosRefis((v) => !v)}>{todosRefis ? "Só compatíveis" : "Ver todos"}</button></p>}
           <Input value={novo.qtd} onChange={(e) => setNovo({ ...novo, qtd: e.target.value.replace(/\D/g, "").slice(0, 4) })} inputMode="numeric" placeholder="Quantidade" />
-          <Textarea value={novo.obs} onChange={(e) => setNovo({ ...novo, obs: e.target.value })} placeholder="Observação" maxLength={500} />
+          <Label>Como está o ponto?</Label>
+          <div className="grid grid-cols-3 gap-2">{(["verde", "amarelo", "vermelho"] as const).map((e) => (
+            <Button key={e} type="button" variant="outline" className={cn("min-h-12 h-auto whitespace-normal", novo.estado === e && ESTADO_CLASS[e])} onClick={() => setNovo({ ...novo, estado: e })}>{ESTADO_LABEL[e]}</Button>))}</div>
+          <div className="grid grid-cols-2 gap-2">{MANUTENCOES.map((m) => (
+            <label key={m} className="flex items-center gap-2 text-sm min-h-9"><Checkbox checked={(novo.manut ?? []).includes(m)}
+              onCheckedChange={(v) => setNovo({ ...novo, manut: v ? [...(novo.manut ?? []), m] : (novo.manut ?? []).filter((x) => x !== m) })} />{MANUTENCAO_LABEL[m]}</label>))}</div>
+          <Textarea value={novo.obs} onChange={(e) => setNovo({ ...novo, obs: e.target.value })} placeholder="Observação (opcional)" maxLength={500} />
           <p className="text-xs text-muted-foreground">Fotografe só o equipamento, sem pessoas.</p>
           <div className="grid grid-cols-2 gap-2">
             <PhotoButton label={novo.foto ? "Foto ✓" : "Foto do ponto"} busy={busy} onFile={(file) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setNovo((x) => x && ({ ...x, foto: path })); })} />
-            <Button className="min-h-11" disabled={busy || novo.local.trim().length < 2 || !novo.foto} onClick={criar}>Salvar ponto</Button>
+            <Button className="min-h-11 h-auto whitespace-normal" disabled={busy || !!novoFalta} onClick={criar}>Salvar ponto</Button>
           </div>
+          {novoFalta && <p className="text-xs text-warning">{novoFalta}</p>}
           <Button variant="ghost" size="sm" onClick={() => setNovo(null)}>Cancelar</Button>
         </div>
-      ) : <Button variant="outline" className="w-full min-h-11" onClick={() => setNovo({ local: "", disp: "", refil: "", qtd: "1", obs: "" })}><Plus className="h-4 w-4" />Adicionar ponto</Button>}
+      ) : <Button variant="outline" className="w-full min-h-11" onClick={() => setNovo({ local: "", disp: "", refil: "", qtd: "1", obs: "", manut: [] })}><Plus className="h-4 w-4" />Adicionar ponto</Button>}
     </section>
   );
 }

@@ -47,18 +47,21 @@ export function openVisitFromSession(): string | null {
 
 export interface ClosingState {
   finished: boolean; resultado: string; resumo: string; proximo: string; pendingPoints: number; totalPoints: number;
-  fotoObrigatoria: boolean; fotos: number; dataAlvo?: string; motivoPerda?: string; confPerdido?: boolean;
+  fotoObrigatoria: boolean; fotos: number; dataAlvo?: string; motivoPerda?: string; confPerdido?: boolean; tecnico?: boolean;
 }
 
-/** What is still missing to close the visit, in plain Portuguese. Empty list = can close. */
-export function faltasParaEncerrar(c: ClosingState): string[] {
-  const f: string[] = [];
-  if (c.pendingPoints > 0) f.push(c.pendingPoints === 1 ? "avaliar 1 ponto" : `avaliar ${c.pendingPoints} pontos`);
-  if (c.fotoObrigatoria && c.totalPoints === 0 && c.fotos < 1) f.push("cadastrar um ponto ou tirar uma foto do equipamento");
-  if (!c.resultado) f.push("resultado");
-  if (c.resumo.trim().length < 3) f.push("resumo");
-  if (!c.proximo) f.push("próximo passo");
-  else if (c.proximo === "follow_up" && !c.dataAlvo) f.push("data do follow-up");
-  else if (c.proximo === "perdido" && ((c.motivoPerda ?? "").trim().length < 3 || !c.confPerdido)) f.push("motivo e confirmação da perda");
+export type FaltaAlvo = "pontos" | "registro" | "resultado" | "proximo";
+export interface Falta { label: string; alvo: FaltaAlvo }
+
+/** What is still missing to close the visit (plain Portuguese + the section to jump to). Empty = can close. Summary is optional. */
+export function faltasDetalhadas(c: ClosingState): Falta[] {
+  const f: Falta[] = [];
+  if (c.pendingPoints > 0) f.push({ label: c.pendingPoints === 1 ? "avaliar 1 ponto" : `avaliar ${c.pendingPoints} pontos`, alvo: "pontos" });
+  if (c.fotoObrigatoria && c.totalPoints === 0 && c.fotos < 1) f.push({ label: "cadastrar um ponto ou tirar uma foto do equipamento", alvo: c.tecnico ? "pontos" : "registro" });
+  if (!c.resultado) f.push({ label: "resultado", alvo: "resultado" });
+  if (!c.proximo) f.push({ label: c.tecnico ? "frequência da próxima visita" : "próximo passo", alvo: "proximo" });
+  else if (c.proximo === "follow_up" && !c.dataAlvo) f.push({ label: "data do retorno", alvo: "proximo" });
+  else if (c.proximo === "perdido" && (c.motivoPerda ?? "").trim().length < 3) f.push({ label: "motivo da perda", alvo: "proximo" });
   return f;
 }
+export function faltasParaEncerrar(c: ClosingState): string[] { return faltasDetalhadas(c).map((x) => x.label); }

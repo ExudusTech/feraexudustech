@@ -3,8 +3,10 @@
 export const ESTADOS = ["verde", "amarelo", "vermelho"] as const;
 export type Estado = typeof ESTADOS[number];
 export const ESTADO_LABEL: Record<string, string> = { verde: "OK", amarelo: "Atenção", vermelho: "Ruim" };
-export const MANUTENCOES = ["refil_reposto", "limpeza", "ajuste"] as const;
-export const MANUTENCAO_LABEL: Record<string, string> = { refil_reposto: "Refil reposto", limpeza: "Limpeza", ajuste: "Ajuste" };
+export const MANUTENCOES = ["refil_reposto", "limpeza", "aparelho_trocado", "problema"] as const;
+/** Also accepted from older clients. */
+export const MANUTENCOES_ACEITAS = [...MANUTENCOES, "ajuste"] as const;
+export const MANUTENCAO_LABEL: Record<string, string> = { refil_reposto: "Refil reposto", limpeza: "Limpeza", aparelho_trocado: "Aparelho trocado", problema: "Problema", ajuste: "Ajuste" };
 export const FREQUENCIAS = ["semanal", "quinzenal", "mensal", "personalizada"] as const;
 export type Frequencia = typeof FREQUENCIAS[number];
 export const FREQ_LABEL: Record<string, string> = { semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal", personalizada: "Personalizada" };
@@ -68,6 +70,35 @@ export function pontoErro(p: { localizacao_interna?: string | null; foto_path?: 
   if (!p.foto_path) return "Tire a foto do ponto";
   if (p.quantidade !== undefined && p.quantidade !== null && !/^\d{1,4}$/.test(String(p.quantidade).trim())) return "Quantidade inválida";
   return null;
+}
+
+/** Frequencies the consultant can pick when closing a maintenance visit without a plan. */
+export const FREQ_RAPIDAS = ["semanal", "quinzenal", "mensal"] as const;
+
+/** Next planned visit date strictly after `today` (holidays are handled by the daily generator). */
+export function proximaVisitaPlano(p: Plano, today: string): string {
+  return proximasDatas(p, addDays(today, 1), 200, () => false)[0] ?? addDays(today, intervaloDias(p));
+}
+
+export interface Compativel { id: string; brand?: string | null; is_dispenser?: boolean | null; dispenser_family_id?: string | null;
+  compatible_dispenser_families?: string[] | null; specifications?: unknown; linha_produto?: string | null; name?: string }
+const normTxt = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+/**
+ * Refills compatible with a dispenser: refill specifications naming the dispenser, else the family mapping
+ * (compatible_dispenser_families ∋ dispenser family), else the same brand. `mapeado` tells whether a real mapping was used.
+ */
+export function refisCompativeis<T extends Compativel>(disp: Compativel | null | undefined, refis: T[]): { lista: T[]; mapeado: boolean } {
+  if (!disp) return { lista: refis, mapeado: false };
+  const fam = disp.dispenser_family_id;
+  const byFam = fam ? refis.filter((r) => (r.compatible_dispenser_families ?? []).includes(fam)) : [];
+  const dn = normTxt(disp.name);
+  const bySpec = dn.length >= 4 ? refis.filter((r) => normTxt(JSON.stringify(r.specifications ?? "")).includes(dn)) : [];
+  // The catalog naming this exact dispenser is the most specific mapping; the family mapping comes next.
+  const mapped = bySpec.length ? bySpec : byFam;
+  if (mapped.length) return { lista: mapped, mapeado: true };
+  const brand = normTxt(disp.brand);
+  return { lista: brand ? refis.filter((r) => normTxt(r.brand) === brand) : refis, mapeado: false };
 }
 
 /** Ids of active points still without an evaluation in this visit. */

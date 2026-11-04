@@ -29,7 +29,7 @@ describe("consultant field flow: start → new point with photo → evaluate →
 
     await visitAction({ id: "s1", action: "checkin", sem_permissao: true, justificativa: "Atendimento no rio" });
     // Before any point: the footer lists everything missing.
-    expect(faltasParaEncerrar(closing)).toEqual(["cadastrar um ponto ou tirar uma foto do equipamento", "resultado", "resumo", "próximo passo"]);
+    expect(faltasParaEncerrar(closing)).toEqual(["cadastrar um ponto ou tirar uma foto do equipamento", "resultado", "próximo passo"]);
 
     const ponto = await baseAction<{ id: string }>({ action: "ponto_novo", schedule_id: "s1", localizacao_interna: "Banheiro", foto_path: "org/s1/x.jpg" });
     expect(ponto.id).toBe("p1");
@@ -61,11 +61,11 @@ describe("consultant field flow: start → new point with photo → evaluate →
 });
 
 describe("closing requirements", () => {
-  it("follow-up needs a date; lost needs reason and confirmation", () => {
-    const b = { ...closing, fotoObrigatoria: false, resultado: "boa", resumo: "ok ok" };
-    expect(faltasParaEncerrar({ ...b, proximo: "follow_up" })).toEqual(["data do follow-up"]);
-    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço" })).toEqual(["motivo e confirmação da perda"]);
-    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço", confPerdido: true })).toEqual([]);
+  it("return needs a date; lost needs only a reason", () => {
+    const b = { ...closing, fotoObrigatoria: false, resultado: "boa", resumo: "" };
+    expect(faltasParaEncerrar({ ...b, proximo: "follow_up" })).toEqual(["data do retorno"]);
+    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "" })).toEqual(["motivo da perda"]);
+    expect(faltasParaEncerrar({ ...b, proximo: "perdido", motivoPerda: "preço" })).toEqual([]);
   });
   it("counts several pending points", () => {
     expect(faltasParaEncerrar({ ...closing, pendingPoints: 3, totalPoints: 3 })[0]).toBe("avaliar 3 pontos");
@@ -78,5 +78,50 @@ describe("local draft", () => {
     expect(readDraft<{ foto: string }>("pt-novo:s1")?.foto).toBe("org/s1/x.jpg");
     clearDraft("pt-novo:s1");
     expect(readDraft("pt-novo:s1")).toBeNull();
+  });
+});
+
+import { faltasDetalhadas } from "@/lib/visit-draft";
+import { refisCompativeis, MANUTENCOES } from "@/lib/base-instalada";
+import { RESULT_LABEL, validateCheckout } from "@/lib/visit-exec";
+import { pendentesAnteriores, porConsultor } from "@/lib/hoje";
+
+describe("ajustes do teste em campo 04/11", () => {
+  const base = { finished: false, resultado: "concluida", resumo: "", proximo: "plano", pendingPoints: 0, totalPoints: 1, fotoObrigatoria: true, fotos: 0, tecnico: true };
+  it("resumo é opcional no encerramento", () => {
+    expect(faltasDetalhadas(base)).toEqual([]);
+    expect(validateCheckout({ status: "em_atendimento", resultado: "concluida", resumo: "", proximo: "novo_agendamento", commercial: false, fotos: 0, precisa_foto: false })).toBeNull();
+  });
+  it("manutenção sem plano pede só a frequência e aponta para a seção", () => {
+    expect(faltasDetalhadas({ ...base, proximo: "" })).toEqual([{ label: "frequência da próxima visita", alvo: "proximo" }]);
+  });
+  it("ponto pendente leva à lista de pontos", () => {
+    expect(faltasDetalhadas({ ...base, pendingPoints: 1 })[0]).toEqual({ label: "avaliar 1 ponto", alvo: "pontos" });
+  });
+  it("perdido comercial exige só o motivo", () => {
+    expect(faltasDetalhadas({ ...base, tecnico: false, resultado: "boa", proximo: "perdido", motivoPerda: "Preço" })).toEqual([]);
+  });
+  it("rótulo curto para concluída com problema e checklist com aparelho trocado/problema", () => {
+    expect(RESULT_LABEL.com_problema).toBe("Com problema");
+    expect(MANUTENCOES).toEqual(["refil_reposto", "limpeza", "aparelho_trocado", "problema"]);
+  });
+  it("refil compatível: especificação > família > mesma marca", () => {
+    const disp = { id: "d", name: "DISPENSER MOD INTERFOLIADO - TOALHA", brand: "SUZANO", dispenser_family_id: "f1" };
+    const refis = [
+      { id: "a", brand: "SUZANO", specifications: { dispenser: "Dispenser MOD Interfoliado - Toalha" } },
+      { id: "b", brand: "KLEEN", compatible_dispenser_families: ["f1"] },
+      { id: "c", brand: "EKKOA" },
+    ];
+    expect(refisCompativeis(disp, refis).lista.map((r) => r.id)).toEqual(["a"]);
+    expect(refisCompativeis({ ...disp, name: "Outro" }, refis).lista.map((r) => r.id)).toEqual(["b"]);
+    const ekkoa = refisCompativeis({ id: "e", name: "APARELHO X", brand: "EKKOA" }, refis);
+    expect(ekkoa).toEqual({ lista: [refis[2]], mapeado: false });
+  });
+  it("Hoje mostra visitas antigas ainda abertas e agrupa por consultor", () => {
+    const mk = (id: string, d: string, st: string, a: string | null = "u1") => ({ id, scheduled_date: d, status: st, assigned_to: a } as any);
+    const list = [mk("8261", "2026-11-03", "em_atendimento"), mk("x", "2026-11-02", "concluido"), mk("y", "2026-11-01", "agendado"), mk("z", "2026-11-04", "agendado")];
+    expect(pendentesAnteriores(list, "2026-11-04").map((s) => s.id)).toEqual(["8261", "y"]);
+    const g = porConsultor([mk("1", "2026-11-04", "agendado", "u2"), mk("2", "2026-11-04", "agendado", null), mk("3", "2026-11-04", "agendado", "u1")], new Map([["u1", "Marcos"], ["u2", "Arilson"]]));
+    expect(g.map((x) => x.nome)).toEqual(["Arilson", "Marcos", "Sem responsável"]);
   });
 });
