@@ -3,10 +3,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
-  NEXT_LABEL, nextMaintenance, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
+  NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
 import { FREQ_RAPIDAS, pontosPendentes, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
+import { serviceLabel } from "../_shared/schedule-notify.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -42,7 +43,7 @@ Deno.serve(async (req) => {
   const consultor = (me?.name as string | undefined) ?? "Equipe";
   const cliente = (s as any).clients?.name || lead?.empresa_nome || lead?.company || s.title || "";
   const tecnico = isTechnical(s.schedule_type, s.schedule_subtype);
-  const tipo = tecnico ? (s.schedule_subtype || s.schedule_type || "Visita técnica") : "Visita comercial";
+  const tipo = tecnico ? serviceLabel(s.schedule_type, s.schedule_subtype) : "Visita comercial";
   const info = { id: s.id, cliente, consultor, tipo };
   const timeline = async (tipoEv: string, resumo: string, proximo?: string | null) => {
     if (!s.lead_id) return;
@@ -163,7 +164,9 @@ Deno.serve(async (req) => {
         precisa_foto: !checklist && requiresPhoto(s.schedule_type, s.schedule_subtype) });
       if (err) return json({ error: err }, 400);
       const now = new Date().toISOString();
-      const duracao = durationMinutes(s.checkin_em ?? now, now);
+      const dur = duracaoComTermino(s.checkin_em ?? now, b.termino, new Date(now));
+      if ("error" in dur) return json({ error: dur.error, precisa_termino: true }, 400);
+      const duracao = dur.min;
       const resumo = txt(b.resumo, 500);
       const detalhe = b.proximo === "follow_up" ? b.data_alvo.split("-").reverse().join("/") : b.proximo === "perdido" ? txt(b.motivo_perda, 200)
         : b.proximo === "novo_agendamento" && /^\d{4}-\d{2}-\d{2}$/.test(b.data_alvo ?? "") ? b.data_alvo.split("-").reverse().join("/") : txt(b.descricao, 200) || null;

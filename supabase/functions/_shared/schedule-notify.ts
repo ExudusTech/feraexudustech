@@ -3,8 +3,11 @@ export type ScheduleEvent = "agendamento_comercial" | "agendamento_tecnico";
 export const FERA_URL = "https://fera.exudustech.com.br";
 
 /** Decides which team event an internally created schedule triggers, or null when it should not notify. */
-export function scheduleEvent(type?: string | null, subtype?: string | null, source?: string | null): ScheduleEvent | null {
+export function scheduleEvent(type?: string | null, subtype?: string | null, source?: string | null, selfAssigned = false): ScheduleEvent | null {
   if ((source ?? "").toLowerCase() === "flora") return null; // the mcp already notifies Flora bookings
+  // Maintenance the consultant opens for themself in the field: nobody needs a creation alert (check-in/closing still alert).
+  const isManut = (subtype ?? "").toUpperCase() === "MANUTENCAO" || /manutenc/.test((type ?? "").toLowerCase());
+  if (isManut && ((source ?? "").toLowerCase() === "campo" || selfAssigned)) return null;
   const t = (type ?? "").toLowerCase();
   const st = (subtype ?? "").toUpperCase();
   if (st === "REPOSICAO" || t.includes("entrega") || t.includes("nf")) return null;
@@ -19,6 +22,11 @@ const SERVICE_LABEL: Record<string, string> = {
   PROSPECCAO: "Prospecção", DIAGNOSTICO: "Diagnóstico", INSTALACAO: "Instalação", MANUTENCAO: "Manutenção", COBRANCA: "Cobrança",
 };
 
+/** Human service name (Manutenção, Instalação…) for a schedule type/subtype. */
+export function serviceLabel(type?: string | null, subtype?: string | null, fallback = "Visita técnica"): string {
+  return SERVICE_LABEL[(subtype ?? "").trim()] || SERVICE_LABEL[(type ?? "").trim()] || fallback;
+}
+
 export interface InternalSchedule {
   id: string; title?: string | null; scheduled_date?: string | null; start_time?: string | null;
   location?: string | null; schedule_type?: string | null; schedule_subtype?: string | null;
@@ -27,7 +35,9 @@ export interface InternalSchedule {
 
 export function scheduleMessage(event: ScheduleEvent, s: InternalSchedule): string {
   const clean = (v: unknown) => typeof v === "string" ? v.replace(/[\r\n]+/g, " ").trim().slice(0, 240) : "";
-  const lines = [event === "agendamento_tecnico" ? "🔧 Nova visita técnica agendada" : "📅 Nova visita comercial agendada",
+  const tecnico = event === "agendamento_tecnico";
+  const nome = tecnico ? serviceLabel(s.schedule_type, s.schedule_subtype) : "Visita comercial";
+  const lines = [tecnico ? `🔧 Nova ${nome.toLowerCase()} agendada` : "📅 Nova visita comercial agendada",
     `Cliente: ${clean(s.client_name) || clean(s.title) || "Não informado"}`];
   const where = clean(s.location);
   if (where) lines.push(`Onde: ${where}`);

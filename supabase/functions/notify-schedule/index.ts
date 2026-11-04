@@ -21,9 +21,9 @@ Deno.serve(async (req) => {
   // Read the record under the caller's own access rules, so nobody can trigger alerts for other tenants.
   let record: Record<string, any> | null = null; let event: ScheduleEvent | null = null; let linkPath = "";
   if (body.kind === "schedule") {
-    const { data } = await caller.from("schedules").select("id, organization_id, title, scheduled_date, start_time, location, schedule_type, schedule_subtype, source, clients(name), leads(empresa_nome, company, maps_url)")
+    const { data } = await caller.from("schedules").select("id, organization_id, title, scheduled_date, start_time, location, schedule_type, schedule_subtype, source, assigned_to, created_by, clients(name), leads(empresa_nome, company, maps_url)")
       .eq("id", body.id!).maybeSingle();
-    record = data; if (data) { event = scheduleEvent(data.schedule_type, data.schedule_subtype, data.source); linkPath = `/agenda?agendamento=${data.id}`; }
+    record = data; if (data) { event = scheduleEvent(data.schedule_type, data.schedule_subtype, data.source, !!data.assigned_to && data.assigned_to === (data as any).created_by); linkPath = `/agenda?agendamento=${data.id}`; }
   } else {
     const { data } = await caller.from("maintenance_schedule").select("id, organization_id, title, scheduled_date, start_time, tipo_os, maintenance_type, clients(name)")
       .eq("id", body.id!).maybeSingle();
