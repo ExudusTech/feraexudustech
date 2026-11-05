@@ -7242,6 +7242,8 @@ export type Database = {
           id: string
           justificativa: string | null
           latitude: number | null
+          localizacao_origem: string
+          localizacao_whatsapp_em: string | null
           longitude: number | null
           organization_id: string
           precisao_m: number | null
@@ -7259,6 +7261,8 @@ export type Database = {
           id?: string
           justificativa?: string | null
           latitude?: number | null
+          localizacao_origem?: string
+          localizacao_whatsapp_em?: string | null
           longitude?: number | null
           organization_id: string
           precisao_m?: number | null
@@ -7276,6 +7280,8 @@ export type Database = {
           id?: string
           justificativa?: string | null
           latitude?: number | null
+          localizacao_origem?: string
+          localizacao_whatsapp_em?: string | null
           longitude?: number | null
           organization_id?: string
           precisao_m?: number | null

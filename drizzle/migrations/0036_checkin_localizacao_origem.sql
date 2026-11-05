@@ -1,0 +1,2 @@
+ALTER TABLE public.schedule_checkins ADD COLUMN IF NOT EXISTS localizacao_origem text NOT NULL DEFAULT 'app';
+ALTER TABLE public.schedule_checkins ADD COLUMN IF NOT EXISTS localizacao_whatsapp_em timestamptz;
