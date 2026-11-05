@@ -3533,7 +3533,7 @@ const TOOLS_MANIFEST_CLIENTE = [
 ];
 
 // Expose the trusted chat identifier to every tool without making it required.
-for (const tool of TOOLS_MANIFEST) {
+for (const tool of TOOLS_MANIFEST_CLIENTE) {
   Object.assign(tool.parameters.properties, {
     chat_id: { type: "string", description: "ID real do chat GPT Maker: canal-contato. Prevalece sobre campos de canal preenchidos pelo modelo." },
   });
