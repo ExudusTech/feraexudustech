@@ -166,6 +166,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
     fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
   if (proximo === "teste" && !usaPlano) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataAlvo) || dataAlvo <= spDate(new Date())) faltas.push({ label: "data da instalação de teste", alvo: "proximo" });
     if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
     if (!testeCnpj.ok) faltas.push({ label: "CNPJ da empresa", alvo: "proximo" });
   }
