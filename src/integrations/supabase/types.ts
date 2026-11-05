@@ -3651,6 +3651,7 @@ export type Database = {
       }
       comodatos: {
         Row: {
+          aparelho_descricao: string | null
           cidade: string | null
           client_contact_id: string | null
           client_id: string | null
@@ -3667,12 +3668,14 @@ export type Database = {
           foto_path: string | null
           id: string
           inventory_item_id: string | null
+          lead_id: string | null
           linha_produto: string | null
           localizacao_interna: string | null
           notes: string | null
           numero_contrato: string | null
           organization_id: string
           origem: string
+          origem_schedule_id: string | null
           periodicidade_manut: string | null
           product_id: string | null
           proxima_manutencao: string | null
@@ -3686,6 +3689,7 @@ export type Database = {
           valor_mensal: number | null
         }
         Insert: {
+          aparelho_descricao?: string | null
           cidade?: string | null
           client_contact_id?: string | null
           client_id?: string | null
@@ -3702,12 +3706,14 @@ export type Database = {
           foto_path?: string | null
           id?: string
           inventory_item_id?: string | null
+          lead_id?: string | null
           linha_produto?: string | null
           localizacao_interna?: string | null
           notes?: string | null
           numero_contrato?: string | null
           organization_id: string
           origem?: string
+          origem_schedule_id?: string | null
           periodicidade_manut?: string | null
           product_id?: string | null
           proxima_manutencao?: string | null
@@ -3721,6 +3727,7 @@ export type Database = {
           valor_mensal?: number | null
         }
         Update: {
+          aparelho_descricao?: string | null
           cidade?: string | null
           client_contact_id?: string | null
           client_id?: string | null
@@ -3737,12 +3744,14 @@ export type Database = {
           foto_path?: string | null
           id?: string
           inventory_item_id?: string | null
+          lead_id?: string | null
           linha_produto?: string | null
           localizacao_interna?: string | null
           notes?: string | null
           numero_contrato?: string | null
           organization_id?: string
           origem?: string
+          origem_schedule_id?: string | null
           periodicidade_manut?: string | null
           product_id?: string | null
           proxima_manutencao?: string | null
@@ -3785,10 +3794,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "comodatos_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "comodatos_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_origem_schedule_id_fkey"
+            columns: ["origem_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
             referencedColumns: ["id"]
           },
           {
@@ -6291,6 +6314,7 @@ export type Database = {
           logo_url: string | null
           max_users: number
           name: string
+          ocorrencia_seq: number
           phone: string | null
           plan: string
           ponto_facultativo_util: boolean
@@ -6330,6 +6354,7 @@ export type Database = {
           logo_url?: string | null
           max_users?: number
           name: string
+          ocorrencia_seq?: number
           phone?: string | null
           plan?: string
           ponto_facultativo_util?: boolean
@@ -6369,6 +6394,7 @@ export type Database = {
           logo_url?: string | null
           max_users?: number
           name?: string
+          ocorrencia_seq?: number
           phone?: string | null
           plan?: string
           ponto_facultativo_util?: boolean
@@ -7311,43 +7337,61 @@ export type Database = {
       }
       schedule_evidencias: {
         Row: {
+          audio_path: string | null
           autor_id: string
+          client_uuid: string | null
           comodato_id: string | null
           created_at: string
+          duracao_s: number | null
           estado: string | null
           foto_path: string | null
           id: string
           itens: string[]
           observacoes: string | null
           organization_id: string
+          origem: string
           precisa_substituir: boolean
           schedule_id: string
+          tipo: string
+          transcricao: string | null
         }
         Insert: {
+          audio_path?: string | null
           autor_id: string
+          client_uuid?: string | null
           comodato_id?: string | null
           created_at?: string
+          duracao_s?: number | null
           estado?: string | null
           foto_path?: string | null
           id?: string
           itens?: string[]
           observacoes?: string | null
           organization_id: string
+          origem?: string
           precisa_substituir?: boolean
           schedule_id: string
+          tipo?: string
+          transcricao?: string | null
         }
         Update: {
+          audio_path?: string | null
           autor_id?: string
+          client_uuid?: string | null
           comodato_id?: string | null
           created_at?: string
+          duracao_s?: number | null
           estado?: string | null
           foto_path?: string | null
           id?: string
           itens?: string[]
           observacoes?: string | null
           organization_id?: string
+          origem?: string
           precisa_substituir?: boolean
           schedule_id?: string
+          tipo?: string
+          transcricao?: string | null
         }
         Relationships: [
           {
@@ -7440,7 +7484,14 @@ export type Database = {
           checkin_liberado_por: string | null
           checkout_em: string | null
           client_id: string | null
+          coleta_confirmada_em: string | null
+          coleta_confirmada_por: string | null
           coleta_devolucao_tarefa_id: string | null
+          coleta_pendencias: Json
+          coleta_processada_em: string | null
+          coleta_rascunho: Json | null
+          coleta_resumo: string | null
+          coleta_status: string | null
           confirmacao_d1_enviada_em: string | null
           confirmacao_dia_enviada_em: string | null
           confirmacao_status: string
@@ -7470,6 +7521,9 @@ export type Database = {
           nao_realizado_motivo: string | null
           nota_status: string
           notes: string | null
+          ocorrencia_codigo: string | null
+          ocorrencia_numero: number | null
+          ocorrencia_tipo: string | null
           operacao_material: string | null
           operation_id: string | null
           organization_id: string
@@ -7500,7 +7554,14 @@ export type Database = {
           checkin_liberado_por?: string | null
           checkout_em?: string | null
           client_id?: string | null
+          coleta_confirmada_em?: string | null
+          coleta_confirmada_por?: string | null
           coleta_devolucao_tarefa_id?: string | null
+          coleta_pendencias?: Json
+          coleta_processada_em?: string | null
+          coleta_rascunho?: Json | null
+          coleta_resumo?: string | null
+          coleta_status?: string | null
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
@@ -7530,6 +7591,9 @@ export type Database = {
           nao_realizado_motivo?: string | null
           nota_status?: string
           notes?: string | null
+          ocorrencia_codigo?: string | null
+          ocorrencia_numero?: number | null
+          ocorrencia_tipo?: string | null
           operacao_material?: string | null
           operation_id?: string | null
           organization_id: string
@@ -7560,7 +7624,14 @@ export type Database = {
           checkin_liberado_por?: string | null
           checkout_em?: string | null
           client_id?: string | null
+          coleta_confirmada_em?: string | null
+          coleta_confirmada_por?: string | null
           coleta_devolucao_tarefa_id?: string | null
+          coleta_pendencias?: Json
+          coleta_processada_em?: string | null
+          coleta_rascunho?: Json | null
+          coleta_resumo?: string | null
+          coleta_status?: string | null
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
@@ -7590,6 +7661,9 @@ export type Database = {
           nao_realizado_motivo?: string | null
           nota_status?: string
           notes?: string | null
+          ocorrencia_codigo?: string | null
+          ocorrencia_numero?: number | null
+          ocorrencia_tipo?: string | null
           operacao_material?: string | null
           operation_id?: string | null
           organization_id?: string
@@ -7936,6 +8010,10 @@ export type Database = {
       legacy_stage_for: {
         Args: { _chave: string; _tipo: string }
         Returns: Database["public"]["Enums"]["lead_stage"]
+      }
+      ocorrencia_tipo_padrao: {
+        Args: { _op: string; _sub: string; _type: string }
+        Returns: string
       }
     }
     Enums: {
