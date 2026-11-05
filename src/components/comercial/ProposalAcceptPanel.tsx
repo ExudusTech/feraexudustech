@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,11 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
   const [candidatos, setCandidatos] = useState<ConversionCandidate[] | null>(null);
   const [agendar, setAgendar] = useState<{ clientId: string; tipo: Tipo } | null>(null);
   const precisaConverter = !proposal.client_id && !!proposal.lead_id;
+  const preset = useMemo(() => agendar ? { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", proposta_id: proposal.id,
+    material: { operacao: (agendar.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva") as "instalacao_teste" | "instalacao_definitiva", tipo_nota: "" as const,
+      itens: itens.map((i) => ({ product_id: i.product_id, descricao: i.description, quantidade: String(i.quantity) })) } } : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agendar?.clientId, agendar?.tipo, proposal.id]);
   const fechada = ["recusada", "expirada"].includes(proposal.status);
 
   const seguir = async (clientId: string, t: Tipo) => {
@@ -82,9 +87,7 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
       )}
 
       <ScheduleFormDialog open={!!agendar} onOpenChange={(o) => { if (!o) { setAgendar(null); onDone(); } }} defaultClientId={agendar?.clientId ?? null}
-        preset={agendar ? { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", proposta_id: proposal.id,
-          material: { operacao: agendar.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva", tipo_nota: "",
-            itens: itens.map((i) => ({ product_id: i.product_id, descricao: i.description, quantidade: String(i.quantity) })) } } : null} />
+        preset={preset} />
     </div>
   );
 }

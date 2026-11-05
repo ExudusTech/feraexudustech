@@ -10,6 +10,7 @@ import { useClients } from "@/hooks/use-clients";
 import { useCreateProposal, useUpdateProposal, type Proposal } from "@/hooks/use-proposals";
 import { useAcceptProposalAndCreateOrder, useRejectProposal } from "@/hooks/use-proposal-automation";
 import { CheckCircle, XCircle, ShoppingCart } from "lucide-react";
+import ProposalAcceptPanel from "@/components/comercial/ProposalAcceptPanel";
 
 interface Props {
   open: boolean;
@@ -120,6 +121,13 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
           </div>
         )}
 
+        {isEdit && (
+          <>
+            {!proposal.client_id && proposal.leads && <p className="text-sm text-muted-foreground">Lead: {proposal.leads.empresa_nome || proposal.leads.company || proposal.leads.title}</p>}
+            <ProposalAcceptPanel proposal={proposal} onDone={() => onOpenChange(false)} />
+            <Separator />
+          </>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label>Título *</Label>
