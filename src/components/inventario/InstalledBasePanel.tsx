@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 type Card = "clientes" | "pontos" | "alerta" | "atrasados" | "ocorrencias";
 
 /** Installed base: map of active clients with point counts/state, filters, clickable cards and Excel export. */
+import SepararMaterial from "@/components/inventario/SepararMaterial";
 import SepararEquipamentos from "@/components/inventario/SepararEquipamentos";
 
 export default function InstalledBasePanel() {
@@ -73,6 +74,7 @@ export default function InstalledBasePanel() {
   return (
     <div className="space-y-4">
       <SepararEquipamentos />
+      <SepararMaterial />
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cards.map((c) => (
           <button key={c.k} type="button" onClick={() => setCard(card === c.k ? null : c.k)} className="text-left">

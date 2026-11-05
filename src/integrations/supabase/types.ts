@@ -3524,6 +3524,8 @@ export type Database = {
           address: string | null
           assigned_user_id: string | null
           city: string | null
+          cnpj_situacao: string | null
+          cnpj_verificado_em: string | null
           company: string | null
           coverage_area_id: string | null
           created_at: string
@@ -3534,6 +3536,7 @@ export type Database = {
           id: string
           latitude: number | null
           lead_origem_id: string | null
+          levantamento: Json | null
           localizacao_confirmada_em: string | null
           localizacao_origem: string | null
           longitude: number | null
@@ -3545,6 +3548,7 @@ export type Database = {
           place_id: string | null
           produto_linhas: string[] | null
           ramo_atuacao: string | null
+          razao_social: string | null
           state: string | null
           status: string
           updated_at: string | null
@@ -3555,6 +3559,8 @@ export type Database = {
           address?: string | null
           assigned_user_id?: string | null
           city?: string | null
+          cnpj_situacao?: string | null
+          cnpj_verificado_em?: string | null
           company?: string | null
           coverage_area_id?: string | null
           created_at?: string
@@ -3565,6 +3571,7 @@ export type Database = {
           id?: string
           latitude?: number | null
           lead_origem_id?: string | null
+          levantamento?: Json | null
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
@@ -3576,6 +3583,7 @@ export type Database = {
           place_id?: string | null
           produto_linhas?: string[] | null
           ramo_atuacao?: string | null
+          razao_social?: string | null
           state?: string | null
           status?: string
           updated_at?: string | null
@@ -3586,6 +3594,8 @@ export type Database = {
           address?: string | null
           assigned_user_id?: string | null
           city?: string | null
+          cnpj_situacao?: string | null
+          cnpj_verificado_em?: string | null
           company?: string | null
           coverage_area_id?: string | null
           created_at?: string
@@ -3596,6 +3606,7 @@ export type Database = {
           id?: string
           latitude?: number | null
           lead_origem_id?: string | null
+          levantamento?: Json | null
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
@@ -3607,6 +3618,7 @@ export type Database = {
           place_id?: string | null
           produto_linhas?: string[] | null
           ramo_atuacao?: string | null
+          razao_social?: string | null
           state?: string | null
           status?: string
           updated_at?: string | null
@@ -5303,6 +5315,8 @@ export type Database = {
           client_contact_id: string | null
           client_id: string | null
           cnpj: string | null
+          cnpj_situacao: string | null
+          cnpj_verificado_em: string | null
           company: string | null
           contact_email: string | null
           contact_name: string | null
@@ -5324,6 +5338,7 @@ export type Database = {
           instagram_handle: string | null
           interaction_id: string | null
           latitude: number | null
+          levantamento: Json | null
           localizacao_origem: string | null
           longitude: number | null
           maps_url: string | null
@@ -5335,6 +5350,7 @@ export type Database = {
           post_id: string | null
           post_titulo: string | null
           precisa_humano: boolean | null
+          razao_social: string | null
           regiao: string | null
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
@@ -5355,6 +5371,8 @@ export type Database = {
           client_contact_id?: string | null
           client_id?: string | null
           cnpj?: string | null
+          cnpj_situacao?: string | null
+          cnpj_verificado_em?: string | null
           company?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -5376,6 +5394,7 @@ export type Database = {
           instagram_handle?: string | null
           interaction_id?: string | null
           latitude?: number | null
+          levantamento?: Json | null
           localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
@@ -5387,6 +5406,7 @@ export type Database = {
           post_id?: string | null
           post_titulo?: string | null
           precisa_humano?: boolean | null
+          razao_social?: string | null
           regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
@@ -5407,6 +5427,8 @@ export type Database = {
           client_contact_id?: string | null
           client_id?: string | null
           cnpj?: string | null
+          cnpj_situacao?: string | null
+          cnpj_verificado_em?: string | null
           company?: string | null
           contact_email?: string | null
           contact_name?: string | null
@@ -5428,6 +5450,7 @@ export type Database = {
           instagram_handle?: string | null
           interaction_id?: string | null
           latitude?: number | null
+          levantamento?: Json | null
           localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
@@ -5439,6 +5462,7 @@ export type Database = {
           post_id?: string | null
           post_titulo?: string | null
           precisa_humano?: boolean | null
+          razao_social?: string | null
           regiao?: string | null
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
@@ -7218,6 +7242,8 @@ export type Database = {
           id: string
           justificativa: string | null
           latitude: number | null
+          localizacao_origem: string
+          localizacao_whatsapp_em: string | null
           longitude: number | null
           organization_id: string
           precisao_m: number | null
@@ -7235,6 +7261,8 @@ export type Database = {
           id?: string
           justificativa?: string | null
           latitude?: number | null
+          localizacao_origem?: string
+          localizacao_whatsapp_em?: string | null
           longitude?: number | null
           organization_id: string
           precisao_m?: number | null
@@ -7252,6 +7280,8 @@ export type Database = {
           id?: string
           justificativa?: string | null
           latitude?: number | null
+          localizacao_origem?: string
+          localizacao_whatsapp_em?: string | null
           longitude?: number | null
           organization_id?: string
           precisao_m?: number | null
@@ -7415,17 +7445,28 @@ export type Database = {
           description: string | null
           duracao_min: number | null
           end_time: string | null
+          exige_material: boolean
+          exige_nota: boolean
           geocode_tentado_em: string | null
           id: string
+          itens: Json
           latitude: number | null
           lead_id: string | null
+          levantamento: Json | null
           location: string | null
           longitude: number | null
+          material_separado_em: string | null
+          material_separado_por: string | null
+          material_status: string
           nao_realizado_motivo: string | null
+          nota_status: string
           notes: string | null
+          operacao_material: string | null
           operation_id: string | null
           organization_id: string
           plano_manutencao_id: string | null
+          prontidao: string
+          prontidao_alertado_em: string | null
           resultado: string | null
           resumo_execucao: string | null
           schedule_subtype: string | null
@@ -7435,6 +7476,7 @@ export type Database = {
           source: string
           start_time: string | null
           status: string
+          tipo_nota: string | null
           title: string
           updated_at: string | null
           zip_code: string | null
@@ -7456,17 +7498,28 @@ export type Database = {
           description?: string | null
           duracao_min?: number | null
           end_time?: string | null
+          exige_material?: boolean
+          exige_nota?: boolean
           geocode_tentado_em?: string | null
           id?: string
+          itens?: Json
           latitude?: number | null
           lead_id?: string | null
+          levantamento?: Json | null
           location?: string | null
           longitude?: number | null
+          material_separado_em?: string | null
+          material_separado_por?: string | null
+          material_status?: string
           nao_realizado_motivo?: string | null
+          nota_status?: string
           notes?: string | null
+          operacao_material?: string | null
           operation_id?: string | null
           organization_id: string
           plano_manutencao_id?: string | null
+          prontidao?: string
+          prontidao_alertado_em?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -7476,6 +7529,7 @@ export type Database = {
           source?: string
           start_time?: string | null
           status?: string
+          tipo_nota?: string | null
           title: string
           updated_at?: string | null
           zip_code?: string | null
@@ -7497,17 +7551,28 @@ export type Database = {
           description?: string | null
           duracao_min?: number | null
           end_time?: string | null
+          exige_material?: boolean
+          exige_nota?: boolean
           geocode_tentado_em?: string | null
           id?: string
+          itens?: Json
           latitude?: number | null
           lead_id?: string | null
+          levantamento?: Json | null
           location?: string | null
           longitude?: number | null
+          material_separado_em?: string | null
+          material_separado_por?: string | null
+          material_status?: string
           nao_realizado_motivo?: string | null
+          nota_status?: string
           notes?: string | null
+          operacao_material?: string | null
           operation_id?: string | null
           organization_id?: string
           plano_manutencao_id?: string | null
+          prontidao?: string
+          prontidao_alertado_em?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -7517,6 +7582,7 @@ export type Database = {
           source?: string
           start_time?: string | null
           status?: string
+          tipo_nota?: string | null
           title?: string
           updated_at?: string | null
           zip_code?: string | null
@@ -7648,6 +7714,122 @@ export type Database = {
           },
         ]
       }
+      tarefas_faturamento: {
+        Row: {
+          client_id: string | null
+          cnpj: string | null
+          cnpj_verificado: boolean
+          concluida_em: string | null
+          concluida_por: string | null
+          contato: string | null
+          created_at: string
+          data_visita: string
+          empresa_nome: string | null
+          endereco: string | null
+          id: string
+          itens: Json
+          lead_id: string | null
+          lembrete_d1_em: string | null
+          notificada_em: string | null
+          numero: number
+          numero_nota: string | null
+          organization_id: string
+          pdf_path: string | null
+          prazo: string
+          razao_social: string | null
+          schedule_id: string
+          status: string
+          tipo_nota: string
+          tipo_operacao: string
+          updated_at: string
+        }
+        Insert: {
+          client_id?: string | null
+          cnpj?: string | null
+          cnpj_verificado?: boolean
+          concluida_em?: string | null
+          concluida_por?: string | null
+          contato?: string | null
+          created_at?: string
+          data_visita: string
+          empresa_nome?: string | null
+          endereco?: string | null
+          id?: string
+          itens?: Json
+          lead_id?: string | null
+          lembrete_d1_em?: string | null
+          notificada_em?: string | null
+          numero?: number
+          numero_nota?: string | null
+          organization_id: string
+          pdf_path?: string | null
+          prazo: string
+          razao_social?: string | null
+          schedule_id: string
+          status?: string
+          tipo_nota: string
+          tipo_operacao: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string | null
+          cnpj?: string | null
+          cnpj_verificado?: boolean
+          concluida_em?: string | null
+          concluida_por?: string | null
+          contato?: string | null
+          created_at?: string
+          data_visita?: string
+          empresa_nome?: string | null
+          endereco?: string | null
+          id?: string
+          itens?: Json
+          lead_id?: string | null
+          lembrete_d1_em?: string | null
+          notificada_em?: string | null
+          numero?: number
+          numero_nota?: string | null
+          organization_id?: string
+          pdf_path?: string | null
+          prazo?: string
+          razao_social?: string | null
+          schedule_id?: string
+          status?: string
+          tipo_nota?: string
+          tipo_operacao?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_faturamento_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_faturamento_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_faturamento_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_faturamento_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: true
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -7684,6 +7866,7 @@ export type Database = {
         Args: { _schedule: string; _user: string }
         Returns: boolean
       }
+      cnpj_valido: { Args: { _cnpj: string }; Returns: boolean }
       converter_lead_em_cliente: {
         Args: {
           _cliente_existente?: string

@@ -35,6 +35,13 @@ export interface Schedule {
   resultado?: string | null;
   resumo_execucao?: string | null;
   nao_realizado_motivo?: string | null;
+  operacao_material?: string | null;
+  tipo_nota?: string | null;
+  itens?: unknown;
+  nota_status?: string;
+  material_status?: string;
+  prontidao?: string;
+  levantamento?: unknown;
 }
 
 export function useSchedules() {
@@ -68,6 +75,8 @@ export function useCreateSchedule() {
         lead_id: input.lead_id ?? null,
         assigned_to: input.assigned_to ?? null, source: "manual",
         latitude: (input as any).latitude ?? null, longitude: (input as any).longitude ?? null,
+        operacao_material: (input as any).operacao_material ?? null, tipo_nota: (input as any).tipo_nota ?? null,
+        itens: (input as any).itens ?? [],
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;

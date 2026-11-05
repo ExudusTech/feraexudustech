@@ -12,6 +12,7 @@ import LegacyEkkoaRedirect from "@/pages/LegacyEkkoaRedirect";
 import Clientes from "@/pages/Clientes";
 import Leads from "@/pages/Leads";
 import Atendimentos from "./pages/Atendimentos";
+import Tarefas from "./pages/Tarefas";
 import Propostas from "@/pages/Propostas";
 import Produtos from "@/pages/Produtos";
 import Financeiro from "@/pages/Financeiro";
@@ -55,6 +56,7 @@ const App = () => (
             <Route path="/produtos" element={<ProtectedRoute><Produtos /></ProtectedRoute>} />
             <Route path="/financeiro" element={<ProtectedRoute><Financeiro /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute><Relatorios /></ProtectedRoute>} />
+            <Route path="/tarefas" element={<ProtectedRoute><Tarefas /></ProtectedRoute>} />
             <Route path="/hoje" element={<ProtectedRoute><Hoje /></ProtectedRoute>} />
             <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
             <Route path="/areas-cobertura" element={<ProtectedRoute><AreasCobertura /></ProtectedRoute>} />

@@ -12,7 +12,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
-const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar"];
+const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "material_separado"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
 Deno.serve(async (req) => {
@@ -52,6 +52,19 @@ Deno.serve(async (req) => {
   };
 
   switch (b.action) {
+    case "material_separado": {
+      // Who separates material: the visit's consultant, operacional (stock) or a manager. Read with caller RLS first.
+      if (!UUID.test(String(b.id ?? ""))) return json({ error: "Requisição inválida" }, 400);
+      const { data: s } = await caller.from("schedules").select("id, organization_id, assigned_to, material_status, exige_material").eq("id", b.id).maybeSingle();
+      if (!s || s.organization_id !== org) return json({ error: "Agendamento não encontrado" }, 404);
+      if (!privileged && !roleSet.has("operacional") && s.assigned_to !== user.id) return json({ error: "Sem permissão para marcar o material" }, 403);
+      if (!s.exige_material) return json({ error: "Este agendamento não tem material a separar" }, 409);
+      const separado = b.desfazer !== true;
+      const { error } = await admin.from("schedules").update({ material_status: separado ? "separado" : "pendente",
+        material_separado_em: separado ? new Date().toISOString() : null, material_separado_por: separado ? user.id : null }).eq("id", s.id);
+      if (error) { console.error("[base-instalada] material", error.code); return json({ error: "Não foi possível salvar" }, 400); }
+      return json({ ok: true });
+    }
     case "buscar_local": {
       const q = txt(b.q, 120);
       const key = Deno.env.get("GOOGLE_MAPS_API_KEY");

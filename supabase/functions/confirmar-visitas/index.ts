@@ -5,6 +5,19 @@ import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationE
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
 import { geocodePending } from "../_shared/geocode.ts";
+import { FERA_URL, prontidaoLabel, tarefaMessage } from "../_shared/prontidao.ts";
+
+/** Phones (digits, with and without 55) of active team users: confirmations never go to a team chat. */
+async function teamPhones(admin: any): Promise<Set<string>> {
+  const { data } = await admin.from("profiles").select("phone, is_active").not("phone", "is", null);
+  const set = new Set<string>();
+  for (const p of data ?? []) if (p.is_active !== false) { const d = String(p.phone).replace(/\D/g, ""); if (d) { set.add(d); set.add(d.startsWith("55") ? d.slice(2) : `55${d}`); } }
+  return set;
+}
+function chatPhone(chatId: string | null | undefined): string | null {
+  const i = (chatId ?? "").indexOf("-");
+  return i > 0 ? chatId!.slice(i + 1).replace(/\D/g, "") || null : null;
+}
 
 const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "Content-Type": "application/json" } });
 
@@ -28,6 +41,7 @@ Deno.serve(async () => {
   const { data: rows } = await admin.from("schedules")
     .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, plano_manutencao_id, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
+  const team = await teamPhones(admin);
   const orgCache = new Map<string, { open: boolean; d1: string; horas: number; atraso: number }>();
   for (const s of rows ?? []) {
     try {
@@ -43,7 +57,9 @@ Deno.serve(async () => {
       const { data: who } = s.assigned_to ? await admin.from("profiles").select("name").eq("user_id", s.assigned_to).maybeSingle() : { data: null };
       const info = { id: s.id, cliente, consultor: who?.name ?? "Sem responsável", tipo: "" };
 
-      const chat = (s as any).plano_manutencao_id ? null : lead?.gptmaker_chat_id as string | null;
+      const rawChat = (s as any).plano_manutencao_id ? null : lead?.gptmaker_chat_id as string | null;
+      const cp = chatPhone(rawChat);
+      const chat = cp && team.has(cp) ? null : rawChat;
       const due = confirmationEligible(s.created_at, chat) ? confirmationDue(now, { scheduled_date: s.scheduled_date, start_time: s.start_time, confirmacao_status: s.confirmacao_status,
         d1_sent: !!s.confirmacao_d1_enviada_em, dia_sent: !!s.confirmacao_dia_enviada_em, sem_resposta_alertado: !!s.sem_confirmacao_alertado_em },
         { d1_hora: cfg.d1, horas_antes: cfg.horas }, cfg.open) : null;
@@ -150,6 +166,36 @@ Deno.serve(async () => {
       }
     } catch { console.error("[confirmar-visitas] daily maintenance failed"); }
   }
+
+  // Lote 13: invoice tasks (new → billing alert; D-1 reminder) and D-1 readiness alert to managers + consultant.
+  try {
+    const { data: novas } = await admin.from("tarefas_faturamento").select("id, numero, organization_id, schedule_id, empresa_nome, tipo_nota, data_visita, itens")
+      .eq("status", "aberta").is("notificada_em", null).limit(100);
+    for (const t of novas ?? []) {
+      const { data: claimed } = await admin.from("tarefas_faturamento").update({ notificada_em: now.toISOString() }).eq("id", t.id).is("notificada_em", null).select("id").maybeSingle();
+      if (claimed) await teamAlert(admin, t.organization_id, "tarefa_nota_criada", tarefaMessage("nova", t), { tarefa_id: t.id, tarefa_numero: t.numero, schedule_id: t.schedule_id });
+    }
+    const spMin = ((now.getUTCHours() + 21) % 24) * 60 + now.getUTCMinutes();
+    if (spMin >= 8 * 60) {
+      const { data: d1 } = await admin.from("tarefas_faturamento").select("id, numero, organization_id, schedule_id, empresa_nome, tipo_nota, data_visita, itens")
+        .eq("status", "aberta").eq("data_visita", tomorrow).is("lembrete_d1_em", null).limit(100);
+      for (const t of d1 ?? []) {
+        const { data: claimed } = await admin.from("tarefas_faturamento").update({ lembrete_d1_em: now.toISOString() }).eq("id", t.id).is("lembrete_d1_em", null).select("id").maybeSingle();
+        if (claimed) await teamAlert(admin, t.organization_id, "tarefa_nota_d1", tarefaMessage("d1", t), { tarefa_id: t.id, tarefa_numero: t.numero, schedule_id: t.schedule_id, d1: true });
+      }
+      const { data: pend } = await admin.from("schedules").select("id, organization_id, title, start_time, assigned_to, prontidao, clients(name), leads(empresa_nome, company)")
+        .eq("scheduled_date", tomorrow).in("status", ["agendado", "confirmado"]).neq("prontidao", "pronto").is("prontidao_alertado_em", null).limit(200);
+      for (const s of pend ?? []) {
+        const { data: claimed } = await admin.from("schedules").update({ prontidao_alertado_em: now.toISOString() }).eq("id", s.id).is("prontidao_alertado_em", null).select("id").maybeSingle();
+        if (!claimed) continue;
+        const cliente = (s as any).clients?.name || (s as any).leads?.empresa_nome || (s as any).leads?.company || s.title || "";
+        await teamAlert(admin, s.organization_id, "prontidao_pendente", [`📦 Visita de amanhã ainda não está pronta`, `Cliente: ${cliente}`,
+          `Horário: ${String(s.start_time ?? "").slice(0, 5)}`, prontidaoLabel(s.prontidao) ?? "", `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"),
+          { schedule_id: s.id, prontidao: s.prontidao }, { extraUserIds: s.assigned_to ? [s.assigned_to] : [] });
+        (out as any).prontidao = ((out as any).prontidao ?? 0) + 1;
+      }
+    }
+  } catch { console.error("[confirmar-visitas] readiness/billing failed"); }
 
   // Geocode clients/leads/schedules created or edited without coordinates (bounded per run).
   try { (out as any).geocode = await geocodePending(admin, 15); } catch { console.error("[confirmar-visitas] geocode failed"); }

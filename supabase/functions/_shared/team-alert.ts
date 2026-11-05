@@ -29,8 +29,24 @@ export async function humanOpen(admin: Admin, orgId: string): Promise<{ open: bo
 }
 
 /** Delivers to subscribers of `event`; dedupes by payload key. `immediate` ignores human hours. Never throws. */
+/** Short code that lets Flora (same chat) resolve which alert a team member is replying to. */
+export function alertCode(payload: Record<string, unknown>): string | null {
+  if (typeof payload.tarefa_numero === "number") return `#T-${payload.tarefa_numero}`;
+  if (typeof payload.atendimento_id === "string") return `#A-${payload.atendimento_id.slice(0, 8)}`;
+  if (typeof payload.schedule_id === "string") return `#V-${payload.schedule_id.slice(0, 8)}`;
+  return null;
+}
+const OLD_FOOTER = "(Mensagem automática — não responda aqui; abra o link.)";
+export function withAlertCode(message: string, codigo: string | null): string {
+  if (!codigo) return message;
+  const footer = `Código ${codigo} — responda aqui para a Flora ajudar ou abra o link.`;
+  return message.includes(OLD_FOOTER) ? message.replace(OLD_FOOTER, footer) : `${message}\n\n${footer}`;
+}
+
 export async function teamAlert(admin: Admin, orgId: string, event: string, message: string, payload: Record<string, unknown>,
   opts: { immediate?: boolean; dedupeKey?: string; extraUserIds?: string[] } = {}): Promise<void> {
+  const codigo = alertCode(payload);
+  if (codigo) { payload = { ...payload, codigo }; message = withAlertCode(message, codigo); }
   try {
     if (opts.dedupeKey) {
       const { data: prior } = await admin.from("notification_logs").select("id").eq("organization_id", orgId).eq("event_type", event)

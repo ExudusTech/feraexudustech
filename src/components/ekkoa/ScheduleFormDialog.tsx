@@ -21,6 +21,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { MapPin, AlertTriangle, Clock, ExternalLink, Sparkles, ChevronDown, Plus, X, Search } from "lucide-react";
 import { formatCEP } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
+import { operacoesPara } from "@/lib/prontidao";
+import { MaterialFields, CnpjGate, emptyMaterial, type MaterialValue, type CnpjStatus } from "@/components/agenda/MaterialPronto";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel } from "@/lib/linha-produto";
 import {
   DEFAULT_VISIT_MINUTES, addMinutes, autoTitle, requiresClient, resolveAssignee, scheduleFieldsFromTarget,
@@ -55,6 +57,8 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [triedSubmit, setTriedSubmit] = useState(false);
+  const [material, setMaterial] = useState<MaterialValue>(emptyMaterial);
+  const [cnpjStatus, setCnpjStatus] = useState<CnpjStatus>({ ok: false });
   const create = useCreateSchedule();
   const update = useUpdateSchedule();
   const { data: coverageAreas = [] } = useEkkoaCoverageAreas();
@@ -87,9 +91,11 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
         title: schedule.title, assigned_to: schedule.assigned_to || "",
       });
       setTitleTouched(true); setEndTouched(!!schedule.end_time);
+      setMaterial({ operacao: ((schedule as any).operacao_material ?? "") as any, tipo_nota: ((schedule as any).tipo_nota ?? "") as any, itens: Array.isArray((schedule as any).itens) ? (schedule as any).itens : [] });
     } else {
       setForm({ ...empty, assigned_to: user?.id || "", schedule_type: defaultClientId ? "manutencao" : "visita_comercial" });
       setTitleTouched(false); setEndTouched(false);
+      setMaterial(emptyMaterial);
     }
   }, [schedule, open, defaultClientId, user?.id]);
 
@@ -111,6 +117,11 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
     setTarget(t); setTerm("");
     setForm((p) => ({ ...p, location: f.location || p.location, zip_code: f.zip_code ? formatCEP(f.zip_code) : p.zip_code }));
   }
+
+  // A material operation only applies to the types that list it.
+  useEffect(() => {
+    if (material.operacao && !operacoesPara(form.schedule_type).includes(material.operacao)) setMaterial(emptyMaterial);
+  }, [form.schedule_type, material.operacao]);
 
   // Auto title unless edited by hand.
   useEffect(() => {
@@ -138,7 +149,9 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
   const results = useMemo(() => searchTargets(targets, term, form.schedule_type), [targets, term, form.schedule_type]);
   const needsClient = requiresClient(form.schedule_type);
   const targetOk = targetAllowed(form.schedule_type, target);
-  const valid = targetOk && !!form.scheduled_date && !!form.start_time && !overlapDetected;
+  const precisaNota = !!material.operacao;
+  const materialOk = !precisaNota || (cnpjStatus.ok && material.itens.length > 0 && material.itens.every((i) => Number(i.quantidade) > 0));
+  const valid = targetOk && !!form.scheduled_date && !!form.start_time && !overlapDetected && materialOk;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,6 +167,8 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
       schedule_subtype: form.schedule_subtype || null, schedule_type: form.schedule_type,
       client_id: f.client_id, lead_id: f.lead_id, latitude: f.latitude, longitude: f.longitude,
       assigned_to: assignedTo,
+      operacao_material: material.operacao || null, tipo_nota: material.operacao ? (material.tipo_nota || null) : null,
+      itens: material.operacao ? material.itens : [],
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
     else await create.mutateAsync(payload);
@@ -282,6 +297,12 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
                 <p className="text-sm py-2">{users.find((u) => u.user_id === user?.id)?.name || "Você"}</p>
               )}
             </div>
+
+            <MaterialFields scheduleType={form.schedule_type} value={material} onChange={setMaterial} />
+            {precisaNota && <CnpjGate target={target ? { kind: target.kind, id: target.id } : null} onStatus={setCnpjStatus} />}
+            {triedSubmit && precisaNota && !materialOk && (
+              <p className="sm:col-span-2 text-xs text-destructive">{!cnpjStatus.ok ? "Informe um CNPJ válido e ativo para emitir a nota." : "Adicione os itens com quantidade."}</p>
+            )}
 
             <div className="sm:col-span-2"><Label>Observação</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} /></div>
           </div>
