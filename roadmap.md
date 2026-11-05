@@ -71,3 +71,11 @@
 - [ ] Futuro: catálogo PDF por segmento
 
 - [ ] Lotes 13 e 14 (prontidão/faturamento/CNPJ/levantamento + Flora Equipe na mesma Flora): plano aprovado; aguardando respostas das decisões antes de implementar
+## Lote 13 correções (05/11)
+- [ ] Papel "faturamento" separado do financeiro; tarefas de nota só para faturamento
+- [ ] Check-in bloqueado sem nota anexada (config org, padrão ligado; exceção do gestor registrada)
+- [ ] Aviso 17h: operações de amanhã sem nota (faturamento + gestor)
+- [ ] Recorrência de manutenção nos dias de rota da região, sem feriado/bloqueio Google
+- [ ] Manutenção Ekkoa = venda de refil (nota a cada ciclo); preventiva/corretiva sem material sem nota
+- [ ] Substituição: nota remessa; encerramento não trocou (cancelar nota) / trocou (devolução, coleta de assinatura na próxima rota)
+- [ ] Regra geral: material que sai exige nota anexada
