@@ -75,6 +75,8 @@ export function proximasDatas(p: Plano, from: string, horizonDias: number, block
 }
 
 
+export const FREQ_RAPIDAS = ["semanal", "quinzenal", "mensal"] as const;
+
 /** Next plan visit after a visit done on `today`. */
 export function proximaVisitaPlano(p: Plano, today: string, rota: number[] = [], blocked: (iso: string) => boolean = () => false): string {
   return primeiroDiaRota(addDays(today, intervaloDias(p)), rota, blocked);
