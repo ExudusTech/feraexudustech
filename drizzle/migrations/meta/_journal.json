@@ -281,6 +281,13 @@
       "when": 1793897775737,
       "tag": "0039_lote15_ocorrencias_coleta",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793913875916,
+      "tag": "0040_lote16_proposta_coleta",
+      "breakpoints": true
     }
   ]
 }
