@@ -6273,6 +6273,7 @@ export type Database = {
           alerta_atraso_min: number
           atendimento_alerta_amarelo_min: number
           atendimento_alerta_vermelho_min: number
+          bloquear_checkin_sem_nota: boolean
           city: string | null
           cnpj: string | null
           confirmacao_d1_hora: string
@@ -6311,6 +6312,7 @@ export type Database = {
           alerta_atraso_min?: number
           atendimento_alerta_amarelo_min?: number
           atendimento_alerta_vermelho_min?: number
+          bloquear_checkin_sem_nota?: boolean
           city?: string | null
           cnpj?: string | null
           confirmacao_d1_hora?: string
@@ -6349,6 +6351,7 @@ export type Database = {
           alerta_atraso_min?: number
           atendimento_alerta_amarelo_min?: number
           atendimento_alerta_vermelho_min?: number
+          bloquear_checkin_sem_nota?: boolean
           city?: string | null
           cnpj?: string | null
           confirmacao_d1_hora?: string
@@ -7432,8 +7435,12 @@ export type Database = {
           assigned_to: string | null
           atraso_alertado_em: string | null
           checkin_em: string | null
+          checkin_liberacao_motivo: string | null
+          checkin_liberado_em: string | null
+          checkin_liberado_por: string | null
           checkout_em: string | null
           client_id: string | null
+          coleta_devolucao_tarefa_id: string | null
           confirmacao_d1_enviada_em: string | null
           confirmacao_dia_enviada_em: string | null
           confirmacao_status: string
@@ -7443,6 +7450,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          devolucao_assinada_em: string | null
+          devolucao_assinatura_path: string | null
           duracao_min: number | null
           end_time: string | null
           exige_material: boolean
@@ -7476,6 +7485,7 @@ export type Database = {
           source: string
           start_time: string | null
           status: string
+          substituicao_resultado: string | null
           tipo_nota: string | null
           title: string
           updated_at: string | null
@@ -7485,8 +7495,12 @@ export type Database = {
           assigned_to?: string | null
           atraso_alertado_em?: string | null
           checkin_em?: string | null
+          checkin_liberacao_motivo?: string | null
+          checkin_liberado_em?: string | null
+          checkin_liberado_por?: string | null
           checkout_em?: string | null
           client_id?: string | null
+          coleta_devolucao_tarefa_id?: string | null
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
@@ -7496,6 +7510,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          devolucao_assinada_em?: string | null
+          devolucao_assinatura_path?: string | null
           duracao_min?: number | null
           end_time?: string | null
           exige_material?: boolean
@@ -7529,6 +7545,7 @@ export type Database = {
           source?: string
           start_time?: string | null
           status?: string
+          substituicao_resultado?: string | null
           tipo_nota?: string | null
           title: string
           updated_at?: string | null
@@ -7538,8 +7555,12 @@ export type Database = {
           assigned_to?: string | null
           atraso_alertado_em?: string | null
           checkin_em?: string | null
+          checkin_liberacao_motivo?: string | null
+          checkin_liberado_em?: string | null
+          checkin_liberado_por?: string | null
           checkout_em?: string | null
           client_id?: string | null
+          coleta_devolucao_tarefa_id?: string | null
           confirmacao_d1_enviada_em?: string | null
           confirmacao_dia_enviada_em?: string | null
           confirmacao_status?: string
@@ -7549,6 +7570,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          devolucao_assinada_em?: string | null
+          devolucao_assinatura_path?: string | null
           duracao_min?: number | null
           end_time?: string | null
           exige_material?: boolean
@@ -7582,6 +7605,7 @@ export type Database = {
           source?: string
           start_time?: string | null
           status?: string
+          substituicao_resultado?: string | null
           tipo_nota?: string | null
           title?: string
           updated_at?: string | null
@@ -7716,6 +7740,7 @@ export type Database = {
       }
       tarefas_faturamento: {
         Row: {
+          acao: string
           client_id: string | null
           cnpj: string | null
           cnpj_verificado: boolean
@@ -7733,10 +7758,13 @@ export type Database = {
           notificada_em: string | null
           numero: number
           numero_nota: string | null
+          observacao: string | null
+          ordem_servico_id: string | null
           organization_id: string
           pdf_path: string | null
           prazo: string
           razao_social: string | null
+          referencia_tarefa_id: string | null
           schedule_id: string
           status: string
           tipo_nota: string
@@ -7744,6 +7772,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          acao?: string
           client_id?: string | null
           cnpj?: string | null
           cnpj_verificado?: boolean
@@ -7761,10 +7790,13 @@ export type Database = {
           notificada_em?: string | null
           numero?: number
           numero_nota?: string | null
+          observacao?: string | null
+          ordem_servico_id?: string | null
           organization_id: string
           pdf_path?: string | null
           prazo: string
           razao_social?: string | null
+          referencia_tarefa_id?: string | null
           schedule_id: string
           status?: string
           tipo_nota: string
@@ -7772,6 +7804,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          acao?: string
           client_id?: string | null
           cnpj?: string | null
           cnpj_verificado?: boolean
@@ -7789,10 +7822,13 @@ export type Database = {
           notificada_em?: string | null
           numero?: number
           numero_nota?: string | null
+          observacao?: string | null
+          ordem_servico_id?: string | null
           organization_id?: string
           pdf_path?: string | null
           prazo?: string
           razao_social?: string | null
+          referencia_tarefa_id?: string | null
           schedule_id?: string
           status?: string
           tipo_nota?: string
@@ -7822,9 +7858,16 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tarefas_faturamento_referencia_tarefa_id_fkey"
+            columns: ["referencia_tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas_faturamento"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "tarefas_faturamento_schedule_id_fkey"
             columns: ["schedule_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "schedules"
             referencedColumns: ["id"]
           },
@@ -7884,6 +7927,7 @@ export type Database = {
         Returns: boolean
       }
       is_consultor_tecnico: { Args: { _user_id: string }; Returns: boolean }
+      is_faturamento: { Args: { _user_id: string }; Returns: boolean }
       is_financeiro: { Args: { _user_id: string }; Returns: boolean }
       is_operacional: { Args: { _user_id: string }; Returns: boolean }
       is_privileged_user: { Args: { _user_id: string }; Returns: boolean }
@@ -7905,6 +7949,7 @@ export type Database = {
         | "vendedor"
         | "consultor_tecnico"
         | "operacional"
+        | "faturamento"
       canal_origem_enum:
         | "WIDGET"
         | "WHATSAPP"
@@ -8065,6 +8110,7 @@ export const Constants = {
         "vendedor",
         "consultor_tecnico",
         "operacional",
+        "faturamento",
       ],
       canal_origem_enum: [
         "WIDGET",

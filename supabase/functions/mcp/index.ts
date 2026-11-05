@@ -1169,7 +1169,8 @@ async function withKnownContact(response: McpResponse, chatId: unknown): Promise
   const supabase = getClient();
   const contato_conhecido = await knownContactName(supabase, chatId);
   const contexto_anterior = await previousContext(supabase, chatId);
-  return { ...response, data: { ...response.data, contato_conhecido, contexto_anterior } };
+  const equipe = await teamInfo(chatId);
+  return { ...response, data: { ...response.data, contato_conhecido, contexto_anterior, equipe } };
 }
 
 // ─── Lead timeline: short summaries only (never transcripts), background writes ───
@@ -2932,43 +2933,6 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
 }
 
 // ─── Team assistant (read-only): what is pending now for a Fera user ───
-async function listarPendencias(params: Record<string, unknown>): Promise<McpResponse> {
-  const channel = resolveChannelFromChatId(params.chat_id);
-  const phone = digits(params.telefone) ?? (channel?.canal === "WHATSAPP" ? digits(channel.identificador) : null);
-  const empty = ok({ usuario: null, atendimentos: [], visitas_hoje: [] });
-  if (!phone || phone.length < 10) return empty;
-  const supabase = getClient();
-  const variants = Array.from(new Set([phone, phone.startsWith("55") ? phone.slice(2) : `55${phone}`]));
-  const { data: profile, error } = await supabase.from("profiles").select("user_id, name, is_active")
-    .eq("organization_id", NITSCLEAN_ORG_ID).in("phone", variants).limit(1).maybeSingle();
-  if (error) return fail(dbFail("consultar usuário", error));
-  if (!profile || profile.is_active === false) return empty;
-  const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", profile.user_id);
-  const privileged = (Array.isArray(roles) ? roles : []).some((r: { role: string }) => ["admin", "gestor", "super_admin"].includes(r.role));
-  let atQuery = supabase.from("atendimentos").select("id, empresa, contato_nome, status, urgencia, aberto_em, relogio_inicia_em, responsavel_id, assumido_por")
-    .eq("organization_id", NITSCLEAN_ORG_ID).in("status", ["aberto", "em_atendimento"]).order("relogio_inicia_em").limit(30);
-  if (!privileged) atQuery = atQuery.or(`responsavel_id.eq.${profile.user_id},assumido_por.eq.${profile.user_id}`);
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-  let visitQuery = supabase.from("schedules").select("id, title, start_time, location, status, assigned_to")
-    .eq("organization_id", NITSCLEAN_ORG_ID).eq("scheduled_date", today).neq("status", "cancelado").order("start_time").limit(30);
-  if (!privileged) visitQuery = visitQuery.eq("assigned_to", profile.user_id);
-  const [{ data: ats }, { data: visits }] = await Promise.all([atQuery, visitQuery]);
-  const service = await loadHumanService(supabase, new Date());
-  const now = new Date();
-  return ok({
-    usuario: { nome: profile.name, visao: privileged ? "organizacao" : "propria" },
-    atendimentos: (Array.isArray(ats) ? ats : []).map((a: Record<string, unknown>) => {
-      const minutos = minutosUteis(new Date(String(a.relogio_inicia_em)), now, service.config, service.closed, service.city);
-      return { empresa: a.empresa ?? a.contato_nome ?? "Cliente", status: a.status, urgencia: a.urgencia,
-        espera_minutos_uteis: minutos, gravidade: gravidade(minutos),
-        link: `${FERA_NOTIFICATION_URL}/atendimentos?id=${encodeURIComponent(String(a.id))}` };
-    }),
-    visitas_hoje: (Array.isArray(visits) ? visits : []).map((v: Record<string, unknown>) => ({ titulo: v.title,
-      horario: typeof v.start_time === "string" ? v.start_time.slice(0, 5) : null, local: v.location ?? null,
-      link: `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(String(v.id))}` })),
-  });
-}
-
 async function registrarForaCobertura(params: Record<string, unknown>): Promise<McpResponse> {
   const { nome, telefone, instagram_handle, cidade, interaction_id, canal, produto_interesse, estado, chat_id } = params as {
     nome?: string; telefone?: string; instagram_handle?: string; cidade: string;
@@ -3201,7 +3165,7 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 // MCP TOOLS MANIFEST (for GPT Maker discovery)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TOOLS_MANIFEST = [
+const TOOLS_MANIFEST_CLIENTE = [
   {
     name: "localizar_estabelecimento",
     description: "Localiza estabelecimento por nome, com cidade opcional, ou pelo CEP via ViaCEP. Sem cidade, prioriza a Região dos Lagos. Retorna somente a correspondência única de nome ou até três candidatos; sempre confirme com o lead.",
@@ -3495,17 +3459,6 @@ const TOOLS_MANIFEST = [
     },
   },
   {
-    name: "listar_pendencias",
-    description: "Somente leitura, para a equipe (Flora Equipe): lista os atendimentos em aberto e as visitas de hoje do usuário do Fera identificado pelo telefone. Vendedores veem só os próprios; gestor/admin, os da organização. Telefone desconhecido devolve listas vazias.",
-    parameters: {
-      type: "object",
-      properties: {
-        telefone: { type: "string", description: "WhatsApp do usuário do Fera (DDD + número)" },
-        chat_id:  { type: "string", description: "Opcional: chat_id do GPT Maker; o telefone após o '-' é usado quando telefone não vier" },
-      },
-    },
-  },
-  {
     name: "solicitar_atendimento_humano",
     description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta).",
     parameters: {
@@ -3630,6 +3583,485 @@ async function responderConfirmacaoVisita(params: Record<string, unknown>): Prom
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FLORA EQUIPE (Lote 14) — same Flora, same number. The caller is ALWAYS identified on the server from the
+// chat_id phone (part after "-") against active Fera users; phone/name params sent by the AI are ignored.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface TeamUser { user_id: string; nome: string; papeis: string[]; organization_id: string; phones: string[] }
+type TeamLookup = { user: TeamUser | null; ambiguo: boolean };
+const TEAM_TTL_MS = 60_000;
+const teamCache = new Map<string, { at: number; value: TeamLookup }>();
+const PRIVILEGED_ROLES = ["admin", "gestor", "super_admin"];
+
+function phoneVariants(phone: string): string[] {
+  return Array.from(new Set([phone, phone.startsWith("55") ? phone.slice(2) : `55${phone}`]));
+}
+
+/** Team member behind this chat (WhatsApp only), or null. Never reads phone/name from params. */
+async function resolverEquipe(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<TeamLookup> {
+  const channel = resolveChannelFromChatId(chatId);
+  const phone = channel?.canal === "WHATSAPP" ? digits(channel.identificador) : null;
+  if (!phone || phone.length < 10) return { user: null, ambiguo: false };
+  const hit = teamCache.get(phone);
+  if (hit && Date.now() - hit.at < TEAM_TTL_MS) return hit.value;
+  const variants = phoneVariants(phone);
+  let value: TeamLookup = { user: null, ambiguo: false };
+  try {
+    const { data, error } = await supabase.from("profiles").select("user_id, name, organization_id, is_active").in("phone", variants).limit(5);
+    if (error) { dbFail("identificar usuário da equipe", error); return value; }
+    const active = (Array.isArray(data) ? data : []).filter((p: { is_active?: boolean | null }) => p.is_active !== false);
+    if (active.length > 1 || (active.length === 1 && active[0].organization_id !== NITSCLEAN_ORG_ID)) value = { user: null, ambiguo: active.length > 1 };
+    else if (active.length === 1) {
+      const p = active[0] as { user_id: string; name: string | null; organization_id: string };
+      const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", p.user_id);
+      const papeis = (Array.isArray(roles) ? roles : []).map((r: { role: string }) => r.role).filter((r: string) => r !== "visitante");
+      if (papeis.length) value = { user: { user_id: p.user_id, nome: p.name ?? "Equipe", papeis, organization_id: p.organization_id, phones: variants }, ambiguo: false };
+    }
+  } catch { console.error("[mcp] team lookup failed"); }
+  teamCache.set(phone, { at: Date.now(), value });
+  return value;
+}
+
+const NAO_AUTORIZADO: McpResponse = { success: false, message: "não autorizado", data: { autorizado: false } };
+function isPrivileged(u: TeamUser): boolean { return u.papeis.some((r) => PRIVILEGED_ROLES.includes(r)); }
+function hasRole(u: TeamUser, ...roles: string[]): boolean { return u.papeis.some((r) => roles.includes(r)); }
+/** Field roles (anything beyond back-office billing/credit). */
+function isField(u: TeamUser): boolean { return u.papeis.some((r) => !["financeiro", "faturamento"].includes(r)); }
+function feraLink(path: string): string { return `${FERA_NOTIFICATION_URL}${path}`; }
+function spToday(): string { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
+function validDate(v: unknown): string | null { return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; }
+function visitCode(id: string): string { return `#V-${id.slice(0, 8)}`; }
+
+async function withTeam(fn: (u: TeamUser, supabase: ReturnType<typeof getClient>) => Promise<McpResponse>, params: Record<string, unknown>,
+  allowed?: (u: TeamUser) => boolean): Promise<McpResponse> {
+  const supabase = getClient();
+  const { user, ambiguo } = await resolverEquipe(supabase, params.chat_id);
+  if (ambiguo) return { ...NAO_AUTORIZADO, message: "não autorizado: este número está em mais de um cadastro; peça ao gestor para corrigir em Usuários" };
+  if (!user || (allowed && !allowed(user))) return NAO_AUTORIZADO;
+  return fn(user, supabase);
+}
+
+/** Client-flow tools refuse team chats so a team member is never turned into a lead, booking or handoff. */
+const CLIENT_ONLY_TOOLS = new Set(["criar_lead", "agendar_visita", "agendar_visita_tecnica", "agendar_reuniao_sede", "solicitar_atendimento_humano", "registrar_fora_cobertura", "responder_confirmacao_visita"]);
+async function refuseTeamInClientFlow(method: string, params: Record<string, unknown>): Promise<McpResponse | null> {
+  if (!CLIENT_ONLY_TOOLS.has(method)) return null;
+  const { user } = await resolverEquipe(getClient(), params.chat_id);
+  if (!user) return null;
+  return { success: false, message: "Este número é de um usuário da equipe do Fera: não trate como cliente.",
+    data: { use_ferramentas_equipe: true, equipe: { nome: user.nome, papeis: user.papeis } },
+    next_action_hint: "Use as ferramentas de equipe (minha_agenda, criar_lead_equipe, agendar_visita_equipe, listar_pendencias)." };
+}
+async function teamInfo(chatId: unknown): Promise<{ nome: string; papeis: string[] } | null> {
+  const { user } = await resolverEquipe(getClient(), chatId);
+  return user ? { nome: user.nome, papeis: user.papeis } : null;
+}
+
+type ScheduleRow = Record<string, any>;
+const SCHEDULE_FIELDS = "id, title, scheduled_date, start_time, status, schedule_type, schedule_subtype, prontidao, assigned_to, location, client_id, lead_id, clients(name), leads(empresa_nome, company, title)";
+const PRONTIDAO_TXT: Record<string, string> = { falta_nota: "falta nota", falta_material: "falta separar material", falta_ambos: "falta nota e material" };
+function visitSummary(s: ScheduleRow) {
+  return { codigo: visitCode(s.id), horario: typeof s.start_time === "string" ? s.start_time.slice(0, 5) : null,
+    cliente: s.clients?.name ?? s.leads?.empresa_nome ?? s.leads?.company ?? s.leads?.title ?? s.title, tipo: s.schedule_type,
+    status: s.status, prontidao: s.prontidao === "pronto" ? "pronto" : PRONTIDAO_TXT[s.prontidao] ?? s.prontidao,
+    local: s.location ?? null, link: feraLink(`/agenda?agendamento=${s.id}`) };
+}
+
+async function identificarUsuario(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const since = new Date(Date.now() - 24 * 3_600_000).toISOString();
+    const { data } = await supabase.from("notification_logs").select("event_type, payload, sent_at, queued_at")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("destination", u.phones).or(`sent_at.gte.${since},queued_at.gte.${since}`).limit(10);
+    const ultimos_avisos = (Array.isArray(data) ? data : []).filter((l: any) => l.payload?.codigo)
+      .map((l: any) => ({ codigo: l.payload.codigo, evento: l.event_type, em: l.sent_at ?? l.queued_at }));
+    return ok({ autorizado: true, nome: u.nome, papeis: u.papeis, visao: isPrivileged(u) ? "organizacao" : "propria", ultimos_avisos });
+  }, params);
+}
+
+async function minhaAgenda(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const date = validDate(params.data) ?? spToday();
+    const { data, error } = await supabase.from("schedules").select(SCHEDULE_FIELDS).eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("assigned_to", u.user_id).eq("scheduled_date", date).neq("status", "cancelado").order("start_time").limit(30);
+    if (error) return fail(dbFail("consultar agenda", error));
+    return ok({ data: date, visitas: (Array.isArray(data) ? data : []).map(visitSummary), link: feraLink("/hoje") });
+  }, params);
+}
+
+async function agendaEquipe(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (_u, supabase) => {
+    const date = validDate(params.data) ?? spToday();
+    const [{ data, error }, { data: profs }] = await Promise.all([
+      supabase.from("schedules").select(SCHEDULE_FIELDS).eq("organization_id", NITSCLEAN_ORG_ID).eq("scheduled_date", date)
+        .neq("status", "cancelado").order("start_time").limit(100),
+      supabase.from("profiles").select("user_id, name").eq("organization_id", NITSCLEAN_ORG_ID),
+    ]);
+    if (error) return fail(dbFail("consultar agenda da equipe", error));
+    const names = new Map((Array.isArray(profs) ? profs : []).map((p: any) => [p.user_id, p.name]));
+    const filtro = typeof params.consultor === "string" ? params.consultor.trim().toLowerCase() : "";
+    const grupos: Record<string, unknown[]> = {};
+    for (const s of Array.isArray(data) ? data : []) {
+      const nome = String(names.get(s.assigned_to) ?? "Sem responsável");
+      if (filtro && !nome.toLowerCase().includes(filtro)) continue;
+      (grupos[nome] ??= []).push(visitSummary(s));
+    }
+    return ok({ data: date, consultores: Object.entries(grupos).map(([consultor, visitas]) => ({ consultor, visitas })), link: feraLink("/dashboard") });
+  }, params, isPrivileged);
+}
+
+async function listarPendencias(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const privileged = isPrivileged(u);
+    const faturamento = hasRole(u, "faturamento");
+    const today = spToday();
+    let atQuery = supabase.from("atendimentos").select("id, empresa, contato_nome, status, urgencia, aberto_em, relogio_inicia_em, responsavel_id, assumido_por")
+      .eq("organization_id", NITSCLEAN_ORG_ID).in("status", ["aberto", "em_atendimento"]).order("relogio_inicia_em").limit(30);
+    if (!privileged) atQuery = atQuery.or(`responsavel_id.eq.${u.user_id},assumido_por.eq.${u.user_id}`);
+    let visitQuery = supabase.from("schedules").select("id, title, start_time, location, status, assigned_to, prontidao")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("scheduled_date", today).neq("status", "cancelado").order("start_time").limit(30);
+    if (!privileged) visitQuery = visitQuery.eq("assigned_to", u.user_id);
+    const tarefaQuery = privileged || faturamento
+      ? supabase.from("tarefas_faturamento").select("id, numero, empresa_nome, tipo_nota, acao, data_visita, prazo").eq("organization_id", NITSCLEAN_ORG_ID)
+        .eq("status", "aberta").order("prazo").limit(30)
+      : Promise.resolve({ data: [] });
+    const [{ data: ats }, { data: visits }, { data: tarefas }] = await Promise.all([atQuery, visitQuery, tarefaQuery as any]);
+    const service = await loadHumanService(supabase, new Date());
+    const now = new Date();
+    return ok({
+      usuario: { nome: u.nome, visao: privileged ? "organizacao" : "propria" },
+      atendimentos: (Array.isArray(ats) ? ats : []).map((a: Record<string, unknown>) => {
+        const minutos = minutosUteis(new Date(String(a.relogio_inicia_em)), now, service.config, service.closed, service.city);
+        return { codigo: `#A-${String(a.id).slice(0, 8)}`, empresa: a.empresa ?? a.contato_nome ?? "Cliente", status: a.status, urgencia: a.urgencia,
+          espera_minutos_uteis: minutos, gravidade: gravidade(minutos),
+          link: `${FERA_NOTIFICATION_URL}/atendimentos?id=${encodeURIComponent(String(a.id))}` };
+      }),
+      visitas_hoje: (Array.isArray(visits) ? visits : []).map((v: Record<string, unknown>) => ({ codigo: visitCode(String(v.id)), titulo: v.title,
+        horario: typeof v.start_time === "string" ? v.start_time.slice(0, 5) : null, local: v.location ?? null,
+        prontidao: v.prontidao === "pronto" ? "pronto" : PRONTIDAO_TXT[String(v.prontidao)] ?? v.prontidao,
+        link: `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(String(v.id))}` })),
+      tarefas_nota: (Array.isArray(tarefas) ? tarefas : []).map((t: any) => ({ codigo: `#T-${t.numero}`, empresa: t.empresa_nome, acao: t.acao, tipo_nota: t.tipo_nota,
+        data_visita: t.data_visita, prazo: t.prazo, link: feraLink("/tarefas") })),
+    });
+  }, params);
+}
+
+/** Visibility mirrors the screens: managers/stock/back-office see the whole tenant, others only their own portfolio. */
+function seesAll(u: TeamUser): boolean { return isPrivileged(u) || hasRole(u, "operacional", "financeiro", "faturamento"); }
+
+async function consultarClienteOuLead(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const termo = productSearchText(params.termo);
+    if (!termo || termo.length < 2) return fail("Informe o nome da empresa (termo)");
+    const like = `%${termo.replace(/[%_,()]/g, " ").trim()}%`;
+    let cq = supabase.from("clients").select("id, name, company, city, phone").eq("organization_id", NITSCLEAN_ORG_ID)
+      .or(`name.ilike.${like},company.ilike.${like}`).limit(5);
+    let lq = supabase.from("leads").select("id, empresa_nome, company, title, city, contact_name, stage").eq("organization_id", NITSCLEAN_ORG_ID)
+      .is("client_id", null).or(`empresa_nome.ilike.${like},company.ilike.${like},title.ilike.${like}`).limit(5);
+    if (!seesAll(u)) {
+      cq = cq.or(`created_by.eq.${u.user_id},assigned_user_id.eq.${u.user_id}`);
+      lq = lq.or(`created_by.eq.${u.user_id},assigned_to.eq.${u.user_id}`);
+    }
+    const [{ data: clients, error: ce }, { data: leads, error: le }] = await Promise.all([cq, lq]);
+    if (ce || le) return fail(dbFail("consultar cliente ou lead", ce ?? le));
+    const today = spToday();
+    const resumo = async (kind: "cliente" | "lead", row: any) => {
+      const col = kind === "cliente" ? "client_id" : "lead_id";
+      const [{ data: contatos }, { data: prox }, pontos, hist] = await Promise.all([
+        supabase.from("empresa_contatos").select("cargo, is_primary, pessoas(nome)").eq(col, row.id).limit(5),
+        supabase.from("schedules").select("id, scheduled_date, start_time, title").eq(col, row.id).gte("scheduled_date", today)
+          .in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle(),
+        kind === "cliente" ? supabase.from("comodatos").select("id", { count: "exact", head: true }).eq("client_id", row.id) : Promise.resolve({ count: null }),
+        kind === "lead" ? supabase.from("lead_timeline").select("resumo, created_at").eq("lead_id", row.id).order("created_at", { ascending: false }).limit(1).maybeSingle()
+          : supabase.from("schedules").select("resumo_execucao, scheduled_date").eq("client_id", row.id).eq("status", "concluido").order("scheduled_date", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      const h: any = (hist as any)?.data;
+      return { tipo: kind, nome: kind === "cliente" ? row.company || row.name : row.empresa_nome || row.company || row.title, cidade: row.city ?? null,
+        contatos: (Array.isArray(contatos) ? contatos : []).map((c: any) => ({ nome: c.pessoas?.nome ?? null, cargo: c.cargo ?? null, principal: !!c.is_primary })),
+        ultimo_historico: h ? (h.resumo ?? h.resumo_execucao ?? null) : null,
+        pontos_instalados: kind === "cliente" ? (pontos as any)?.count ?? 0 : null,
+        proxima_visita: prox ? { data: (prox as any).scheduled_date, horario: String((prox as any).start_time ?? "").slice(0, 5), codigo: visitCode((prox as any).id) } : null,
+        link: feraLink(kind === "cliente" ? `/clientes?id=${row.id}` : `/leads?id=${row.id}`), id: row.id };
+    };
+    const out = [...await Promise.all((Array.isArray(clients) ? clients : []).map((c) => resumo("cliente", c))),
+      ...await Promise.all((Array.isArray(leads) ? leads : []).map((l) => resumo("lead", l)))];
+    return ok({ resultados: out, encontrados: out.length });
+  }, params);
+}
+
+function cnpjValidoMcp(v: unknown): boolean {
+  const d = String(v ?? "").replace(/\D/g, "");
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (len: number) => {
+    const w = len === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const s = w.reduce((acc, wi, i) => acc + Number(d[i]) * wi, 0) % 11;
+    return s < 2 ? 0 : 11 - s;
+  };
+  return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+}
+
+async function criarLeadEquipe(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const empresa = productSearchText(params.empresa);
+    const cidade = productSearchText(params.cidade);
+    const contato = productSearchText(params.contato_nome);
+    if (!empresa || !cidade || !contato) return fail("Informe empresa, cidade e o nome de pelo menos 1 contato");
+    const cnpj = params.cnpj ? String(params.cnpj).replace(/\D/g, "") : null;
+    if (cnpj && !cnpjValidoMcp(cnpj)) return fail("CNPJ inválido: confira os dígitos");
+    const tel = digits(params.contato_telefone);
+    let pessoaId: string | null = null;
+    if (tel && tel.length >= 10) {
+      const { data: found } = await supabase.from("pessoas").select("id").eq("organization_id", NITSCLEAN_ORG_ID).in("whatsapp", phoneVariants(tel)).limit(1).maybeSingle();
+      pessoaId = (found as any)?.id ?? null;
+    }
+    if (!pessoaId) {
+      const { data: p, error: pe } = await supabase.from("pessoas").insert({ organization_id: NITSCLEAN_ORG_ID, nome: contato, whatsapp: tel && tel.length >= 10 ? tel : null })
+        .select("id").single();
+      if (pe) return fail(dbFail("criar contato", pe));
+      pessoaId = (p as any).id;
+    }
+    const { data: lead, error } = await supabase.from("leads").insert({ organization_id: NITSCLEAN_ORG_ID, title: empresa, empresa_nome: empresa, company: empresa,
+      city: cidade, endereco: productSearchText(params.endereco) || null, cnpj, pessoa_id: pessoaId, cargo_contato: productSearchText(params.cargo) || null,
+      contact_name: contato, contact_phone: tel, stage: "novo", source: "flora_equipe", created_by: u.user_id, assigned_to: u.user_id })
+      .select("id").single();
+    if (error) return fail(dbFail("criar lead", error));
+    return ok({ lead_id: (lead as any).id, link: feraLink(`/leads?id=${(lead as any).id}`) }, `Lead ${empresa} criado`);
+  }, params, isField);
+}
+
+const TEAM_TYPES = ["visita_comercial", "visita_tecnica", "entrega", "manutencao"];
+const TEAM_OPS: Record<string, string[]> = { manutencao: ["manutencao_reposicao", "substituicao"], entrega: ["entrega", "instalacao_definitiva"],
+  visita_tecnica: ["instalacao_teste", "instalacao_definitiva", "substituicao"], visita_comercial: [] };
+
+async function agendarVisitaEquipe(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const tipo = String(params.tipo ?? "");
+    const date = validDate(params.data);
+    const hora = typeof params.horario === "string" && /^\d{2}:\d{2}$/.test(params.horario) ? params.horario : null;
+    if (!TEAM_TYPES.includes(tipo)) return fail("tipo deve ser visita_comercial, visita_tecnica, entrega ou manutencao");
+    if (!date || !hora) return fail("Informe data (AAAA-MM-DD) e horario (HH:MM)");
+    if (date < spToday()) return fail("Data no passado");
+    // Vendedor (without a technical role) books only commercial visits.
+    if (tipo !== "visita_comercial" && !isPrivileged(u) && !hasRole(u, "consultor_tecnico", "operacional")) return fail("Seu perfil agenda só visita comercial");
+    const clientId = typeof params.client_id === "string" ? params.client_id : null;
+    const leadId = typeof params.lead_id === "string" ? params.lead_id : null;
+    if (tipo !== "visita_comercial" && !clientId) return fail("Manutenção, entrega e visita técnica exigem um cliente (client_id)");
+    if (!clientId && !leadId) return fail("Informe client_id ou lead_id (use consultar_cliente_ou_lead)");
+    const target = clientId
+      ? await supabase.from("clients").select("id, name, company, address, city, zip_code, latitude, longitude, document, created_by, assigned_user_id").eq("id", clientId).eq("organization_id", NITSCLEAN_ORG_ID).maybeSingle()
+      : await supabase.from("leads").select("id, empresa_nome, company, title, endereco, city, zip_code, latitude, longitude, cnpj, created_by, assigned_to").eq("id", leadId!).eq("organization_id", NITSCLEAN_ORG_ID).maybeSingle();
+    const t: any = target.data;
+    if (!t) return fail("Cliente/lead não encontrado");
+    if (!seesAll(u) && t.created_by !== u.user_id && (clientId ? t.assigned_user_id : t.assigned_to) !== u.user_id) return NAO_AUTORIZADO;
+    const operacao = typeof params.operacao_material === "string" && params.operacao_material ? params.operacao_material : null;
+    if (operacao && !(TEAM_OPS[tipo] ?? []).includes(operacao)) return fail("operacao_material não combina com o tipo de visita");
+    const itens = Array.isArray(params.itens) ? (params.itens as any[]).slice(0, 30).map((i) => ({ descricao: productSearchText(i?.descricao).slice(0, 150),
+      quantidade: String(i?.quantidade ?? "1").replace(/\D/g, "") || "1", product_id: typeof i?.product_id === "string" ? i.product_id : null })).filter((i) => i.descricao) : [];
+    if (operacao) {
+      if (!cnpjValidoMcp(clientId ? t.document : t.cnpj)) return fail("A empresa precisa de CNPJ válido para emitir a nota: cadastre o CNPJ no Fera antes de agendar", "Abra o cadastro no link e informe o CNPJ");
+      if (!itens.length) return fail("Informe os itens (descricao e quantidade) da operação");
+    }
+    const assignee = isPrivileged(u) && typeof params.consultor_id === "string" ? params.consultor_id : u.user_id;
+    if (assignee !== u.user_id) {
+      const { data: prof } = await supabase.from("profiles").select("user_id").eq("user_id", assignee).eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true).maybeSingle();
+      if (!prof) return fail("Consultor inválido");
+    }
+    const holiday = await rejectHolidayVisit(supabase, date, t.city ?? undefined);
+    if (holiday) return { success: false, message: holiday.message };
+    const startMin = timeMinutes(hora);
+    const { data: same } = await supabase.from("schedules").select("start_time, end_time").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("assigned_to", assignee).eq("scheduled_date", date).in("status", ["agendado", "confirmado", "em_atendimento"]);
+    const clash = (Array.isArray(same) ? same : []).some((s: any) => {
+      const a = timeMinutes(String(s.start_time ?? "").slice(0, 5)); const b = s.end_time ? timeMinutes(String(s.end_time).slice(0, 5)) : a + 60;
+      return startMin < b && a < startMin + 60;
+    });
+    if (clash) return fail("Já existe visita nesse horário para o consultor");
+    if (googleClash(await googleBusy(supabase, date, date), date, startMin, 60)) return fail("Horário ocupado na agenda da Flora (Google)");
+    const nome = clientId ? t.company || t.name : t.empresa_nome || t.company || t.title;
+    const label = ({ visita_comercial: "Visita comercial", visita_tecnica: "Visita técnica", entrega: "Entrega", manutencao: "Manutenção" } as Record<string, string>)[tipo];
+    const { data: created, error } = await supabase.from("schedules").insert({
+      organization_id: NITSCLEAN_ORG_ID, title: `${label} — ${nome}`, schedule_type: tipo, scheduled_date: date, start_time: hora,
+      end_time: fromMin(Math.min(startMin + 60, 23 * 60 + 59)), status: "agendado", client_id: clientId, lead_id: clientId ? null : leadId,
+      location: [clientId ? t.address : t.endereco, t.city].filter(Boolean).join(", ") || null, zip_code: t.zip_code ?? null,
+      latitude: t.latitude ?? null, longitude: t.longitude ?? null, assigned_to: assignee, created_by: u.user_id, source: "flora_equipe",
+      operacao_material: operacao, itens, notes: productSearchText(params.observacao).slice(0, 500) || null,
+    }).select("id").single();
+    if (error) return fail(dbFail("agendar visita", error));
+    const id = (created as any).id;
+    return ok({ schedule_id: id, codigo: visitCode(id), link: feraLink(`/agenda?agendamento=${id}`), prontidao: operacao ? "pendente: nota e material" : "pronto" },
+      `${label} agendada para ${date.split("-").reverse().join("/")} às ${hora}`);
+  }, params, isField);
+}
+
+async function visitaEmAndamento(supabase: ReturnType<typeof getClient>, u: TeamUser): Promise<ScheduleRow | null> {
+  const { data } = await supabase.from("schedules").select("id, organization_id, lead_id, client_id, latitude, longitude, title, notes, clients(name, latitude, longitude), leads(latitude, longitude, pessoa_id)")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id).eq("status", "em_atendimento").order("checkin_em", { ascending: false }).limit(1).maybeSingle();
+  return (data as ScheduleRow | null) ?? null;
+}
+
+async function registrarLocalizacaoCheckin(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const lat = Number(params.latitude), lng = Number(params.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return fail("Localização inválida");
+    const s = await visitaEmAndamento(supabase, u);
+    if (!s) return fail("Você não tem visita em andamento. Inicie a visita no Fera primeiro.", "Abra o Fera em Hoje e toque em Iniciar");
+    const dest = s.latitude != null ? [s.latitude, s.longitude] : s.clients?.latitude != null ? [s.clients.latitude, s.clients.longitude]
+      : s.leads?.latitude != null ? [s.leads.latitude, s.leads.longitude] : null;
+    const { data: org } = await supabase.from("organizations").select("raio_checkin_m").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
+    const raio = Number((org as any)?.raio_checkin_m ?? 300) || 300;
+    let distancia: number | null = null;
+    if (dest) {
+      const r = 6_371_000, rad = (d: number) => d * Math.PI / 180;
+      const a = Math.sin(rad(dest[0] - lat) / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(dest[0])) * Math.sin(rad(dest[1] - lng) / 2) ** 2;
+      distancia = Math.round(2 * r * Math.asin(Math.sqrt(a)));
+    }
+    const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
+      fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
+      localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
+    if (error) return fail(dbFail("registrar localização", error));
+    return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
+      link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distancia} m do cliente` : "Localização registrada (cliente sem coordenadas)");
+  }, params, isField);
+}
+
+/** Stateless confirmation code: HMAC over user + visit + text + expiry, keyed by the MCP secret. */
+async function noteCode(userId: string, scheduleId: string, texto: string, exp: number): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(MCP_BEARER_TOKEN || "fera"), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${userId}|${scheduleId}|${texto}|${exp}`)));
+  return `${exp.toString(36)}.${Array.from(sig.slice(0, 9)).map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+async function registrarNotaVisita(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const texto = productSearchText(params.texto).replace(/\s+/g, " ").trim().slice(0, 1000);
+    if (texto.length < 3) return fail("Envie o texto da nota (transcrição do áudio)");
+    const s = await visitaEmAndamento(supabase, u);
+    if (!s) return fail("Você não tem visita em andamento para anotar.", "Abra o Fera em Hoje e inicie a visita");
+    const proximo = productSearchText(params.proximo_passo).slice(0, 200) || null;
+    const payload = `${texto}|${proximo ?? ""}`;
+    if (params.confirmar !== true) {
+      const exp = Date.now() + 10 * 60_000;
+      const codigo = await noteCode(u.user_id, s.id, payload, exp);
+      return ok({ precisa_confirmacao: true, codigo_confirmacao: codigo, visita: visitCode(s.id), resumo: texto, proximo_passo: proximo,
+        mensagem_para_usuario: `Entendi: "${texto}"${proximo ? ` · Próximo passo: ${proximo}` : ""}. Confirma?` },
+        undefined, "Só grave depois do 'sim': chame de novo com confirmar=true, o mesmo texto/proximo_passo e codigo_confirmacao");
+    }
+    const code = String(params.codigo_confirmacao ?? "");
+    const exp = parseInt(code.split(".")[0] ?? "", 36);
+    if (!Number.isFinite(exp) || exp < Date.now() || code !== await noteCode(u.user_id, s.id, payload, exp)) {
+      return fail("Confirmação expirada ou texto diferente: mostre o resumo de novo e peça confirmação");
+    }
+    const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const nota = `[WhatsApp ${stamp}] ${texto}${proximo ? ` — Próximo passo: ${proximo}` : ""}`;
+    const { error } = await supabase.from("schedules").update({ notes: [s.notes, nota].filter(Boolean).join("\n").slice(-4000) }).eq("id", s.id);
+    if (error) return fail(dbFail("gravar nota da visita", error));
+    if (s.lead_id) {
+      const bg = supabase.from("lead_timeline").insert({ organization_id: NITSCLEAN_ORG_ID, lead_id: s.lead_id, pessoa_id: s.leads?.pessoa_id ?? null,
+        tipo: "visita", origem: "fera", resumo: `Nota do consultor (WhatsApp): ${texto}`.slice(0, 500), proximo_passo: proximo, referencia_id: s.id });
+      (globalThis as any).EdgeRuntime?.waitUntil?.(Promise.resolve(bg).then(() => undefined, () => undefined));
+    }
+    return ok({ gravado: true, visita: visitCode(s.id), link: feraLink(`/agenda?agendamento=${s.id}`) }, "Nota gravada na visita");
+  }, params, isField);
+}
+
+async function loadAtendimento(supabase: ReturnType<typeof getClient>, u: TeamUser, params: Record<string, unknown>) {
+  const raw = String(params.atendimento_id ?? params.codigo ?? "").replace(/^#?A-/i, "").trim().toLowerCase();
+  if (!/^[0-9a-f-]{8,36}$/.test(raw)) return null;
+  let q = supabase.from("atendimentos").select("id, status, responsavel_id, assumido_por, empresa, lead_id").eq("organization_id", NITSCLEAN_ORG_ID)
+    .in("status", ["aberto", "em_atendimento"]).limit(50);
+  if (!isPrivileged(u)) q = q.or(`responsavel_id.eq.${u.user_id},assumido_por.eq.${u.user_id},responsavel_id.is.null`);
+  const { data } = await q;
+  return (Array.isArray(data) ? data : []).find((a: any) => String(a.id).startsWith(raw)) ?? null;
+}
+
+async function assumirAtendimento(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const a: any = await loadAtendimento(supabase, u, params);
+    if (!a) return fail("Atendimento não encontrado ou sem permissão");
+    const { error } = await supabase.from("atendimentos").update({ status: "em_atendimento", assumido_por: u.user_id, assumido_em: new Date().toISOString() }).eq("id", a.id);
+    if (error) return fail(dbFail("assumir atendimento", error));
+    return ok({ codigo: `#A-${String(a.id).slice(0, 8)}`, link: feraLink(`/atendimentos?id=${a.id}`) }, `Você assumiu o atendimento de ${a.empresa ?? "cliente"}`);
+  }, params, isField);
+}
+
+const RESULTADOS_ATENDIMENTO = ["virou_agendamento", "virou_proposta", "duvida_resolvida", "perdido", "outro"];
+async function resolverAtendimento(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const resolucao = productSearchText(params.resolucao).slice(0, 500);
+    const resultado = String(params.resultado ?? "");
+    if (resolucao.length < 3 || !RESULTADOS_ATENDIMENTO.includes(resultado)) return fail(`Informe resolucao e resultado (${RESULTADOS_ATENDIMENTO.join(", ")})`);
+    const a: any = await loadAtendimento(supabase, u, params);
+    if (!a) return fail("Atendimento não encontrado ou sem permissão");
+    const { error } = await supabase.from("atendimentos").update({ status: "resolvido", resolucao, resultado, resolvido_por: u.user_id,
+      assumido_por: a.assumido_por ?? u.user_id }).eq("id", a.id);
+    if (error) return fail(dbFail("resolver atendimento", error));
+    return ok({ codigo: `#A-${String(a.id).slice(0, 8)}`, link: feraLink(`/atendimentos?id=${a.id}`) }, "Atendimento resolvido");
+  }, params, isField);
+}
+
+/** Resolves an alert code (#V-…, #T-…, #A-…) sent to THIS user's chat in the last 7 days. */
+async function contextoAviso(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const codigo = String(params.codigo ?? "").trim().toUpperCase().replace(/^([VTA])-/, "#$1-");
+    if (!/^#[VTA]-[0-9A-F]{1,8}$/i.test(codigo)) return fail("Código inválido (ex.: #V-1a2b3c4d)");
+    const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const { data } = await supabase.from("notification_logs").select("event_type, payload, sent_at, queued_at").eq("organization_id", NITSCLEAN_ORG_ID)
+      .in("destination", u.phones).or(`sent_at.gte.${since},queued_at.gte.${since}`).limit(50);
+    const log: any = (Array.isArray(data) ? data : []).find((l: any) => String(l.payload?.codigo ?? "").toUpperCase() === codigo);
+    if (!log) return fail("Não achei esse aviso entre os seus últimos avisos");
+    const p = log.payload ?? {};
+    let visita: unknown = null;
+    if (typeof p.schedule_id === "string") {
+      const { data: s } = await supabase.from("schedules").select(SCHEDULE_FIELDS).eq("id", p.schedule_id).eq("organization_id", NITSCLEAN_ORG_ID).maybeSingle();
+      if (s && (seesAll(u) || (s as any).assigned_to === u.user_id)) visita = { ...visitSummary(s), data: (s as any).scheduled_date, schedule_id: (s as any).id };
+    }
+    return ok({ codigo, evento: log.event_type, enviado_em: log.sent_at ?? log.queued_at, visita,
+      acoes_possiveis: log.event_type === "prontidao_pendente" ? ["marcar_material_separado"] : String(log.event_type ?? "").startsWith("tarefa_nota") ? ["abrir /tarefas no Fera"] : [] });
+  }, params);
+}
+
+async function marcarMaterialSeparado(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const raw = String(params.schedule_id ?? params.codigo ?? "").replace(/^#?V-/i, "").trim().toLowerCase();
+    if (!/^[0-9a-f-]{8,36}$/.test(raw)) return fail("Informe o código da visita (#V-…)");
+    let q = supabase.from("schedules").select("id, assigned_to, exige_material, material_status, scheduled_date").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("exige_material", true).in("status", ["agendado", "confirmado", "em_atendimento"]).gte("scheduled_date", spToday()).limit(100);
+    if (!isPrivileged(u) && !hasRole(u, "operacional")) q = q.eq("assigned_to", u.user_id);
+    const { data } = await q;
+    const s: any = (Array.isArray(data) ? data : []).find((r: any) => String(r.id).startsWith(raw));
+    if (!s) return fail("Visita não encontrada ou sem permissão");
+    const { error } = await supabase.from("schedules").update({ material_status: "separado", material_separado_em: new Date().toISOString(), material_separado_por: u.user_id }).eq("id", s.id);
+    if (error) return fail(dbFail("marcar material separado", error));
+    return ok({ codigo: visitCode(s.id), link: feraLink(`/agenda?agendamento=${s.id}`) }, "Material marcado como separado");
+  }, params, isField);
+}
+
+const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResponse>> = {
+  identificar_usuario: identificarUsuario, minha_agenda: minhaAgenda, agenda_equipe: agendaEquipe, listar_pendencias: listarPendencias,
+  consultar_cliente_ou_lead: consultarClienteOuLead, criar_lead_equipe: criarLeadEquipe, agendar_visita_equipe: agendarVisitaEquipe,
+  registrar_localizacao_checkin: registrarLocalizacaoCheckin, registrar_nota_visita: registrarNotaVisita,
+  assumir_atendimento: assumirAtendimento, resolver_atendimento: resolverAtendimento, contexto_aviso: contextoAviso,
+  marcar_material_separado: marcarMaterialSeparado,
+};
+
+const CHAT = { chat_id: { type: "string", description: "chat_id da conversa atual (identifica o usuário da equipe pelo telefone)" } };
+const TEAM_MANIFEST = [
+  { name: "identificar_usuario", description: "EQUIPE: identifica o usuário do Fera pelo telefone do chat (nome, papéis, últimos avisos com código). Telefone desconhecido = não autorizado.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT } } },
+  { name: "minha_agenda", description: "EQUIPE: visitas do dia do próprio usuário (status, prontidão, código e link).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string", description: "AAAA-MM-DD (padrão hoje)" } } } },
+  { name: "agenda_equipe", description: "EQUIPE (só gestor/admin): visitas do dia de toda a equipe agrupadas por consultor.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string" }, consultor: { type: "string", description: "Opcional: parte do nome" } } } },
+  { name: "listar_pendencias", description: "EQUIPE: atendimentos abertos, visitas de hoje e (faturamento/gestor) tarefas de nota. Consultor vê só as suas.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT } } },
+  { name: "consultar_cliente_ou_lead", description: "EQUIPE: resumo de cliente/lead (contatos, último histórico, pontos instalados, próxima visita, link). Vendedor/consultor vê só a própria carteira.", parameters: { type: "object", required: ["chat_id", "termo"], properties: { ...CHAT, termo: { type: "string", description: "Nome da empresa" } } } },
+  { name: "criar_lead_equipe", description: "EQUIPE: cria lead (empresa + cidade + 1 contato) em nome do usuário.", parameters: { type: "object", required: ["chat_id", "empresa", "cidade", "contato_nome"], properties: { ...CHAT, empresa: { type: "string" }, cidade: { type: "string" }, endereco: { type: "string" }, cnpj: { type: "string" }, contato_nome: { type: "string" }, contato_telefone: { type: "string" }, cargo: { type: "string" } } } },
+  { name: "agendar_visita_equipe", description: "EQUIPE: agenda visita com as mesmas validações do Fera (cliente obrigatório fora da comercial, CNPJ quando há nota, conflito, feriado, agenda Google). Vendedor só visita comercial.", parameters: { type: "object", required: ["chat_id", "tipo", "data", "horario"], properties: { ...CHAT, tipo: { type: "string", enum: TEAM_TYPES }, data: { type: "string" }, horario: { type: "string", description: "HH:MM" }, client_id: { type: "string" }, lead_id: { type: "string" }, operacao_material: { type: "string", enum: ["instalacao_teste", "instalacao_definitiva", "entrega", "substituicao", "manutencao_reposicao"] }, itens: { type: "array", items: { type: "object", properties: { descricao: { type: "string" }, quantidade: { type: "string" } } } }, consultor_id: { type: "string", description: "Só gestor" }, observacao: { type: "string" } } } },
+  { name: "registrar_localizacao_checkin", description: "EQUIPE: plano B quando o GPS do app falha — grava a localização enviada no WhatsApp no check-in da visita em andamento do próprio usuário.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" } } } },
+  { name: "registrar_nota_visita", description: "EQUIPE: nota da visita em andamento a partir da transcrição do áudio. 1ª chamada devolve resumo + codigo_confirmacao (NÃO grava); só depois do 'sim' chame com confirmar=true e o mesmo texto.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, proximo_passo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" } } } },
+  { name: "assumir_atendimento", description: "EQUIPE: assume um atendimento (código #A-…).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
+  { name: "resolver_atendimento", description: "EQUIPE: resolve um atendimento com resolução e resultado.", parameters: { type: "object", required: ["chat_id", "codigo", "resolucao", "resultado"], properties: { ...CHAT, codigo: { type: "string" }, resolucao: { type: "string" }, resultado: { type: "string", enum: RESULTADOS_ATENDIMENTO } } } },
+  { name: "contexto_aviso", description: "EQUIPE: quando o usuário responde a um aviso automático, resolve o código (#V-…, #T-…, #A-…) enviado a ele e devolve a visita/tarefa e ações possíveis.", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
+  { name: "marcar_material_separado", description: "EQUIPE: marca o material da visita (#V-…) como separado (responsável, operacional ou gestor).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
+];
+
+const TOOLS_MANIFEST = [...TOOLS_MANIFEST_CLIENTE, ...TEAM_MANIFEST];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TOOL ROUTER
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -3638,13 +4070,16 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   // the copy dispatched to tools, including nested strings and array entries.
   params = normalizeParamValue(params) as Record<string, unknown>;
   params = applyChatChannel(method, params);
+  if (Object.prototype.hasOwnProperty.call(TEAM_TOOLS, method)) return TEAM_TOOLS[method](params);
+  const teamRefusal = await refuseTeamInClientFlow(method, params);
+  if (teamRefusal) return teamRefusal;
   switch (method) {
     // Block 1
     case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
     case "buscar_contato": {
       const found = await buscarContato(params);
       if (!found.success || !params.chat_id) return found;
-      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id) } };
+      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id), equipe: await teamInfo(params.chat_id) } };
     }
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
@@ -3667,7 +4102,6 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "adicionar_tag":                return adicionarTag(params);
     // Block 5
     case "solicitar_atendimento_humano": return solicitarAtendimentoHumano(params);
-    case "listar_pendencias":            return listarPendencias(params);
     case "registrar_fora_cobertura":     return registrarForaCobertura(params);
     // Block 6
     case "enviar_codigo_otp":            return enviarCodigoOtp(params);
