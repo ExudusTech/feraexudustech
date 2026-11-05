@@ -143,14 +143,14 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   const newPage = () => { page = pdf.addPage([W, H]); header(page); y = H - 105; };
   const ensure = (h: number) => { if (y - h < 70) newPage(); };
   const section = (title: string, kicker?: string) => {
-    ensure(70);
-    if (kicker) { t(page, kicker.toUpperCase(), M, y, 8, B, GREEN); y -= 16; }
+    ensure(120);
+    if (kicker) { t(page, kicker.toUpperCase(), M, y, 8, B, GREEN); y -= 20; }
     t(page, title, M, y, 17, B, NAVY); y -= 24;
   };
 
   // 2) Institutional
   newPage();
-  t(page, "QUEM SOMOS", M, y, 8, B, GREEN); y -= 18;
+  t(page, "QUEM SOMOS", M, y, 8, B, GREEN); y -= 30;
   t(page, "Nit's Clean", M, y, 26, B, NAVY); y -= 26;
   y = para(page, d.config.txt_empresa, M, y, W - 2 * M, 11, R, INK, 1.55) - 22;
   const blocks: [string, string][] = [
@@ -195,7 +195,7 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   y -= 22;
   // client + consultant cards
   {
-    const cw = (W - 2 * M - 14) / 2, h = 112, top = y;
+    const cw = (W - 2 * M - 14) / 2, h = 136, top = y;
     const card = (x: number, w: number, title: string, rows: [string, string][]) => {
       page.drawRectangle({ x, y: top - h, width: w, height: h, borderColor: LINE, borderWidth: 1, color: WHITE });
       page.drawRectangle({ x, y: top - 3, width: w, height: 3, color: title === "CLIENTE" ? TEAL : GREEN });
@@ -305,7 +305,8 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   {
     const p = pdf.addPage([W, H]);
     p.drawRectangle({ x: 0, y: 0, width: W, height: H, color: WHITE });
-    drawLogo(p, (W - 240) / 2 + (logo ? (240 - Math.min(240 / logo.width, 110 / logo.height) * logo.width) / 2 : 70), H - 230, 240, 110);
+    if (logo) { const s = Math.min(240 / logo.width, 110 / logo.height); drawLogo(p, (W - logo.width * s) / 2, H - 120, 240, 110); }
+    else { const n = "NitsClean"; t(p, n, (W - B.widthOfTextAtSize(n, 40)) / 2, H - 200, 40, B, TEAL); }
     const ty = H - 330;
     const big = "Obrigado!"; t(p, big, (W - B.widthOfTextAtSize(big, 44)) / 2, ty, 44, B, NAVY);
     p.drawRectangle({ x: W / 2 - 30, y: ty - 22, width: 60, height: 4, color: GREEN });
