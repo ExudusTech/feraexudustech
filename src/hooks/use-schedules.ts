@@ -35,6 +35,13 @@ export interface Schedule {
   resultado?: string | null;
   resumo_execucao?: string | null;
   nao_realizado_motivo?: string | null;
+  operacao_material?: string | null;
+  tipo_nota?: string | null;
+  itens?: unknown;
+  nota_status?: string;
+  material_status?: string;
+  prontidao?: string;
+  levantamento?: unknown;
 }
 
 export function useSchedules() {

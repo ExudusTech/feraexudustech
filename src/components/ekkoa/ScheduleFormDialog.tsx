@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { MapPin, AlertTriangle, Clock, ExternalLink, Sparkles, ChevronDown, Plus, X, Search } from "lucide-react";
 import { formatCEP } from "@/lib/validations";
 import { findCoverageAreaByCep, getAllowedDays, getNextAllowedDates, getTimeWindow, hasScheduleOverlap } from "@/lib/scheduling-utils";
+import { operacoesPara } from "@/lib/prontidao";
 import { MaterialFields, CnpjGate, emptyMaterial, type MaterialValue, type CnpjStatus } from "@/components/agenda/MaterialPronto";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel } from "@/lib/linha-produto";
 import {
@@ -116,6 +117,11 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
     setTarget(t); setTerm("");
     setForm((p) => ({ ...p, location: f.location || p.location, zip_code: f.zip_code ? formatCEP(f.zip_code) : p.zip_code }));
   }
+
+  // A material operation only applies to the types that list it.
+  useEffect(() => {
+    if (material.operacao && !operacoesPara(form.schedule_type).includes(material.operacao)) setMaterial(emptyMaterial);
+  }, [form.schedule_type, material.operacao]);
 
   // Auto title unless edited by hand.
   useEffect(() => {
