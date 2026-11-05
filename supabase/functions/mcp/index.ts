@@ -4113,8 +4113,131 @@ async function confirmarColetaOcorrencia(params: Record<string, unknown>): Promi
     const r = await chamarColeta(u.user_id, s.id, "confirmar");
     if (r.status !== 200) return { success: false, message: r.body?.error ?? "Não foi possível confirmar", data: { pendencias: r.body?.pendencias ?? [] } };
     return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, confirmada: true, pontos_previstos: r.body.pontos_previstos, novos_agendamentos: (r.body.agendamentos ?? []).map((c: string) => `#${c}`),
-      link: feraLink(`/agenda?agendamento=${s.id}`) }, `Coleta da #${s.ocorrencia_codigo} confirmada`);
+      pendencias_agendar: r.body.pendencias_agendar ?? [], link: feraLink(`/agenda?agendamento=${s.id}`) },
+      `Coleta da #${s.ocorrencia_codigo} confirmada${(r.body.pendencias_agendar ?? []).length ? `. Sem horário livre na rota: ${(r.body.pendencias_agendar as string[]).join("; ")} (ficou como pendência)` : ""}`);
   }, params, isField);
+}
+
+
+// ─── flora_equipe: single dispatcher (one GPT Maker intent) over the team tools ───
+const FLORA_EQUIPE_ACOES: Record<string, string> = {
+  minha_agenda: "minha_agenda", agenda_equipe: "agenda_equipe", listar_pendencias: "listar_pendencias", consultar: "consultar_cliente_ou_lead",
+  criar_lead: "criar_lead_equipe", agendar_visita: "agendar_visita_equipe", registrar_localizacao: "registrar_localizacao_checkin",
+  registrar_nota: "registrar_nota_visita", anexar_coleta: "anexar_coleta_ocorrencia", pendencias_ocorrencia: "pendencias_ocorrencia",
+  confirmar_coleta: "confirmar_coleta_ocorrencia", contexto_aviso: "contexto_aviso",
+};
+const CAMPO_ALIAS: Record<string, string> = {
+  empresa: "empresa", nome: "empresa", estabelecimento: "empresa", cidade: "cidade", endereco: "endereco", cnpj: "cnpj",
+  contato: "contato_nome", contato_nome: "contato_nome", responsavel: "contato_nome", telefone: "contato_telefone", whatsapp: "contato_telefone",
+  contato_telefone: "contato_telefone", cargo: "cargo", tipo: "tipo", horario: "horario", hora: "horario", data: "data",
+  latitude: "latitude", lat: "latitude", longitude: "longitude", lng: "longitude", lon: "longitude", cliente: "termo", termo: "termo",
+  consultor: "consultor", client_id: "client_id", lead_id: "lead_id", observacao: "observacao", obs: "observacao", proximo_passo: "proximo_passo",
+};
+const semAcento = (v: string) => v.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+/** Free fields from `dados` (object) and "chave: valor" pairs / coordinates / dates / times inside `texto`. Server-side only. */
+function interpretarCamposEquipe(texto: unknown, dados: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const t = typeof texto === "string" ? texto : "";
+  for (const part of t.split(/[\n;]+/)) {
+    const m = /^\s*([\p{L}_ ]{2,20})\s*[:=]\s*(.+?)\s*$/u.exec(part);
+    const k = m ? CAMPO_ALIAS[semAcento(m[1]).replace(/\s+/g, "_")] : undefined;
+    if (k && m) out[k] = m[2];
+  }
+  const coord = /(-?\d{1,2}\.\d{3,})\s*[,; ]\s*(-?\d{1,3}\.\d{3,})/.exec(t);
+  if (coord && out.latitude === undefined) { out.latitude = coord[1]; out.longitude = coord[2]; }
+  if (out.data === undefined) {
+    const iso = /\b(\d{4}-\d{2}-\d{2})\b/.exec(t), br = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(t);
+    if (iso) out.data = iso[1];
+    else if (br) { const y = br[3] ? (br[3].length === 2 ? `20${br[3]}` : br[3]) : spToday().slice(0, 4); out.data = `${y}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`; }
+  }
+  if (out.horario === undefined) { const h = /\b(\d{1,2})(?::|h)(\d{2})?\b/i.exec(t.replace(/\d{1,2}\/\d{1,2}(\/\d{2,4})?/g, "")); if (h && Number(h[1]) < 24) out.horario = `${h[1].padStart(2, "0")}:${h[2] ?? "00"}`; }
+  if (dados && typeof dados === "object" && !Array.isArray(dados)) {
+    for (const [k, v] of Object.entries(dados as Record<string, unknown>)) {
+      const key = CAMPO_ALIAS[semAcento(k)] ?? (["itens", "operacao_material", "consultor_id"].includes(k) ? k : undefined);
+      if (key && v !== null && v !== undefined && v !== "") out[key] = v;
+    }
+  }
+  for (const k of ["latitude", "longitude"]) if (typeof out[k] === "string") out[k] = Number(String(out[k]).replace(",", "."));
+  if (typeof out.horario === "string") { const h = /^(\d{1,2})(?::|h)?(\d{2})?$/.exec(out.horario.trim()); if (h) out.horario = `${h[1].padStart(2, "0")}:${h[2] ?? "00"}`; }
+  if (typeof out.tipo === "string") {
+    const v = semAcento(out.tipo);
+    out.tipo = v.includes("comerc") ? "visita_comercial" : v.includes("manut") ? "manutencao" : v.includes("entreg") ? "entrega" : v.includes("tecn") || v.includes("instal") ? "visita_tecnica" : out.tipo;
+  }
+  return out;
+}
+
+const OBRIGATORIOS: Record<string, string[]> = {
+  criar_lead: ["empresa", "cidade", "contato_nome"], agendar_visita: ["tipo", "data", "horario"], registrar_localizacao: ["latitude", "longitude"],
+  consultar: ["termo"], registrar_nota: ["texto"], anexar_coleta: ["texto"], contexto_aviso: ["codigo"],
+};
+const NOME_CAMPO: Record<string, string> = { empresa: "nome da empresa", cidade: "cidade", contato_nome: "nome do contato", tipo: "tipo da visita", data: "data",
+  horario: "horário", latitude: "localização", longitude: "localização", termo: "nome do cliente", texto: "texto", codigo: "código do aviso" };
+
+/** Short Portuguese reply the Flora sends literally. */
+function mensagemEquipe(acao: string, r: McpResponse): string {
+  const d: any = r.data ?? {};
+  if (typeof d.mensagem_para_equipe === "string") return d.mensagem_para_equipe;
+  const cut = (v: string) => v.length > 900 ? `${v.slice(0, 897)}...` : v;
+  if (!r.success) return cut(r.message === "não autorizado" ? "Você não tem permissão para isso." : (r.message ?? "Não consegui fazer isso agora."));
+  const linhaVisita = (v: any) => `${v.horario ?? "--:--"} ${v.cliente ?? v.titulo ?? ""} ${v.codigo ?? ""}${v.prontidao && v.prontidao !== "pronto" ? ` (${v.prontidao})` : ""}`.trim();
+  const dia = (iso?: string) => iso ? iso.split("-").reverse().join("/") : "hoje";
+  switch (acao) {
+    case "minha_agenda": return cut(d.visitas?.length ? `Sua agenda ${dia(d.data)}:\n${d.visitas.map(linhaVisita).join("\n")}` : `Você não tem visitas ${dia(d.data)}.`);
+    case "agenda_equipe": return cut(d.consultores?.length ? `Equipe ${dia(d.data)}:\n${d.consultores.map((c: any) => `${c.consultor}: ${c.visitas.map(linhaVisita).join("; ")}`).join("\n")}` : `Nenhuma visita da equipe ${dia(d.data)}.`);
+    case "listar_pendencias": {
+      const l: string[] = [];
+      if (d.atendimentos?.length) l.push(`Atendimentos abertos: ${d.atendimentos.length}`);
+      if (d.visitas_hoje?.length) l.push(`Visitas hoje: ${d.visitas_hoje.map(linhaVisita).join("; ")}`);
+      if (d.tarefas_nota?.length) l.push(`Tarefas de nota: ${d.tarefas_nota.map((t: any) => `${t.codigo} ${t.empresa ?? ""}`).join("; ")}`);
+      return cut(l.length ? l.join("\n") : "Nada pendente agora.");
+    }
+    case "consultar": return cut(d.resultados?.length ? d.resultados.slice(0, 3).map((x: any) => `${x.nome ?? x.empresa ?? ""}${x.link ? ` ${x.link}` : ""}`).join("\n") : "Não encontrei esse cliente/lead.");
+    case "pendencias_ocorrencia": return cut(d.pendencias?.length ? `${d.ocorrencia} ${d.cliente ?? ""} — falta:\n- ${d.pendencias.join("\n- ")}` : `${d.ocorrencia ?? "Ocorrência"}: nada pendente.`);
+    case "confirmar_coleta":
+    case "registrar_nota":
+      if (d.precisa_confirmacao || d.pode_confirmar) return cut(`${d.resumo ?? ""}\n\nConfirma? Responda SIM.`.trim());
+      if (d.pendencias?.length && d.pode_confirmar === false) return cut(`${d.ocorrencia} — antes de confirmar, falta:\n- ${d.pendencias.join("\n- ")}`);
+  }
+  return cut([r.message, d.link].filter(Boolean).join(" ") || "Feito.");
+}
+
+async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse> {
+  const acao = typeof params.acao === "string" ? params.acao.trim() : "";
+  const { user, ambiguo } = await resolverEquipe(getClient(), params.chat_id);
+  if (!user) {
+    const msg = ambiguo ? "Este número está em mais de um cadastro do Fera. Peça ao gestor para corrigir em Usuários." : "Este número não está cadastrado na equipe do Fera.";
+    return { success: false, message: msg, data: { equipe: false, mensagem_para_equipe: msg } };
+  }
+  const tool = FLORA_EQUIPE_ACOES[acao];
+  if (!tool) {
+    const msg = "Não entendi o que fazer. Diga, por exemplo: minha agenda, pendências, criar lead ou agendar visita.";
+    return { success: false, message: `acao inválida: ${acao || "(vazia)"}`, data: { equipe: true, acoes: Object.keys(FLORA_EQUIPE_ACOES), mensagem_para_equipe: msg } };
+  }
+  const campos = interpretarCamposEquipe(params.texto, params.dados);
+  const p: Record<string, unknown> = { ...campos, chat_id: params.chat_id };
+  if (typeof params.texto === "string" && params.texto.trim()) p.texto = params.texto;
+  if (typeof params.codigo === "string" && params.codigo.trim()) p.codigo = params.codigo.trim();
+  if (validDate(params.data)) p.data = params.data;
+  if (params.confirmar === true) p.confirmar = true;
+  if (typeof params.codigo_confirmacao === "string") p.codigo_confirmacao = params.codigo_confirmacao;
+  if (acao === "consultar" && !p.termo && typeof params.texto === "string") p.termo = params.texto.trim();
+  if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && !params.texto.includes(":")) p.consultor = params.texto.trim();
+  if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
+    const alvo = typeof p.termo === "string" ? p.termo : typeof p.empresa === "string" ? p.empresa : null;
+    if (alvo) {
+      const busca = await TEAM_TOOLS.consultar_cliente_ou_lead({ chat_id: params.chat_id, termo: alvo });
+      const res: any[] = (busca.data as any)?.resultados ?? [];
+      if (res.length === 1) { if (res[0].tipo === "cliente") p.client_id = res[0].id; else p.lead_id = res[0].id; }
+      else if (res.length > 1) { const msg = `Achei mais de um: ${res.slice(0, 3).map((x: any) => x.nome ?? x.empresa).join(", ")}. Qual deles?`; return { success: false, message: msg, data: { equipe: true, mensagem_para_equipe: msg } }; }
+    }
+  }
+  const faltam = Array.from(new Set((OBRIGATORIOS[acao] ?? []).filter((k) => p[k] === undefined || p[k] === null || p[k] === "" || (typeof p[k] === "number" && !Number.isFinite(p[k] as number))).map((k) => NOME_CAMPO[k] ?? k)));
+  if (faltam.length) { const msg = `Preciso de: ${faltam.join(", ")}.`; return { success: false, message: msg, data: { equipe: true, faltam, mensagem_para_equipe: msg } }; }
+  const r = await TEAM_TOOLS[tool](p);
+  const data = r.data && typeof r.data === "object" && !Array.isArray(r.data) ? r.data as Record<string, unknown> : { resultado: r.data };
+  return { ...r, data: { ...data, equipe: true, acao, mensagem_para_equipe: mensagemEquipe(acao, r) },
+    next_action_hint: "Envie mensagem_para_equipe literalmente ao usuário." };
 }
 
 const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResponse>> = {
@@ -4123,11 +4246,14 @@ const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResp
   consultar_cliente_ou_lead: consultarClienteOuLead, criar_lead_equipe: criarLeadEquipe, agendar_visita_equipe: agendarVisitaEquipe,
   registrar_localizacao_checkin: registrarLocalizacaoCheckin, registrar_nota_visita: registrarNotaVisita,
   assumir_atendimento: assumirAtendimento, resolver_atendimento: resolverAtendimento, contexto_aviso: contextoAviso,
-  marcar_material_separado: marcarMaterialSeparado,
+  marcar_material_separado: marcarMaterialSeparado, flora_equipe: floraEquipe,
 };
 
 const CHAT = { chat_id: { type: "string", description: "chat_id da conversa atual (identifica o usuário da equipe pelo telefone)" } };
 const TEAM_MANIFEST = [
+  { name: "flora_equipe", description: "EQUIPE (use esta): ferramenta única da equipe. Identifica o usuário pelo telefone do chat_id no servidor e roteia pela acao. Sempre envie data.mensagem_para_equipe literalmente.", parameters: { type: "object", required: ["chat_id", "acao"], properties: { ...CHAT,
+    acao: { type: "string", enum: Object.keys(FLORA_EQUIPE_ACOES) }, codigo: { type: "string", description: "#OC-…, #V-…, #T-… ou #A-…" }, texto: { type: "string", description: "Fala/transcrição ou campos livres (ex.: 'empresa: X; cidade: Y; contato: Z')" },
+    data: { type: "string", description: "AAAA-MM-DD" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, dados: { type: "object", description: "Opcional: campos livres (nome, cidade, endereco, contato, telefone, tipo, horario, latitude, longitude...)" } } } },
   { name: "identificar_usuario", description: "EQUIPE: identifica o usuário do Fera pelo telefone do chat (nome, papéis, últimos avisos com código). Telefone desconhecido = não autorizado.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT } } },
   { name: "minha_agenda", description: "EQUIPE: visitas do dia do próprio usuário (status, prontidão, código e link).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string", description: "AAAA-MM-DD (padrão hoje)" } } } },
   { name: "agenda_equipe", description: "EQUIPE (só gestor/admin): visitas do dia de toda a equipe agrupadas por consultor.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string" }, consultor: { type: "string", description: "Opcional: parte do nome" } } } },
