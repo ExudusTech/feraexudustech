@@ -3,9 +3,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationEligible, confirmationMessage, lateAlertMessage, lateMinutes, noConfirmationMessage, horasAberta, openVisitMessage } from "../_shared/visit-exec.ts";
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
-import { manutencaoDoDiaMessage, proximasDatas } from "../_shared/base-instalada.ts";
+import { areaDoCliente, manutencaoDoDiaMessage, parseDiaSemana, proximasDatas } from "../_shared/base-instalada.ts";
 import { geocodePending } from "../_shared/geocode.ts";
-import { FERA_URL, prontidaoLabel, tarefaMessage } from "../_shared/prontidao.ts";
+import { FERA_URL, resumoNotasAmanha, tarefaMessage } from "../_shared/prontidao.ts";
 
 /** Phones (digits, with and without 55) of active team users: confirmations never go to a team chat. */
 async function teamPhones(admin: any): Promise<Set<string>> {
@@ -118,15 +118,29 @@ Deno.serve(async () => {
   // Maintenance plans: once a day (06:00–06:15 São Paulo) create the next visits inside each plan's horizon. Unique (plan, date) keeps reruns harmless.
   if (spH === 6 && now.getUTCMinutes() < 15) {
     try {
-      const { data: planos } = await admin.from("planos_manutencao").select("id, organization_id, client_id, frequencia, intervalo_dias, dia_semana, hora_inicio, duracao_min, consultor_id, data_inicio, horizonte_dias, clients(name, city, address, latitude, longitude, assigned_user_id)").eq("ativo", true).limit(1000);
+      const { data: planos } = await admin.from("planos_manutencao").select("id, organization_id, client_id, frequencia, intervalo_dias, dia_semana, hora_inicio, duracao_min, consultor_id, data_inicio, horizonte_dias, clients(name, city, zip_code, address, latitude, longitude, assigned_user_id)").eq("ativo", true).limit(1000);
+      const areasPorOrg = new Map<string, any[]>();
       for (const p of planos ?? []) {
         const c: any = p.clients;
-        const horizon = Math.min(90, Number(p.horizonte_dias) || 30);
-        const end = new Date(Date.parse(`${today}T12:00:00Z`) + horizon * 86_400_000).toISOString().slice(0, 10);
+        const horizon = Math.min(90, Number(p.horizonte_dias) || 45);
+        const end = new Date(Date.parse(`${today}T12:00:00Z`) + (horizon + 60) * 86_400_000).toISOString().slice(0, 10);
+        // Holidays include Google all-day blocks (holidays.source = 'google'); city-specific ones only for the client's city.
         const { data: hol } = await admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${p.organization_id}`).gte("date", today).lte("date", end);
         const city = (c?.city ?? "").toLowerCase();
         const blocked = new Set((hol ?? []).filter((h: any) => !h.city || h.city.toLowerCase() === city).map((h: any) => h.date));
-        const datas = proximasDatas(p, today, horizon, (d) => blocked.has(d));
+        if (!areasPorOrg.has(p.organization_id)) {
+          const { data: ar } = await admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end").eq("organization_id", p.organization_id).eq("is_active", true);
+          areasPorOrg.set(p.organization_id, ar ?? []);
+        }
+        const area = areaDoCliente(areasPorOrg.get(p.organization_id)!, c?.zip_code, c?.city);
+        const rota = parseDiaSemana(area?.dia_semana);
+        const { data: last } = await admin.from("schedules").select("scheduled_date").eq("plano_manutencao_id", p.id).neq("status", "cancelado")
+          .order("scheduled_date", { ascending: false }).limit(1).maybeSingle();
+        const datas = proximasDatas(p, today, horizon, (d) => blocked.has(d), rota, last?.scheduled_date ?? null);
+        // Ekkoa (aromatização): every cycle replaces the refill → the visit carries a sale invoice (task created by the database trigger).
+        const { data: ekkoa } = await admin.from("comodatos").select("refil_product_id, quantidade, localizacao_interna").eq("client_id", p.client_id)
+          .eq("organization_id", p.organization_id).eq("linha_produto", "EKKOA").eq("status", "ATIVO");
+        const itensEkkoa = (ekkoa ?? []).map((k: any) => ({ product_id: k.refil_product_id ?? null, descricao: `Refil Ekkoa${k.localizacao_interna ? ` — ${k.localizacao_interna}` : ""}`, quantidade: String(k.quantidade ?? "1") }));
         const consultor = p.consultor_id ?? c?.assigned_user_id ?? null;
         for (const d of datas) {
           const { data: exists } = await admin.from("schedules").select("id").eq("plano_manutencao_id", p.id).eq("scheduled_date", d).maybeSingle();
@@ -141,7 +155,8 @@ Deno.serve(async () => {
           }
           const { error } = await admin.from("schedules").insert({ organization_id: p.organization_id, client_id: p.client_id, plano_manutencao_id: p.id,
             title: `Manutenção — ${c?.name ?? ""}`, scheduled_date: d, start_time: hora, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO",
-            source: "plano", assigned_to: consultor, location: c?.address ?? null, latitude: c?.latitude ?? null, longitude: c?.longitude ?? null, confirmacao_status: "nao_aplicavel" });
+            source: "plano", assigned_to: consultor, location: c?.address ?? null, latitude: c?.latitude ?? null, longitude: c?.longitude ?? null, confirmacao_status: "nao_aplicavel",
+            ...(itensEkkoa.length ? { operacao_material: "manutencao_reposicao", tipo_nota: "venda", itens: itensEkkoa, ocorrencia_tipo: "manutencao_preventiva" } : {}) });
           if (!error) out.manutencoes_geradas++;
         }
       }
@@ -175,24 +190,19 @@ Deno.serve(async () => {
       const { data: claimed } = await admin.from("tarefas_faturamento").update({ notificada_em: now.toISOString() }).eq("id", t.id).is("notificada_em", null).select("id").maybeSingle();
       if (claimed) await teamAlert(admin, t.organization_id, "tarefa_nota_criada", tarefaMessage("nova", t), { tarefa_id: t.id, tarefa_numero: t.numero, schedule_id: t.schedule_id });
     }
+    // 17:00 São Paulo (once per organization/day): ONE message to faturamento + managers with tomorrow's operations still without an attached invoice.
     const spMin = ((now.getUTCHours() + 21) % 24) * 60 + now.getUTCMinutes();
-    if (spMin >= 8 * 60) {
-      const { data: d1 } = await admin.from("tarefas_faturamento").select("id, numero, organization_id, schedule_id, empresa_nome, tipo_nota, data_visita, itens")
-        .eq("status", "aberta").eq("data_visita", tomorrow).is("lembrete_d1_em", null).limit(100);
-      for (const t of d1 ?? []) {
-        const { data: claimed } = await admin.from("tarefas_faturamento").update({ lembrete_d1_em: now.toISOString() }).eq("id", t.id).is("lembrete_d1_em", null).select("id").maybeSingle();
-        if (claimed) await teamAlert(admin, t.organization_id, "tarefa_nota_d1", tarefaMessage("d1", t), { tarefa_id: t.id, tarefa_numero: t.numero, schedule_id: t.schedule_id, d1: true });
-      }
-      const { data: pend } = await admin.from("schedules").select("id, organization_id, title, start_time, assigned_to, prontidao, clients(name), leads(empresa_nome, company)")
-        .eq("scheduled_date", tomorrow).in("status", ["agendado", "confirmado"]).neq("prontidao", "pronto").is("prontidao_alertado_em", null).limit(200);
-      for (const s of pend ?? []) {
-        const { data: claimed } = await admin.from("schedules").update({ prontidao_alertado_em: now.toISOString() }).eq("id", s.id).is("prontidao_alertado_em", null).select("id").maybeSingle();
-        if (!claimed) continue;
-        const cliente = (s as any).clients?.name || (s as any).leads?.empresa_nome || (s as any).leads?.company || s.title || "";
-        await teamAlert(admin, s.organization_id, "prontidao_pendente", [`📦 Visita de amanhã ainda não está pronta`, `Cliente: ${cliente}`,
-          `Horário: ${String(s.start_time ?? "").slice(0, 5)}`, prontidaoLabel(s.prontidao) ?? "", `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"),
-          { schedule_id: s.id, prontidao: s.prontidao }, { extraUserIds: s.assigned_to ? [s.assigned_to] : [] });
-        (out as any).prontidao = ((out as any).prontidao ?? 0) + 1;
+    if (spMin >= 17 * 60 && spMin < 17 * 60 + 15) {
+      const { data: pend } = await admin.from("schedules").select("id, organization_id, title, start_time, tipo_nota, prontidao, ocorrencia_codigo, clients(name), leads(empresa_nome, company)")
+        .eq("scheduled_date", tomorrow).in("status", ["agendado", "confirmado"]).eq("exige_nota", true).neq("nota_status", "anexada").order("start_time").limit(500);
+      const byOrg = new Map<string, any[]>();
+      for (const s of pend ?? []) byOrg.set(s.organization_id, [...(byOrg.get(s.organization_id) ?? []), s]);
+      for (const [orgId, list] of byOrg) {
+        const ops = list.map((s: any) => ({ id: s.id, codigo: s.ocorrencia_codigo, hora: String(s.start_time ?? "").slice(0, 5),
+          cliente: s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || "", tipo_nota: s.tipo_nota }));
+        await teamAlert(admin, orgId, "tarefa_nota_d1", resumoNotasAmanha(tomorrow, ops), { resumo_notas: `${tomorrow}|${orgId}` },
+          { immediate: true, dedupeKey: "resumo_notas" });
+        (out as any).resumo_17h = ((out as any).resumo_17h ?? 0) + 1;
       }
     }
   } catch { console.error("[confirmar-visitas] readiness/billing failed"); }
