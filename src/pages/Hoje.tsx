@@ -34,6 +34,7 @@ export default function Hoje() {
   const today = format(new Date(), "yyyy-MM-dd");
   const visiveis = useMemo(() => equipe ? schedules : schedules.filter((s) => isMine(s, user?.id)), [schedules, user?.id, equipe]);
   const pendentes = useMemo(() => pendentesAnteriores(visiveis, today), [visiveis, today]);
+  const infoPendente = useMemo(() => visiveis.filter((s: any) => s.coleta_status === "pendente"), [visiveis]);
   const grupos = useMemo(() => porConsultor(visiveis.filter((s) => s.scheduled_date === today && s.status !== "cancelado"),
     new Map(users.map((u: any) => [u.user_id, u.name]))), [visiveis, today, users]);
   const leadInfo = useMemo(() => {
@@ -60,6 +61,14 @@ export default function Hoje() {
         {gestor && <div className="grid grid-cols-2 gap-2" role="tablist">{(["minhas", "equipe"] as const).map((k) => (
           <Button key={k} role="tab" aria-selected={escopo === k} variant={escopo === k ? "default" : "outline"} className="min-h-11" onClick={() => setEscopo(k)}>
             {k === "minhas" ? "Minhas" : "Equipe"}</Button>))}</div>}
+        {infoPendente.length > 0 && <section className="space-y-2" aria-label="Informações pendentes">
+          <h2 className="font-semibold text-warning">Realizadas — informações pendentes ({infoPendente.length})</h2>
+          {infoPendente.map((s: any) => (
+            <button key={s.id} type="button" onClick={() => setSelected(s.id)} className="w-full text-left rounded-lg border border-warning p-3 space-y-1">
+              <p className="text-sm font-medium">#{s.ocorrencia_codigo} · {(s.lead_id ? leadInfo.get(s.lead_id)?.title : s.title) ?? s.title}</p>
+              <p className="text-xs text-muted-foreground">Falta: {(s.coleta_pendencias ?? []).join(" / ") || "confirmar a coleta"}</p>
+            </button>))}
+        </section>}
         {pendentes.length > 0 && <section className="space-y-2">
           <h2 className="font-semibold text-warning">Em andamento / pendentes ({pendentes.length})</h2>
           <p className="text-xs text-muted-foreground">Visitas de dias anteriores que ainda não foram encerradas.</p>

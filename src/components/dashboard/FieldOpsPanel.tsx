@@ -1,4 +1,5 @@
 import { ProntidaoBadge } from "@/components/agenda/MaterialPronto";
+import { OcorrenciaTag } from "@/components/agenda/ColetaOcorrencia";
 import { addDays, format } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -62,7 +63,8 @@ export default function FieldOpsPanel() {
     && matchesFilter(s, filter, { atrasadas: m.atrasadas, foraDoLocal: m.foraDoLocal, semCoordenadas: m.semCoordenadas })) : [];
   const tomorrow = format(addDays(new Date(`${today}T12:00:00`), 1), "yyyy-MM-dd");
   const prontidaoPend = schedules.filter((s) => (s.scheduled_date === today || s.scheduled_date === tomorrow) && ["agendado", "confirmado"].includes(s.status) && s.prontidao && s.prontidao !== "pronto");
-  const lista = filter === ("prontidao" as OpsFilter) ? prontidaoPend : filtered;
+  const infoPend = schedules.filter((s: any) => s.coleta_status === "pendente");
+  const lista = filter === ("prontidao" as OpsFilter) ? prontidaoPend : filter === ("info_pendente" as OpsFilter) ? infoPend : filtered;
   const points = checkins.filter((c) => typeof c.latitude === "number" && todayList.some((s) => s.id === c.schedule_id));
   const current = schedules.find((s) => s.id === selected) ?? null;
 
@@ -82,7 +84,7 @@ export default function FieldOpsPanel() {
         <span className="flex-1 truncate text-sm">{s.title}</span>
         {late >= 15 && <Badge variant="destructive">Atrasada {late} min</Badge>}
         {fora && <Badge variant="destructive">Fora do local</Badge>}
-        {["agendado", "confirmado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
+        {["agendado", "confirmado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} />
         <Badge variant={s.status === "concluido" ? "secondary" : "outline"}>{STATUS_LABEL[s.status] ?? s.status}</Badge>
       </button></li>
     );
@@ -98,6 +100,7 @@ export default function FieldOpsPanel() {
         <Metric label="Atrasadas sem check-in" value={m.atrasadas.length} f="atrasadas" tone="alert" />
         <Metric label="Check-in fora do local" value={m.foraDoLocal.length} f="fora_do_local" tone="alert" />
         <Metric label="Prontidão pendente (hoje/amanhã)" value={prontidaoPend.length} f={"prontidao" as OpsFilter} tone="alert" />
+        <Metric label="Realizadas — informações pendentes" value={infoPend.length} f={"info_pendente" as OpsFilter} tone="alert" />
         <Metric label="Local do cliente sem coordenadas" value={m.semCoordenadas.length} f="sem_coordenadas" tone="alert" />
         {Object.entries(m.resultados).map(([k, v]) => <Metric key={k} label={RESULT_LABEL[k] ?? k} value={v} f={`resultado:${k}`} />)}
       </div>

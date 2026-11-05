@@ -79,3 +79,5 @@
 - [ ] Manutenção Ekkoa = venda de refil (nota a cada ciclo); preventiva/corretiva sem material sem nota
 - [ ] Substituição: nota remessa; encerramento não trocou (cancelar nota) / trocou (devolução, coleta de assinatura na próxima rota)
 - [ ] Regra geral: material que sai exige nota anexada
+- [x] Lotes 13/14 correções 05/11
+- [x] Lote 15 ocorrências e coleta por áudio
