@@ -52,7 +52,7 @@ export default function Propostas() {
   const [deleteTarget, setDeleteTarget] = useState<{ type: "proposal" | "order"; id: string } | null>(null);
 
   const filteredP = proposals.filter((p) =>
-    [p.title, p.clients?.name].some((f) => f?.toLowerCase().includes(searchP.toLowerCase()))
+    [p.title, p.clients?.name, p.leads?.empresa_nome, p.leads?.company].some((f) => f?.toLowerCase().includes(searchP.toLowerCase()))
   );
   const filteredO = orders.filter((o) =>
     [o.order_number, o.clients?.name].some((f) => f?.toLowerCase().includes(searchO.toLowerCase()))
@@ -111,7 +111,7 @@ export default function Propostas() {
                     return (
                       <TableRow key={p.id} className="cursor-pointer" onClick={() => { setSelectedProp(p); setPropDialogOpen(true); }}>
                         <TableCell className="font-medium">{p.title}</TableCell>
-                        <TableCell className="text-muted-foreground">{p.clients?.name || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{p.clients?.name || (p.leads ? `${p.leads.empresa_nome || p.leads.company || p.leads.title} (lead)` : "—")}</TableCell>
                         <TableCell className="font-medium">{fmt(p.final_value)}</TableCell>
                         <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
                         <TableCell className="text-muted-foreground">{fmtDate(p.valid_until)}</TableCell>
