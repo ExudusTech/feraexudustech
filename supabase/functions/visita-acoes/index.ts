@@ -5,7 +5,7 @@ import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
   NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
-import { FREQ_RAPIDAS, pontosPendentes, proximaVisitaPlano } from "../_shared/base-instalada.ts";
+import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
@@ -18,6 +18,66 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ITENS = ["refil_reposto", "problema_encontrado", "aparelho_trocado", "limpeza_realizada", "treinamento"];
 const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
+
+/** Replacement closing (05/11). Creates billing tasks and links the signature collection to the client's next route visit. */
+async function fecharSubstituicao(admin: any, s: any, resultado: "nao_trocou" | "trocou", userId: string, timeline: (t: string, r: string, p?: string | null) => Promise<void>) {
+  const now = new Date();
+  await admin.from("schedules").update({ substituicao_resultado: resultado }).eq("id", s.id);
+  const { data: emit } = await admin.from("tarefas_faturamento").select("*").eq("schedule_id", s.id).eq("acao", "emitir").maybeSingle();
+  const { data: oss } = await admin.from("maintenance_schedule").select("id, inventory_item_id").eq("organization_id", s.organization_id).eq("tipo_os", "substituicao")
+    .in("status", ["agendada", "em_andamento"]).or(`schedule_id.eq.${s.id}${s.client_id ? `,client_id.eq.${s.client_id}` : ""}`).limit(5);
+  const os = (oss ?? [])[0] ?? null;
+  const base = emit ? { organization_id: s.organization_id, schedule_id: s.id, client_id: emit.client_id, lead_id: emit.lead_id, tipo_operacao: "substituicao",
+    itens: emit.itens, empresa_nome: emit.empresa_nome, razao_social: emit.razao_social, cnpj: emit.cnpj, cnpj_verificado: emit.cnpj_verificado, endereco: emit.endereco,
+    contato: emit.contato, data_visita: emit.data_visita, referencia_tarefa_id: emit.id, ordem_servico_id: os?.id ?? null } : null;
+  if (resultado === "nao_trocou") {
+    if (base) {
+      const desde = emit.concluida_em ? new Date(emit.concluida_em) : now;
+      await admin.from("tarefas_faturamento").upsert({ ...base, acao: "cancelar", tipo_nota: emit.tipo_nota, prazo: new Date(desde.getTime() + 24 * 3_600_000).toISOString(),
+        observacao: `Cancelar a nota ${emit.numero_nota ?? ""} — aparelho não foi trocado e volta ao estoque`.trim() }, { onConflict: "schedule_id,acao" });
+    }
+    if (os) {
+      await admin.from("maintenance_schedule").update({ status: "concluida", completed_date: now.toISOString().slice(0, 10), resolvida_schedule_id: s.id, notes: "Não precisou trocar" }).eq("id", os.id);
+      if (os.inventory_item_id) await admin.from("inventory_items").update({ status: "disponivel", em_comodato: false, client_id: null }).eq("id", os.inventory_item_id);
+    }
+    await timeline("visita", "Substituição: não precisou trocar — nota será cancelada e o aparelho volta ao estoque");
+    return { resultado, cancelar_nota: !!base };
+  }
+  // Used: the removed device needs a return invoice signed by the client on the next route visit.
+  let tarefaId: string | null = null;
+  if (base) {
+    const { data: t } = await admin.from("tarefas_faturamento").upsert({ ...base, acao: "devolucao", tipo_nota: "retorno",
+      prazo: new Date(now.getTime() + 48 * 3_600_000).toISOString(), observacao: "Nota de devolução de comodato do aparelho retirado" }, { onConflict: "schedule_id,acao" }).select("id").single();
+    tarefaId = t?.id ?? null;
+  }
+  if (os) await admin.from("maintenance_schedule").update({ status: "em_andamento", resolvida_schedule_id: s.id, notes: "Pendente de nota de devolução de comodato assinada" }).eq("id", os.id);
+  let coleta: string | null = null;
+  if (tarefaId && s.client_id) {
+    const hoje = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+    const { data: prox } = await admin.from("schedules").select("id, ocorrencia_codigo").eq("client_id", s.client_id).eq("organization_id", s.organization_id)
+      .gt("scheduled_date", hoje).in("status", ["agendado", "confirmado"]).is("coleta_devolucao_tarefa_id", null).order("scheduled_date").limit(1).maybeSingle();
+    if (prox) {
+      await admin.from("schedules").update({ coleta_devolucao_tarefa_id: tarefaId }).eq("id", prox.id);
+      coleta = prox.ocorrencia_codigo;
+    } else {
+      const { data: c } = await admin.from("clients").select("name, city, zip_code, address").eq("id", s.client_id).maybeSingle();
+      const { data: areas } = await admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end").eq("organization_id", s.organization_id).eq("is_active", true);
+      const end = new Date(Date.parse(`${hoje}T12:00:00Z`) + 90 * 86_400_000).toISOString().slice(0, 10);
+      const { data: hol } = await admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${s.organization_id}`).gte("date", hoje).lte("date", end);
+      const city = (c?.city ?? "").toLowerCase();
+      const blocked = new Set((hol ?? []).filter((h: any) => !h.city || h.city.toLowerCase() === city).map((h: any) => h.date));
+      const rota = parseDiaSemana(areaDoCliente(areas ?? [], c?.zip_code, c?.city)?.dia_semana);
+      const data = primeiroDiaRota(new Date(Date.parse(`${hoje}T12:00:00Z`) + 2 * 86_400_000).toISOString().slice(0, 10), rota, (d) => blocked.has(d));
+      const { data: novo } = await admin.from("schedules").insert({ organization_id: s.organization_id, client_id: s.client_id, title: `Coleta de assinatura (devolução) — ${c?.name ?? ""}`,
+        scheduled_date: data, start_time: "09:00", status: "agendado", schedule_type: "manutencao", schedule_subtype: "OUTRO", ocorrencia_tipo: "coleta_devolucao",
+        source: "substituicao", assigned_to: s.assigned_to ?? userId, created_by: userId, location: c?.address ?? null, confirmacao_status: "nao_aplicavel", coleta_devolucao_tarefa_id: tarefaId })
+        .select("ocorrencia_codigo").single();
+      coleta = novo?.ocorrencia_codigo ?? null;
+    }
+  }
+  await timeline("visita", `Substituição: aparelho trocado — nota de devolução pendente; assinatura na próxima visita${coleta ? ` (#${coleta})` : ""}`);
+  return { resultado, devolucao_tarefa: tarefaId, coleta_assinatura: coleta };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -203,6 +263,9 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     case "checkout": {
+      if ((s as any).operacao_material === "substituicao" && !["nao_trocou", "trocou"].includes(b.substituicao_resultado)) {
+        return json({ error: "Informe se o aparelho foi trocado ou não", precisa_substituicao: true }, 400);
+      }
       const { count } = await admin.from("schedule_evidencias").select("id", { count: "exact", head: true }).eq("schedule_id", s.id).not("foto_path", "is", null);
       // Maintenance with registered points: every active point must be evaluated; the checklist photos replace the generic photo rule.
       let checklist = false;
@@ -257,6 +320,16 @@ Deno.serve(async (req) => {
         const { data: c } = await admin.from("comodatos").select("periodicidade_manut").eq("id", id).eq("organization_id", s.organization_id).maybeSingle();
         if (c) await admin.from("comodatos").update({ ultima_manutencao: today, proxima_manutencao: nextMaintenance(today, c.periodicidade_manut) }).eq("id", id);
       }
+      // Lote 15: commercial occurrences may leave the client with "information pending" until the collection is confirmed.
+      let coletaPendente: string[] = [];
+      if (exigeColeta((s as any).ocorrencia_tipo) && (s as any).coleta_status !== "confirmada") {
+        coletaPendente = pendenciasColeta((s as any).ocorrencia_tipo, (s as any).coleta_rascunho);
+        if (!coletaPendente.length) coletaPendente = ["Confirmar o rascunho da coleta"];
+        await admin.from("schedules").update({ coleta_status: "pendente", coleta_pendencias: coletaPendente }).eq("id", s.id);
+      }
+      // 05/11 replacement: not used → cancel the invoice within 24h; used → return invoice + signature on the next route visit.
+      let substituicao: Record<string, unknown> | null = null;
+      if ((s as any).operacao_material === "substituicao") substituicao = await fecharSubstituicao(admin, s, b.substituicao_resultado, user.id, timeline);
       const stageKey = stageForCheckout(!tecnico, b.proximo);
       if (s.lead_id && stageKey) {
         const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", stageKey).maybeSingle();
@@ -268,7 +341,7 @@ Deno.serve(async (req) => {
       const { data: ck } = await admin.from("schedule_checkins").select("distancia_m").eq("schedule_id", s.id).maybeSingle();
       bg(teamAlert(admin, s.organization_id, "visita_concluida", checkoutMessage({ ...info, resultado: b.resultado, duracao,
         distancia: ck?.distancia_m ?? null, proximo: b.proximo, detalhe }), { schedule_id: s.id }, { dedupeKey: "schedule_id" }));
-      return json({ ok: true, duracao_min: duracao });
+      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao });
     }
   }
   return json({ error: "Requisição inválida" }, 400);
