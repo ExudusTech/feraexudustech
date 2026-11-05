@@ -29,6 +29,9 @@ import { NotaLink } from "@/pages/Tarefas";
 import { OPERACAO_LABEL, TIPO_NOTA_LABEL, itensTexto, type OperacaoMaterial, type TipoNota } from "@/lib/prontidao";
 import { useCreateSchedule } from "@/hooks/use-schedules";
 import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
+import ColetaOcorrencia from "@/components/agenda/ColetaOcorrencia";
+import { OCORRENCIA_LABEL, exigeColeta, type OcorrenciaTipo } from "@/lib/coleta";
+import { usePermissions } from "@/hooks/use-permissions";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
 
@@ -96,6 +99,12 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
   const [askLoc, setAskLoc] = useState(false); const [registroAberto, setRegistroAberto] = useState(false);
   const [naoMotivo, setNaoMotivo] = useState(""); const [showNao, setShowNao] = useState(false);
+  const { hasRole } = usePermissions();
+  const gestor = hasRole("gestor") || hasRole("admin") || hasRole("super_admin");
+  const [liberarMotivo, setLiberarMotivo] = useState(""); const [bloqueioNota, setBloqueioNota] = useState<string | null>(null);
+  const [substResultado, setSubstResultado] = useState<"" | "trocou" | "nao_trocou">("");
+  const sx = s as any;
+  const ehSubstituicao = sx?.operacao_material === "substituicao";
   useEffect(() => {
     setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false);
     const d = s?.id ? readDraft<Record<string, any>>(`encerrar:${s.id}`) : null;
@@ -127,6 +136,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
     } catch (e) {
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
+      if (e instanceof VisitActionError && e.data?.bloqueado_nota) { setBloqueioNota(e.message); return; }
       throw e;
     }
   });
@@ -146,14 +156,16 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const checkout = () => run(async () => {
     const ehTeste = proximo === "teste";
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
     if (ehTeste) {
       await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
         end_time: null, schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", client_id: s!.client_id, lead_id: s!.lead_id,
         location: s!.location, zip_code: s!.zip_code, assigned_to: s!.assigned_to, latitude: (s as any).latitude ?? null, longitude: (s as any).longitude ?? null,
         operacao_material: "instalacao_teste", tipo_nota: teste.tipo_nota || "remessa_teste", itens: teste.itens } as any);
     }
-    setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
+    setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done();
+    const cp = (r as any).coleta_pendente as string[] | undefined;
+    toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
     await visitAction({ id: s!.id, action: "nao_realizado", motivo: naoMotivo, observacao: obs });
@@ -170,6 +182,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
     if (!testeCnpj.ok) faltas.push({ label: "CNPJ da empresa", alvo: "proximo" });
   }
+  if (ehSubstituicao && !substResultado) faltas.push({ label: "se o aparelho foi trocado", alvo: "resultado" });
   if (outroDia && !/^\d{2}:\d{2}$/.test(termino)) faltas.push({ label: "horário real de término", alvo: "resultado" });
   const irPara = (alvo: FaltaAlvo) => {
     if (alvo === "registro") setRegistroAberto(true);
@@ -183,7 +196,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
           <DialogDescription>{s.scheduled_date.split("-").reverse().join("/")} {s.start_time?.slice(0, 5)} · {serviceKind(s.schedule_type, s.schedule_subtype)}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap gap-2">
-          <Badge>{STATUS_LABEL[status] ?? status}</Badge>
+          {sx.ocorrencia_codigo && <Badge variant="outline">#{sx.ocorrencia_codigo}</Badge>}
+          {sx.ocorrencia_tipo && <Badge variant="secondary">{OCORRENCIA_LABEL[sx.ocorrencia_tipo as OcorrenciaTipo] ?? sx.ocorrencia_tipo}</Badge>}
+          <Badge>{status === "concluido" && sx.coleta_status === "pendente" ? "Realizada — informações pendentes" : STATUS_LABEL[status] ?? status}</Badge>
           {(status === "agendado" || status === "confirmado") && s.confirmacao_status && CONFIRMACAO_LABEL[s.confirmacao_status] && <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
         </div>
         {(s as any).operacao_material && (
@@ -214,6 +229,14 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         {(status === "agendado" || status === "confirmado") && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.</p>
+            {sx.exige_nota && sx.nota_status !== "anexada" && (sx.checkin_liberado_em
+              ? <p className="text-sm text-warning">Check-in liberado sem nota pelo gestor: {sx.checkin_liberacao_motivo}</p>
+              : <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
+                  <p className="text-destructive">{bloqueioNota ?? "A nota fiscal desta operação ainda não foi anexada: o check-in fica bloqueado até o faturamento anexar."}</p>
+                  {gestor && <div className="flex gap-2"><Input value={liberarMotivo} onChange={(e) => setLiberarMotivo(e.target.value)} placeholder="Motivo da exceção" maxLength={300} />
+                    <Button variant="outline" disabled={busy || liberarMotivo.trim().length < 5} onClick={() => run(async () => {
+                      await visitAction({ id: s.id, action: "liberar_checkin", motivo: liberarMotivo }); setBloqueioNota(null); done(); toast({ title: "Check-in liberado (exceção registrada)" }); })}>Liberar</Button></div>}
+                </div>)}
             {lastLocation?.error && <div role="status" className="space-y-2">
               <p className="text-sm text-warning">{locationErrorMessage(lastLocation.error)}{lastLocation.cached && " Última posição recente recuperada."}</p>
               <Button variant="outline" className="w-full min-h-11" disabled={busy} onClick={() => checkin(true)}><MapPin className="h-4 w-4" />Tentar de novo</Button>
@@ -237,6 +260,19 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                   <Button variant="outline" className="min-h-11" onClick={() => setAskLoc(false)}>Não</Button>
                 </div>
               </div>)}
+            {sx.coleta_devolucao_tarefa_id && !sx.devolucao_assinada_em && (
+              <div className="rounded-lg border border-warning p-3 space-y-2">
+                <p className="text-sm font-medium">Coletar assinatura da nota de devolução de comodato</p>
+                <Button asChild variant="outline" className="w-full min-h-11" disabled={busy}>
+                  <label className="cursor-pointer"><Camera className="h-4 w-4" />Foto da nota assinada
+                    <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) run(async () => {
+                      const blob = await compress(f); const path = `${s.organization_id}/${s.id}/${crypto.randomUUID()}.jpg`;
+                      const { error } = await supabase.storage.from("visit-photos").upload(path, blob, { contentType: "image/jpeg" });
+                      if (error) throw new Error("A foto não foi enviada. Verifique a conexão e tente de novo.");
+                      await visitAction({ id: s.id, action: "devolucao_assinada", foto_path: path }); done(); toast({ title: "Assinatura registrada: OS encerrada" }); }); }} /></label>
+                </Button>
+              </div>)}
+            <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />
             {!tecnico && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
             {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
             {usaPlano && !registroAberto ? (
@@ -273,6 +309,11 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <Label htmlFor="termino-real">A visita ficou aberta desde {checkinEm!.slice(8, 10)}/{checkinEm!.slice(5, 7)}. Que horas ela terminou de verdade?</Label>
                 <Input id="termino-real" type="time" value={termino} onChange={(e) => setTermino(e.target.value)} />
                 <p className="text-xs text-muted-foreground">Sugestão: check-in + 1 h. A duração é calculada por este horário.</p></div>}
+              {ehSubstituicao && <div className="space-y-1"><Label>O aparelho levado foi trocado?</Label>
+                <div className="grid grid-cols-2 gap-2">{([["trocou", "Sim, troquei"], ["nao_trocou", "Não precisou"]] as const).map(([k, l]) => (
+                  <Button key={k} type="button" variant={substResultado === k ? "default" : "outline"} className="min-h-12" onClick={() => setSubstResultado(k)}>{l}</Button>))}</div>
+                <p className="text-xs text-muted-foreground">{substResultado === "nao_trocou" ? "O faturamento cancela a nota (até 24h) e o aparelho volta ao estoque." : substResultado === "trocou" ? "Registre o aparelho novo no ponto com foto. A nota de devolução será assinada na próxima visita da rota." : ""}</p></div>}
+              {exigeColeta(sx.ocorrencia_tipo) && sx.coleta_status !== "confirmada" && <p className="text-xs text-muted-foreground">Pode encerrar agora: a ocorrência fica "Realizada — informações pendentes" até você confirmar a coleta.</p>}
               <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
               <div id="visita-proximo" className="space-y-2 scroll-mt-4">
                 <Label>Próximo passo</Label>
@@ -323,6 +364,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
           </div>
         )}
 
+        {status === "concluido" && sx.coleta_status && sx.coleta_status !== "confirmada" && (
+          <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />)}
+        {status === "concluido" && !sx.coleta_status && exigeColeta(sx.ocorrencia_tipo) && (
+          <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={null} rascunho={null} onChange={done} />)}
         {finished && (
           <div className="space-y-1 text-sm">
             {s.resultado && <p><strong>Resultado:</strong> {RESULT_LABEL[s.resultado] ?? s.resultado}{s.duracao_min != null && ` · ${s.duracao_min} min`}</p>}
