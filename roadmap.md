@@ -69,3 +69,5 @@
 - [x] Imagens: bucket product-images (privado, opção B), envio/troca/remoção, lote, miniaturas
 - [x] consultar_produto: image_url, chat_id, envio GPT Maker com bloqueio 24h
 - [ ] Futuro: catálogo PDF por segmento
+
+- [ ] Lotes 13 e 14 (prontidão/faturamento/CNPJ/levantamento + Flora Equipe na mesma Flora): plano aprovado; aguardando respostas das decisões antes de implementar
