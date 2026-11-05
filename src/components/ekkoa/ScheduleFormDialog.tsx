@@ -35,6 +35,8 @@ interface Props {
   schedule?: Schedule | null;
   /** Pre-select this client when creating (e.g. "Agendar" from the client record). */
   defaultClientId?: string | null;
+  /** Pre-fill a new technical booking (e.g. accepted proposal → installation). */
+  preset?: { schedule_type: string; schedule_subtype?: string; material: MaterialValue; proposta_id?: string } | null;
 }
 
 const empty = {
@@ -47,7 +49,7 @@ const clientTarget = (c: Client): ScheduleTarget => ({
   latitude: (c as any).latitude ?? null, longitude: (c as any).longitude ?? null,
 });
 
-export default function ScheduleFormDialog({ open, onOpenChange, schedule, defaultClientId }: Props) {
+export default function ScheduleFormDialog({ open, onOpenChange, schedule, defaultClientId, preset }: Props) {
   const [form, setForm] = useState(empty);
   const [target, setTarget] = useState<ScheduleTarget | null>(null);
   const [term, setTerm] = useState("");
@@ -93,11 +95,11 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
       setTitleTouched(true); setEndTouched(!!schedule.end_time);
       setMaterial({ operacao: ((schedule as any).operacao_material ?? "") as any, tipo_nota: ((schedule as any).tipo_nota ?? "") as any, itens: Array.isArray((schedule as any).itens) ? (schedule as any).itens : [] });
     } else {
-      setForm({ ...empty, assigned_to: user?.id || "", schedule_type: defaultClientId ? "manutencao" : "visita_comercial" });
+      setForm({ ...empty, assigned_to: user?.id || "", schedule_type: preset?.schedule_type ?? (defaultClientId ? "manutencao" : "visita_comercial"), schedule_subtype: preset?.schedule_subtype ?? "" });
       setTitleTouched(false); setEndTouched(false);
-      setMaterial(emptyMaterial);
+      setMaterial(preset?.material ?? emptyMaterial);
     }
-  }, [schedule, open, defaultClientId, user?.id]);
+  }, [schedule, open, defaultClientId, user?.id, preset]);
 
   // Resolve the linked client/lead once lists load.
   useEffect(() => {
@@ -169,6 +171,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
       assigned_to: assignedTo,
       operacao_material: material.operacao || null, tipo_nota: material.operacao ? (material.tipo_nota || null) : null,
       itens: material.operacao ? material.itens : [],
+      ...(!isEdit && preset?.proposta_id ? { proposta_id: preset.proposta_id } : {}),
     };
     if (isEdit) await update.mutateAsync({ id: schedule!.id, ...payload });
     else await create.mutateAsync(payload);
