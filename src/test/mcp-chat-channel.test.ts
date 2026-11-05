@@ -63,6 +63,7 @@ function harness(options: { person?: any; openLeads?: any[]; phoneMatch?: boolea
     route: (method: string, params: any) => { context.input = params; context.method = method;
       return vm.runInContext("routeTool(method, input)", context); },
     handler: (req: Request) => handler(req),
+    asTeam: () => vm.runInContext('resolverEquipe = async () => ({ user: { nome: "Ana", papeis: ["consultor"] } })', context),
   };
 }
 
@@ -172,6 +173,14 @@ describe("trusted GPT Maker chat channel", () => {
     const result = await harness({ person, openLeads: leads }).route("buscar_contato", { chat_id: whatsapp });
     expect(result.data.pessoa).toEqual({ id: "person", nome: "PH" });
     expect(result.data.leads_da_pessoa).toEqual([{ id: "lead-1", empresa: "Hotel A", cidade: "Búzios", estagio: "novo", produto: "Higiene" }]);
+  });
+  it("buscar_contato reports team mode even without a contact", async () => {
+    const h = harness(); h.asTeam();
+    const result = await h.route("buscar_contato", { chat_id: whatsapp });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ equipe: { nome: "Ana", papeis: ["consultor"] }, use_ferramentas_equipe: true });
+    expect(result.next_action_hint).toBe("Modo equipe: use só as intenções equipe_*");
+    expect(h.queries.some(q => q.table === "pessoas" || q.table === "client_contacts")).toBe(false);
   });
   it("audits original wrong channel while the tool receives trusted channel", async () => {
     const h = harness();
