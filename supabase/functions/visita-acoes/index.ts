@@ -9,6 +9,7 @@ import { FREQ_RAPIDAS, pontosPendentes, proximaVisitaPlano } from "../_shared/ba
 import { teamAlert } from "../_shared/team-alert.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
+import { FERA_URL, prontidaoLabel } from "../_shared/prontidao.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -88,7 +89,14 @@ Deno.serve(async (req) => {
         bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa, geolocation_error }),
           { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id" }));
       }
-      return json({ ok: true, ...ev });
+      // Lote 13: check-in is allowed with pending readiness, but the consultant and managers are warned.
+      const { data: pr } = await admin.from("schedules").select("prontidao").eq("id", s.id).maybeSingle();
+      const pendente = prontidaoLabel(pr?.prontidao);
+      if (pendente) {
+        bg(teamAlert(admin, s.organization_id, "prontidao_pendente", [`📦 Check-in com pendência`, `Cliente: ${cliente}`, `Consultor: ${consultor}`, pendente,
+          `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"), { schedule_id: s.id, checkin: true }, { immediate: true }));
+      }
+      return json({ ok: true, ...ev, prontidao_pendente: pendente });
     }
     case "evidencia": {
       if (s.status !== "em_atendimento") return json({ error: "Inicie o atendimento antes" }, 409);
