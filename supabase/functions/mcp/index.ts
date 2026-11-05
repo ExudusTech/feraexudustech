@@ -3533,7 +3533,7 @@ const TOOLS_MANIFEST_CLIENTE = [
 ];
 
 // Expose the trusted chat identifier to every tool without making it required.
-for (const tool of TOOLS_MANIFEST) {
+for (const tool of TOOLS_MANIFEST_CLIENTE) {
   Object.assign(tool.parameters.properties, {
     chat_id: { type: "string", description: "ID real do chat GPT Maker: canal-contato. Prevalece sobre campos de canal preenchidos pelo modelo." },
   });
@@ -3607,7 +3607,7 @@ async function resolverEquipe(supabase: ReturnType<typeof getClient>, chatId: un
   const variants = phoneVariants(phone);
   let value: TeamLookup = { user: null, ambiguo: false };
   try {
-    const { data, error } = await supabase.from("profiles").select("user_id, name, organization_id, is_active").in("phone", variants).limit(5);
+    const { data, error } = await supabase.from("profiles").select("user_id, name, organization_id, is_active").eq("organization_id", NITSCLEAN_ORG_ID).in("phone", variants).limit(5);
     if (error) { dbFail("identificar usuário da equipe", error); return value; }
     const active = (Array.isArray(data) ? data : []).filter((p: { is_active?: boolean | null }) => p.is_active !== false);
     if (active.length > 1 || (active.length === 1 && active[0].organization_id !== NITSCLEAN_ORG_ID)) value = { user: null, ambiguo: active.length > 1 };
@@ -3630,7 +3630,7 @@ function isField(u: TeamUser): boolean { return u.papeis.some((r) => !["financei
 function feraLink(path: string): string { return `${FERA_NOTIFICATION_URL}${path}`; }
 function spToday(): string { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }); }
 function validDate(v: unknown): string | null { return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; }
-function visitCode(id: string): string { return `#V-${id.slice(0, 8)}`; }
+function visitCode(id: string, oc?: unknown): string { return typeof oc === "string" && oc ? `#${oc}` : `#V-${id.slice(0, 8)}`; }
 
 async function withTeam(fn: (u: TeamUser, supabase: ReturnType<typeof getClient>) => Promise<McpResponse>, params: Record<string, unknown>,
   allowed?: (u: TeamUser) => boolean): Promise<McpResponse> {
@@ -3657,10 +3657,10 @@ async function teamInfo(chatId: unknown): Promise<{ nome: string; papeis: string
 }
 
 type ScheduleRow = Record<string, any>;
-const SCHEDULE_FIELDS = "id, title, scheduled_date, start_time, status, schedule_type, schedule_subtype, prontidao, assigned_to, location, client_id, lead_id, clients(name), leads(empresa_nome, company, title)";
+const SCHEDULE_FIELDS = "id, ocorrencia_codigo, ocorrencia_tipo, coleta_status, title, scheduled_date, start_time, status, schedule_type, schedule_subtype, prontidao, assigned_to, location, client_id, lead_id, clients(name), leads(empresa_nome, company, title)";
 const PRONTIDAO_TXT: Record<string, string> = { falta_nota: "falta nota", falta_material: "falta separar material", falta_ambos: "falta nota e material" };
 function visitSummary(s: ScheduleRow) {
-  return { codigo: visitCode(s.id), horario: typeof s.start_time === "string" ? s.start_time.slice(0, 5) : null,
+  return { codigo: visitCode(s.id, s.ocorrencia_codigo), tipo_ocorrencia: s.ocorrencia_tipo ?? null, horario: typeof s.start_time === "string" ? s.start_time.slice(0, 5) : null,
     cliente: s.clients?.name ?? s.leads?.empresa_nome ?? s.leads?.company ?? s.leads?.title ?? s.title, tipo: s.schedule_type,
     status: s.status, prontidao: s.prontidao === "pronto" ? "pronto" : PRONTIDAO_TXT[s.prontidao] ?? s.prontidao,
     local: s.location ?? null, link: feraLink(`/agenda?agendamento=${s.id}`) };
@@ -3716,7 +3716,7 @@ async function listarPendencias(params: Record<string, unknown>): Promise<McpRes
     let atQuery = supabase.from("atendimentos").select("id, empresa, contato_nome, status, urgencia, aberto_em, relogio_inicia_em, responsavel_id, assumido_por")
       .eq("organization_id", NITSCLEAN_ORG_ID).in("status", ["aberto", "em_atendimento"]).order("relogio_inicia_em").limit(30);
     if (!privileged) atQuery = atQuery.or(`responsavel_id.eq.${u.user_id},assumido_por.eq.${u.user_id}`);
-    let visitQuery = supabase.from("schedules").select("id, title, start_time, location, status, assigned_to, prontidao")
+    let visitQuery = supabase.from("schedules").select("id, title, start_time, location, status, assigned_to, prontidao, ocorrencia_codigo, coleta_status, coleta_pendencias")
       .eq("organization_id", NITSCLEAN_ORG_ID).eq("scheduled_date", today).neq("status", "cancelado").order("start_time").limit(30);
     if (!privileged) visitQuery = visitQuery.eq("assigned_to", u.user_id);
     const tarefaQuery = privileged || faturamento
@@ -3734,7 +3734,7 @@ async function listarPendencias(params: Record<string, unknown>): Promise<McpRes
           espera_minutos_uteis: minutos, gravidade: gravidade(minutos),
           link: `${FERA_NOTIFICATION_URL}/atendimentos?id=${encodeURIComponent(String(a.id))}` };
       }),
-      visitas_hoje: (Array.isArray(visits) ? visits : []).map((v: Record<string, unknown>) => ({ codigo: visitCode(String(v.id)), titulo: v.title,
+      visitas_hoje: (Array.isArray(visits) ? visits : []).map((v: Record<string, unknown>) => ({ codigo: visitCode(String(v.id), v.ocorrencia_codigo), titulo: v.title, coleta_pendente: v.coleta_status === "pendente" ? v.coleta_pendencias ?? [] : undefined,
         horario: typeof v.start_time === "string" ? v.start_time.slice(0, 5) : null, local: v.location ?? null,
         prontidao: v.prontidao === "pronto" ? "pronto" : PRONTIDAO_TXT[String(v.prontidao)] ?? v.prontidao,
         link: `${FERA_NOTIFICATION_URL}/agenda?agendamento=${encodeURIComponent(String(v.id))}` })),
@@ -4000,8 +4000,8 @@ async function resolverAtendimento(params: Record<string, unknown>): Promise<Mcp
 /** Resolves an alert code (#V-…, #T-…, #A-…) sent to THIS user's chat in the last 7 days. */
 async function contextoAviso(params: Record<string, unknown>): Promise<McpResponse> {
   return withTeam(async (u, supabase) => {
-    const codigo = String(params.codigo ?? "").trim().toUpperCase().replace(/^([VTA])-/, "#$1-");
-    if (!/^#[VTA]-[0-9A-F]{1,8}$/i.test(codigo)) return fail("Código inválido (ex.: #V-1a2b3c4d)");
+    const codigo = String(params.codigo ?? "").trim().toUpperCase().replace(/^(OC|[VTA])-/, "#$1-");
+    if (!/^#([VTA]-[0-9A-F]{1,8}|OC-\d{6})$/i.test(codigo)) return fail("Código inválido (ex.: #OC-000123)");
     const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
     const { data } = await supabase.from("notification_logs").select("event_type, payload, sent_at, queued_at").eq("organization_id", NITSCLEAN_ORG_ID)
       .in("destination", u.phones).or(`sent_at.gte.${since},queued_at.gte.${since}`).limit(50);
@@ -4034,7 +4034,91 @@ async function marcarMaterialSeparado(params: Record<string, unknown>): Promise<
   }, params, isField);
 }
 
+// ─── Lote 15: audio/text collection of an occurrence (#OC-…) ───────────────────
+/** The user's occurrence: by #OC code (own, or any for managers), else the visit in progress, else the latest one with pending information. */
+async function ocorrenciaDoUsuario(supabase: ReturnType<typeof getClient>, u: TeamUser, codigo: unknown): Promise<ScheduleRow | null> {
+  const fields = "id, ocorrencia_codigo, ocorrencia_tipo, status, assigned_to, coleta_status, coleta_rascunho, coleta_pendencias, coleta_processada_em, title, clients(name), leads(empresa_nome, company)";
+  const m = String(codigo ?? "").toUpperCase().match(/OC-?(\d{1,6})/);
+  if (m) {
+    const { data } = await supabase.from("schedules").select(fields).eq("organization_id", NITSCLEAN_ORG_ID).eq("ocorrencia_numero", Number(m[1])).maybeSingle();
+    return data && (isPrivileged(u) || (data as ScheduleRow).assigned_to === u.user_id) ? data as ScheduleRow : null;
+  }
+  const { data: andamento } = await supabase.from("schedules").select(fields).eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id)
+    .eq("status", "em_atendimento").order("checkin_em", { ascending: false }).limit(1).maybeSingle();
+  if (andamento) return andamento as ScheduleRow;
+  const { data: pend } = await supabase.from("schedules").select(fields).eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id)
+    .eq("coleta_status", "pendente").order("scheduled_date", { ascending: false }).limit(1).maybeSingle();
+  return (pend as ScheduleRow | null) ?? null;
+}
+function nomeOcorrencia(s: ScheduleRow): string { return s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || ""; }
+
+async function chamarColeta(userId: string, id: string, action: string, extra: Record<string, unknown> = {}): Promise<{ status: number; body: any }> {
+  try {
+    const r = await fetch(`${SUPABASE_URL}/functions/v1/coleta-ocorrencia`, { method: "POST", signal: AbortSignal.timeout(110000),
+      headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "x-acting-user": userId, "Content-Type": "application/json" }, body: JSON.stringify({ id, action, ...extra }) });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  } catch { return { status: 502, body: { error: "Não foi possível processar a coleta agora" } }; }
+}
+
+async function anexarColetaOcorrencia(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const texto = productSearchText(params.texto).replace(/\s+/g, " ").trim().slice(0, 4000);
+    if (texto.length < 3) return fail("Envie o texto ou a transcrição do áudio");
+    const s = await ocorrenciaDoUsuario(supabase, u, params.codigo);
+    if (!s) return fail("Não achei ocorrência aberta sua.", "Peça o código #OC-… ou inicie o atendimento no Fera");
+    if (s.coleta_status === "confirmada") return fail(`A coleta da #${s.ocorrencia_codigo} já foi confirmada`);
+    if (!(s.status === "em_atendimento" || s.status === "concluido")) return fail("Inicie o atendimento no Fera antes de anexar");
+    const { error } = await supabase.from("schedule_evidencias").insert({ organization_id: NITSCLEAN_ORG_ID, schedule_id: s.id, tipo: "texto", origem: "flora",
+      observacoes: texto, transcricao: texto, autor_id: u.user_id, itens: [] });
+    if (error) return fail(dbFail("anexar à ocorrência", error));
+    if (!s.coleta_status) await supabase.from("schedules").update({ coleta_status: "coletando" }).eq("id", s.id).is("coleta_status", null);
+    return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, cliente: nomeOcorrencia(s), anexado: true, pendencias_anteriores: s.coleta_pendencias ?? [] },
+      `Anexado à #${s.ocorrencia_codigo}`, "Quando o vendedor terminar de falar, chame confirmar_coleta_ocorrencia (sem confirmar) para gerar o rascunho e a lista do que falta");
+  }, params, isField);
+}
+
+async function pendenciasOcorrencia(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const s = await ocorrenciaDoUsuario(supabase, u, params.codigo);
+    if (!s) return fail("Não achei ocorrência sua com esse código");
+    const r = await chamarColeta(u.user_id, s.id, "pendencias");
+    if (r.status !== 200) return fail(r.body?.error ?? "Não foi possível consultar");
+    return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, cliente: nomeOcorrencia(s), situacao: r.body.status ?? "sem coleta", resumo: r.body.resumo, pendencias: r.body.pendencias ?? [] });
+  }, params, isField);
+}
+
+async function confirmarColetaOcorrencia(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const s = await ocorrenciaDoUsuario(supabase, u, params.codigo);
+    if (!s) return fail("Não achei ocorrência sua com esse código");
+    if (s.coleta_status === "confirmada") return fail(`A coleta da #${s.ocorrencia_codigo} já foi confirmada`);
+    if (params.confirmar !== true) {
+      const r = await chamarColeta(u.user_id, s.id, "concluir");
+      if (r.status !== 200) return fail(r.body?.error ?? "Não foi possível gerar o rascunho");
+      const pend: string[] = r.body.pendencias ?? [];
+      if (pend.length) return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, resumo: r.body.resumo, pendencias: pend, pode_confirmar: false },
+        "Rascunho gerado com pendências", "Pergunte ao vendedor cada pendência, anexe as respostas com anexar_coleta_ocorrencia e gere o rascunho de novo");
+      const exp = Date.now() + 15 * 60_000;
+      const codigo = await noteCode(u.user_id, s.id, `coleta|${r.body.resumo}`, exp);
+      return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, resumo: r.body.resumo, pendencias: [], pode_confirmar: true, codigo_confirmacao: codigo,
+        mensagem_para_usuario: `Resumo da #${s.ocorrencia_codigo}: ${r.body.resumo}. Confirma?` }, undefined,
+        "Só confirme depois do 'sim': chame de novo com confirmar=true e o codigo_confirmacao");
+    }
+    const code = String(params.codigo_confirmacao ?? "");
+    const exp = parseInt(code.split(".")[0] ?? "", 36);
+    const atual = await chamarColeta(u.user_id, s.id, "pendencias");
+    if (!Number.isFinite(exp) || exp < Date.now() || code !== await noteCode(u.user_id, s.id, `coleta|${atual.body?.resumo ?? ""}`, exp)) {
+      return fail("Confirmação expirada ou o rascunho mudou: gere o rascunho de novo e peça confirmação");
+    }
+    const r = await chamarColeta(u.user_id, s.id, "confirmar");
+    if (r.status !== 200) return { success: false, message: r.body?.error ?? "Não foi possível confirmar", data: { pendencias: r.body?.pendencias ?? [] } };
+    return ok({ ocorrencia: `#${s.ocorrencia_codigo}`, confirmada: true, pontos_previstos: r.body.pontos_previstos, novos_agendamentos: (r.body.agendamentos ?? []).map((c: string) => `#${c}`),
+      link: feraLink(`/agenda?agendamento=${s.id}`) }, `Coleta da #${s.ocorrencia_codigo} confirmada`);
+  }, params, isField);
+}
+
 const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResponse>> = {
+  anexar_coleta_ocorrencia: anexarColetaOcorrencia, pendencias_ocorrencia: pendenciasOcorrencia, confirmar_coleta_ocorrencia: confirmarColetaOcorrencia,
   identificar_usuario: identificarUsuario, minha_agenda: minhaAgenda, agenda_equipe: agendaEquipe, listar_pendencias: listarPendencias,
   consultar_cliente_ou_lead: consultarClienteOuLead, criar_lead_equipe: criarLeadEquipe, agendar_visita_equipe: agendarVisitaEquipe,
   registrar_localizacao_checkin: registrarLocalizacaoCheckin, registrar_nota_visita: registrarNotaVisita,
@@ -4056,6 +4140,9 @@ const TEAM_MANIFEST = [
   { name: "assumir_atendimento", description: "EQUIPE: assume um atendimento (código #A-…).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
   { name: "resolver_atendimento", description: "EQUIPE: resolve um atendimento com resolução e resultado.", parameters: { type: "object", required: ["chat_id", "codigo", "resolucao", "resultado"], properties: { ...CHAT, codigo: { type: "string" }, resolucao: { type: "string" }, resultado: { type: "string", enum: RESULTADOS_ATENDIMENTO } } } },
   { name: "contexto_aviso", description: "EQUIPE: quando o usuário responde a um aviso automático, resolve o código (#V-…, #T-…, #A-…) enviado a ele e devolve a visita/tarefa e ações possíveis.", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
+  { name: "anexar_coleta_ocorrencia", description: "EQUIPE: anexa texto/transcrição de áudio do vendedor à ocorrência aberta dele (ou pelo código #OC-…). Não confirma nada.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, codigo: { type: "string", description: "Opcional: #OC-000123" } } } },
+  { name: "pendencias_ocorrencia", description: "EQUIPE: o que ainda falta na coleta da ocorrência (inclui 'você ofereceu X — o que o cliente achou?' e próximos passos sem data).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, codigo: { type: "string" } } } },
+  { name: "confirmar_coleta_ocorrencia", description: "EQUIPE: 1ª chamada transcreve/gera o rascunho e devolve resumo + pendências + codigo_confirmacao (NÃO grava); depois do 'sim', chame com confirmar=true e o código: cria pontos previstos, histórico do lead e próximos agendamentos.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, codigo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" } } } },
   { name: "marcar_material_separado", description: "EQUIPE: marca o material da visita (#V-…) como separado (responsável, operacional ou gestor).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
 ];
 

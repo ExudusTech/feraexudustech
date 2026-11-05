@@ -15,7 +15,7 @@ describe("Team recipient management", () => {
   it("offers only the supported events", () => {
     render(<TeamNotifications />);
     fireEvent.click(screen.getByRole("button", { name: "Novo destinatário" }));
-    expect(screen.getAllByRole("checkbox")).toHaveLength(12);
+    expect(screen.getAllByRole("checkbox")).toHaveLength(15);
     expect(screen.getByLabelText("Check-in fora do local")).toBeInTheDocument();
     expect(screen.getByLabelText("Visita concluída (check-out)")).toBeInTheDocument();
     expect(screen.getByLabelText("Agendamento — visita comercial")).toBeInTheDocument();

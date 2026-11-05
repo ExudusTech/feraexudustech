@@ -17,41 +17,69 @@ export interface Plano { frequencia: string; intervalo_dias?: number | null; dia
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const dow = (iso: string) => new Date(`${iso}T12:00:00Z`).getUTCDay();
 
-/** Interval in days for a plan; monthly is handled separately (same weekday ~4 weeks later). */
+/** Interval in days: weekly 7, fortnightly 15, monthly 30 (decided 05/11), custom 1–180. */
 export function intervaloDias(p: Plano): number {
   if (p.frequencia === "semanal") return 7;
-  if (p.frequencia === "quinzenal") return 14;
-  if (p.frequencia === "mensal") return 28;
-  return Math.max(1, Math.min(180, Number(p.intervalo_dias) || 14));
+  if (p.frequencia === "quinzenal") return 15;
+  if (p.frequencia === "mensal") return 30;
+  return Math.max(1, Math.min(180, Number(p.intervalo_dias) || 15));
 }
 
-/** First on/after `from` matching the preferred weekday (or `from` itself). */
-function alignWeekday(from: string, dia?: number | null): string {
-  if (dia === null || dia === undefined) return from;
+/** Route weekdays (JS 0–6) from a coverage area's text, e.g. "3ª feira e 5ª feira" → [2, 4]. */
+export function parseDiaSemana(text?: string | null): number[] {
+  return ((text ?? "").match(/(\d)ª/g) ?? []).map((m) => parseInt(m[0], 10) - 1).filter((d) => d >= 1 && d <= 5);
+}
+
+export interface AreaRota { name: string; city?: string | null; dia_semana?: string | null; zip_code_start?: string | null; zip_code_end?: string | null }
+/** Client's route region: narrowest CEP interval, else exact city name. */
+export function areaDoCliente<T extends AreaRota>(areas: T[], cep?: string | null, city?: string | null): T | null {
+  const d = (v?: string | null) => (v ?? "").replace(/\D/g, "");
+  const pc = d(cep);
+  if (pc.length === 8) {
+    const hit = areas.map((a) => ({ a, s: d(a.zip_code_start), e: d(a.zip_code_end ?? a.zip_code_start) }))
+      .filter((x) => x.s.length === 8 && x.e.length === 8 && pc >= x.s && pc <= x.e)
+      .sort((x, y) => (Number(x.e) - Number(x.s)) - (Number(y.e) - Number(y.s)))[0];
+    if (hit) return hit.a;
+  }
+  const norm = (v?: string | null) => (v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const c = norm(city);
+  return c ? areas.find((a) => norm(a.city) === c) ?? null : null;
+}
+
+/** First open route day on/after `from`: on a route weekday (any Mon–Sat without a route) and not blocked (holiday / Google all-day). */
+export function primeiroDiaRota(from: string, rota: number[], blocked: (iso: string) => boolean): string {
   let d = from;
-  for (let i = 0; i < 7 && dow(d) !== dia; i++) d = addDays(d, 1);
-  return d;
+  for (let i = 0; i < 120; i++, d = addDays(d, 1)) {
+    const w = dow(d);
+    if (w === 0 || (rota.length && !rota.includes(w)) || blocked(d)) continue;
+    return d;
+  }
+  return from;
 }
 
 /**
- * Planned visit dates in [from, from+horizon). Dates fall on the preferred weekday, keep the plan rhythm
- * from data_inicio, and a blocked day (holiday/closure/Sunday) moves to the next open day without shifting the series.
+ * Planned visit dates in [from, from+horizon). Each date is the first open route day on/after (previous visit + interval);
+ * the series starts after the plan's last visit (`ultima`) or at data_inicio. Never a holiday or Google block.
  */
-export function proximasDatas(p: Plano, from: string, horizonDias: number, blocked: (iso: string) => boolean): string[] {
+export function proximasDatas(p: Plano, from: string, horizonDias: number, blocked: (iso: string) => boolean, rota: number[] = [], ultima?: string | null): string[] {
   const step = intervaloDias(p);
   const end = addDays(from, horizonDias);
-  let d = alignWeekday(p.data_inicio, p.dia_semana);
-  // advance whole steps until within range
-  while (d < from) d = addDays(d, step);
+  const pick = (x: string) => primeiroDiaRota(x, rota, blocked);
+  let d = ultima ? pick(addDays(ultima, step)) : pick(p.data_inicio > from ? p.data_inicio : from);
   const out: string[] = [];
-  while (d < end) {
-    let real = d;
-    for (let i = 0; i < 7 && (blocked(real) || dow(real) === 0); i++) real = addDays(real, 1);
-    const next = addDays(d, step);
-    if (real < end && real < next && !out.includes(real)) out.push(real);
-    d = next;
+  for (let i = 0; i < 200 && d < end; i++) {
+    if (d >= from && !out.includes(d)) out.push(d);
+    d = pick(addDays(d, step));
   }
   return out;
+}
+
+
+export const FREQ_RAPIDAS = ["semanal", "quinzenal", "mensal"] as const;
+
+/** Next plan visit after a visit done on `today`. */
+export function proximaVisitaPlano(p: Plano, today: string, rota: number[] = [], blocked: (iso: string) => boolean = () => false): string {
+  return primeiroDiaRota(addDays(today, intervaloDias(p)), rota, blocked);
 }
 
 export interface AvaliacaoInput { estado?: string; foto_path?: string | null; precisa_substituir?: boolean; item?: string | null }
@@ -78,12 +106,8 @@ export function pontoErro(p: { localizacao_interna?: string | null; foto_path?: 
 }
 
 /** Frequencies the consultant can pick when closing a maintenance visit without a plan. */
-export const FREQ_RAPIDAS = ["semanal", "quinzenal", "mensal"] as const;
 
 /** Next planned visit date strictly after `today` (holidays are handled by the daily generator). */
-export function proximaVisitaPlano(p: Plano, today: string): string {
-  return proximasDatas(p, addDays(today, 1), 200, () => false)[0] ?? addDays(today, intervaloDias(p));
-}
 
 export interface Compativel { id: string; brand?: string | null; is_dispenser?: boolean | null; dispenser_family_id?: string | null;
   compatible_dispenser_families?: string[] | null; specifications?: unknown; linha_produto?: string | null; name?: string }

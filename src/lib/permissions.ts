@@ -1,5 +1,5 @@
 /** Role permission matrix and multi-role merging (pure, testable). */
-export type AppRole = "super_admin" | "admin" | "gestor" | "vendedor" | "consultor_tecnico" | "operacional" | "user" | "visitante" | "financeiro";
+export type AppRole = "super_admin" | "admin" | "gestor" | "vendedor" | "consultor_tecnico" | "operacional" | "user" | "visitante" | "financeiro" | "faturamento";
 
 export interface PermissionConfig {
   /** Routes the role can access */
@@ -95,13 +95,23 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   financeiro: {
-    routes: ["/dashboard", "/tarefas", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
     canAccessFinanceiro: true,
     canAccessEkkoa: false,
     canAccessRelatorios: true,
+    canAccessConfiguracoes: false,
+  },
+  faturamento: {
+    routes: ["/dashboard", "/tarefas", "/agenda", "/clientes", "/suporte"],
+    canWrite: true,
+    canDelete: false,
+    canManageUsers: false,
+    canAccessFinanceiro: false,
+    canAccessEkkoa: false,
+    canAccessRelatorios: false,
     canAccessConfiguracoes: false,
   },
   visitante: {
@@ -125,12 +135,13 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   operacional: "Operacional",
   user: "Usuário",
   financeiro: "Financeiro",
+  faturamento: "Faturamento",
   visitante: "Visitante",
 };
 
 
 /** Most-privileged first; used to pick the "primary" role for legacy single-role checks. */
-export const ROLE_PRIORITY: AppRole[] = ["super_admin", "admin", "gestor", "financeiro", "vendedor", "consultor_tecnico", "operacional", "user", "visitante"];
+export const ROLE_PRIORITY: AppRole[] = ["super_admin", "admin", "gestor", "financeiro", "faturamento", "vendedor", "consultor_tecnico", "operacional", "user", "visitante"];
 
 export function sortRoles(roles: string[]): AppRole[] {
   const valid = Array.from(new Set(roles)).filter((r): r is AppRole => (ROLE_PRIORITY as string[]).includes(r));

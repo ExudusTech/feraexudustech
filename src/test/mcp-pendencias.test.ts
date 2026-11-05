@@ -56,7 +56,7 @@ const tables = () => ({
 
 describe("mcp listar_pendencias (read-only)", () => {
   it("seller sees only own open atendimentos and visits", async () => {
-    const r = await harness(tables()).route("listar_pendencias", { telefone: "22999990001" });
+    const r = await harness(tables()).route("listar_pendencias", { chat_id: "3DF9D839DDCF463A3A350ADF91C40B89-5522999990001" });
     expect(r.data.usuario).toEqual({ nome: "Marcos", visao: "propria" });
     expect(r.data.atendimentos.map((a: any) => a.empresa)).toEqual(["Padaria"]);
     expect(r.data.atendimentos[0]).toMatchObject({ espera_minutos_uteis: 60, gravidade: "amarelo", link: "https://fera.exudustech.com.br/atendimentos?id=a1" });
@@ -69,9 +69,9 @@ describe("mcp listar_pendencias (read-only)", () => {
     expect(r.data.atendimentos).toHaveLength(2);
     expect(r.data.visitas_hoje).toHaveLength(2);
   });
-  it("unknown phone returns nothing", async () => {
-    const r = await harness(tables()).route("listar_pendencias", { telefone: "21911112222" });
-    expect(r.data).toEqual({ usuario: null, atendimentos: [], visitas_hoje: [] });
+  it("unknown chat phone is not authorized, even with a team phone in params", async () => {
+    const r = await harness(tables()).route("listar_pendencias", { chat_id: "3DF9D839DDCF463A3A350ADF91C40B89-5521911112222", telefone: "22999990001" });
+    expect(r.data).toEqual({ autorizado: false }); // phone in params is ignored: identity comes only from chat_id
   });
 });
 

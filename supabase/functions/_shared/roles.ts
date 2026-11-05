@@ -1,5 +1,5 @@
 // Shared role rules for user-management functions (pure, unit-tested).
-export const ASSIGNABLE_ROLES = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "user", "financeiro", "visitante"];
+export const ASSIGNABLE_ROLES = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "user", "financeiro", "faturamento", "visitante"];
 
 export function isManager(roles: string[]): boolean {
   return roles.includes("super_admin") || roles.includes("admin");

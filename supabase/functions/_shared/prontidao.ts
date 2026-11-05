@@ -116,3 +116,15 @@ export function sugerirMix(l: Levantamento): SugestaoMix[] {
   if (!out.length) add("Papel toalha + sabonete", "Mix básico de higiene", ["papel toalha", "sabonete"]);
   return out;
 }
+
+/** 17h summary: tomorrow's operations without an attached invoice (one message per organization). */
+export function resumoNotasAmanha(data: string, ops: { id: string; codigo?: string | null; hora: string; cliente: string; tipo_nota?: string | null }[]): string {
+  return [`🧾 Operações de amanhã (${data.split("-").reverse().join("/")}) sem nota anexada: ${ops.length}`,
+    ...ops.map((o) => `• ${o.hora} ${o.cliente}${o.codigo ? ` #${o.codigo}` : ""} — ${TIPO_NOTA_LABEL[o.tipo_nota as TipoNota] ?? "nota"}: ${FERA_URL}/agenda?agendamento=${o.id}`),
+    `Anexar em: ${FERA_URL}/tarefas`].join("\n");
+}
+
+/** Check-in is blocked when the operation needs an invoice that is not attached, unless the organization disabled it or a manager released it. */
+export function checkinBloqueadoPorNota(s: { exige_nota?: boolean | null; nota_status?: string | null; checkin_liberado_em?: string | null }, bloquearOrg: boolean | null | undefined): boolean {
+  return bloquearOrg !== false && !!s.exige_nota && s.nota_status !== "anexada" && !s.checkin_liberado_em;
+}

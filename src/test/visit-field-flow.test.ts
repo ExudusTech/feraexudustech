@@ -154,7 +154,9 @@ describe("complemento 04/11", () => {
     expect(sugestaoTermino("2026-11-03T18:00:00Z", 60)).toBe("16:00");
   });
   it("gestor e super admin já vêm com os eventos de campo marcados", () => {
-    expect(defaultEventsFor(["gestor"], [])).toEqual(["visita_concluida", "checkin_fora_do_local", "visita_atrasada", "visita_aberta"]);
+    expect(defaultEventsFor(["gestor"], [])).toEqual(["visita_concluida", "checkin_fora_do_local", "visita_atrasada", "visita_aberta", "prontidao_pendente", "tarefa_nota_d1"]);
+    expect(defaultEventsFor(["faturamento"], [])).toEqual(["tarefa_nota_criada", "tarefa_nota_d1"]);
+    expect(defaultEventsFor(["financeiro"], [])).toEqual([]);
     expect(defaultEventsFor(["vendedor"], [])).toEqual([]);
   });
 });

@@ -1,38 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { avaliacaoErro, parseImportRows, podeGravarLocalizacao, pontoErro, pontosPendentes, proximasDatas, piorEstado } from "../../supabase/functions/_shared/base-instalada";
+import { avaliacaoErro, parseImportRows, podeGravarLocalizacao, pontoErro, pontosPendentes, proximasDatas, piorEstado, parseDiaSemana, intervaloDias, proximaVisitaPlano, areaDoCliente } from "../../supabase/functions/_shared/base-instalada";
 
 const none = () => false;
 
-describe("plano de manutenção", () => {
-  it("quinzenal na terça gera terças a cada 14 dias", () => {
-    // 2026-11-03 is a Tuesday
-    expect(proximasDatas({ frequencia: "quinzenal", dia_semana: 2, data_inicio: "2026-11-03" }, "2026-11-03", 30, none))
-      .toEqual(["2026-11-03", "2026-11-17", "2026-12-01"]);
+describe("plano de manutenção (dias de rota, 05/11)", () => {
+  const rio = parseDiaSemana("3ª feira e 5ª feira"); // Rio das Ostras: terça/quinta
+  it("lê os dias de rota da região", () => { expect(rio).toEqual([2, 4]); });
+  it("quinzenal = 15 dias, caindo no primeiro dia de rota na data-alvo ou após", () => {
+    // 2026-11-03 terça → +15 = 18/11 quarta → quinta 19/11 → +15 = 04/12 sexta → terça 08/12
+    expect(proximasDatas({ frequencia: "quinzenal", data_inicio: "2026-11-03" }, "2026-11-03", 40, none, rio))
+      .toEqual(["2026-11-03", "2026-11-19", "2026-12-08"]);
   });
-  it("semanal gera uma por semana", () => {
-    expect(proximasDatas({ frequencia: "semanal", dia_semana: 4, data_inicio: "2026-11-03" }, "2026-11-03", 21, none))
-      .toEqual(["2026-11-05", "2026-11-12", "2026-11-19"]);
+  it("semanal = 7 e mensal = 30 dias", () => {
+    expect(intervaloDias({ frequencia: "semanal", data_inicio: "" })).toBe(7);
+    expect(intervaloDias({ frequencia: "quinzenal", data_inicio: "" })).toBe(15);
+    expect(intervaloDias({ frequencia: "mensal", data_inicio: "" })).toBe(30);
   });
-  it("mensal mantém o mesmo dia da semana a cada 4 semanas", () => {
-    expect(proximasDatas({ frequencia: "mensal", dia_semana: 2, data_inicio: "2026-11-03" }, "2026-11-03", 60, none))
-      .toEqual(["2026-11-03", "2026-12-01", "2026-12-29"]);
+  it("mensal em Rio das Ostras: 30 dias depois, próximo terça/quinta", () => {
+    // 2026-11-05 quinta + 30 = 05/12 sábado → terça 08/12
+    expect(proximaVisitaPlano({ frequencia: "mensal", data_inicio: "2026-11-05" }, "2026-11-05", rio)).toBe("2026-12-08");
   });
-  it("personalizada usa o intervalo em dias", () => {
-    expect(proximasDatas({ frequencia: "personalizada", intervalo_dias: 10, data_inicio: "2026-11-04" }, "2026-11-04", 25, none))
-      .toEqual(["2026-11-04", "2026-11-14", "2026-11-24"]);
+  it("nunca cai em feriado nem bloqueio do Google: pula para o próximo dia de rota", () => {
+    const blocked = (d: string) => d === "2026-11-19";
+    expect(proximasDatas({ frequencia: "quinzenal", data_inicio: "2026-11-03" }, "2026-11-03", 25, blocked, rio))
+      .toEqual(["2026-11-03", "2026-11-24"]);
   });
-  it("feriado empurra para o próximo dia útil sem mudar a série", () => {
-    const blocked = (d: string) => d === "2026-11-17";
-    expect(proximasDatas({ frequencia: "quinzenal", dia_semana: 2, data_inicio: "2026-11-03" }, "2026-11-03", 30, blocked))
-      .toEqual(["2026-11-03", "2026-11-18", "2026-12-01"]);
+  it("continua a partir da última visita do plano", () => {
+    expect(proximasDatas({ frequencia: "semanal", data_inicio: "2026-10-01" }, "2026-11-04", 10, none, rio, "2026-11-03"))
+      .toEqual(["2026-11-10"]);
   });
-  it("não repete datas (sem duplicadas)", () => {
-    const d = proximasDatas({ frequencia: "semanal", dia_semana: 2, data_inicio: "2026-11-03" }, "2026-11-03", 90, none);
+  it("não repete datas", () => {
+    const d = proximasDatas({ frequencia: "semanal", data_inicio: "2026-11-03" }, "2026-11-03", 90, none, rio);
     expect(new Set(d).size).toBe(d.length);
   });
-  it("começa a série a partir de hoje quando o plano é antigo", () => {
-    expect(proximasDatas({ frequencia: "quinzenal", dia_semana: 2, data_inicio: "2026-10-06" }, "2026-11-04", 20, none))
-      .toEqual(["2026-11-17"]);
+  it("região pelo CEP mais específico, senão pela cidade", () => {
+    const areas = [{ name: "Cabo Frio", city: "Cabo Frio", zip_code_start: "28900-000", zip_code_end: "28929-999" },
+      { name: "Cabo Frio 2º Distrito", city: "Cabo Frio 2º Distrito", zip_code_start: "28925-000", zip_code_end: "28929-999" },
+      { name: "Rio das Ostras", city: "Rio das Ostras" }];
+    expect(areaDoCliente(areas, "28926-100", "Cabo Frio")?.name).toBe("Cabo Frio 2º Distrito");
+    expect(areaDoCliente(areas, null, "rio das ostras")?.name).toBe("Rio das Ostras");
   });
 });
 

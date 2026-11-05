@@ -1,7 +1,7 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ROLE_LABELS, type AppRole } from "@/lib/permissions";
 
-const ASSIGNABLE: AppRole[] = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "financeiro", "user", "visitante"];
+const ASSIGNABLE: AppRole[] = ["admin", "gestor", "vendedor", "consultor_tecnico", "operacional", "financeiro", "faturamento", "user", "visitante"];
 
 interface RolePickerProps {
   value: string[];
