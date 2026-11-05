@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Wrench } from "lucide-react";
 import NovaManutencaoDialog from "@/components/agenda/NovaManutencaoDialog";
 import LevarProximaVisita from "@/components/agenda/LevarProximaVisita";
+import SepararMaterial from "@/components/inventario/SepararMaterial";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { format } from "date-fns";
 import { isMine, pendentesAnteriores, porConsultor } from "@/lib/hoje";
@@ -55,6 +56,7 @@ export default function Hoje() {
         <PainelAgora compact />
         <Button className="w-full min-h-12" variant="outline" onClick={() => setNovaOpen(true)}><Wrench className="h-4 w-4" />Nova visita de manutenção</Button>
         <LevarProximaVisita />
+        <SepararMaterial onlyMine={!equipe} />
         {gestor && <div className="grid grid-cols-2 gap-2" role="tablist">{(["minhas", "equipe"] as const).map((k) => (
           <Button key={k} role="tab" aria-selected={escopo === k} variant={escopo === k ? "default" : "outline"} className="min-h-11" onClick={() => setEscopo(k)}>
             {k === "minhas" ? "Minhas" : "Equipe"}</Button>))}</div>}
