@@ -36,5 +36,5 @@
 - Refill compatibility is resolved by refisCompativeis: refill specifications naming the dispenser, then products.compatible_dispenser_families ∋ dispenser_family_id, then same brand with "ver todos"; no new table.
 - Maintenance checkout derives the next step from planos_manutencao (creating a plan from a quick frequency when missing), and new points are saved already evaluated, so closing never waits on hidden steps.
 - Check-in destination is schedule → client → lead coordinates, geocoded on demand and by the 15-min scheduler (geocode_tentado_em stops repeat lookups); a missing destination is flagged destino_sem_coordenadas, never treated as inside the radius, and a check-in position becomes the address only after the consultant confirms.
-- Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts (mcp calls it with the service key + chat-identified user).
-- Recurrence = first open route day on/after last visit + interval; unattached required invoices block check-in server-side unless a manager release is recorded.
+- Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts.
+- Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
