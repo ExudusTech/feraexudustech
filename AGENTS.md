@@ -38,4 +38,3 @@
 - Check-in destination is schedule → client → lead coordinates, geocoded on demand and by the 15-min scheduler (geocode_tentado_em stops repeat lookups); a missing destination is flagged destino_sem_coordenadas, never treated as inside the radius, and a check-in position becomes the address only after the consultant confirms.
 - Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts.
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
-- Coleta follow-ups use _shared/agenda-slot.ts; no slot = pending, never a blind time.
