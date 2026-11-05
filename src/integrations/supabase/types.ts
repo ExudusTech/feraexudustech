@@ -6319,6 +6319,8 @@ export type Database = {
           plan: string
           ponto_facultativo_util: boolean
           primary_color: string | null
+          proposta_config: Json
+          proposta_seq: number
           raio_checkin_m: number
           retencao_fotos_dias: number
           retencao_localizacao_dias: number
@@ -6359,6 +6361,8 @@ export type Database = {
           plan?: string
           ponto_facultativo_util?: boolean
           primary_color?: string | null
+          proposta_config?: Json
+          proposta_seq?: number
           raio_checkin_m?: number
           retencao_fotos_dias?: number
           retencao_localizacao_dias?: number
@@ -6399,6 +6403,8 @@ export type Database = {
           plan?: string
           ponto_facultativo_util?: boolean
           primary_color?: string | null
+          proposta_config?: Json
+          proposta_seq?: number
           raio_checkin_m?: number
           retencao_fotos_dias?: number
           retencao_localizacao_dias?: number
@@ -7088,11 +7094,17 @@ export type Database = {
           discount_percent: number | null
           discount_value: number | null
           final_value: number
+          forma_pagamento: string | null
           id: string
           lead_id: string | null
           notes: string | null
+          numero: number | null
           organization_id: string
           origem_schedule_id: string | null
+          pdf_gerado_em: string | null
+          pdf_path: string | null
+          periodicidade_manutencao: string | null
+          prazo_entrega: string | null
           status: string
           title: string
           total_value: number
@@ -7108,11 +7120,17 @@ export type Database = {
           discount_percent?: number | null
           discount_value?: number | null
           final_value?: number
+          forma_pagamento?: string | null
           id?: string
           lead_id?: string | null
           notes?: string | null
+          numero?: number | null
           organization_id: string
           origem_schedule_id?: string | null
+          pdf_gerado_em?: string | null
+          pdf_path?: string | null
+          periodicidade_manutencao?: string | null
+          prazo_entrega?: string | null
           status?: string
           title: string
           total_value?: number
@@ -7128,11 +7146,17 @@ export type Database = {
           discount_percent?: number | null
           discount_value?: number | null
           final_value?: number
+          forma_pagamento?: string | null
           id?: string
           lead_id?: string | null
           notes?: string | null
+          numero?: number | null
           organization_id?: string
           origem_schedule_id?: string | null
+          pdf_gerado_em?: string | null
+          pdf_path?: string | null
+          periodicidade_manutencao?: string | null
+          prazo_entrega?: string | null
           status?: string
           title?: string
           total_value?: number
