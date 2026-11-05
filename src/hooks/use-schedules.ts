@@ -75,6 +75,8 @@ export function useCreateSchedule() {
         lead_id: input.lead_id ?? null,
         assigned_to: input.assigned_to ?? null, source: "manual",
         latitude: (input as any).latitude ?? null, longitude: (input as any).longitude ?? null,
+        operacao_material: (input as any).operacao_material ?? null, tipo_nota: (input as any).tipo_nota ?? null,
+        itens: (input as any).itens ?? [],
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
       if (error) throw error;
