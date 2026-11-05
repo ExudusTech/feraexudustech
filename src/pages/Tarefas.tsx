@@ -70,7 +70,7 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
     finally { setBusy(false); }
   };
   const salvar = async (concluir: boolean) => {
-    if (concluir && (!pdf || !numero.trim())) { toast({ title: "Anexe o PDF e informe o número da nota", variant: "destructive" }); return; }
+    if (concluir && (t as any).acao !== "cancelar" && (!pdf || !numero.trim())) { toast({ title: "Anexe o PDF e informe o número da nota", variant: "destructive" }); return; }
     setBusy(true);
     const { error } = await (supabase as any).from("tarefas_faturamento").update({ numero_nota: numero.trim() || null, ...(concluir ? { status: "concluida" } : {}) }).eq("id", t.id);
     setBusy(false);
