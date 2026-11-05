@@ -22,7 +22,7 @@ describe("plano de manutenção (dias de rota, 05/11)", () => {
   });
   it("nunca cai em feriado nem bloqueio do Google: pula para o próximo dia de rota", () => {
     const blocked = (d: string) => d === "2026-11-19";
-    expect(proximasDatas({ frequencia: "quinzenal", data_inicio: "2026-11-03" }, "2026-11-03", 20, blocked, rio))
+    expect(proximasDatas({ frequencia: "quinzenal", data_inicio: "2026-11-03" }, "2026-11-03", 25, blocked, rio))
       .toEqual(["2026-11-03", "2026-11-24"]);
   });
   it("continua a partir da última visita do plano", () => {
