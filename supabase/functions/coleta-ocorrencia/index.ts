@@ -2,13 +2,34 @@
 // confirmar (apply: planned points, timeline, next visits), pendencias. The schedule is read with the caller's access first;
 // the Flora path (mcp) calls with the service key plus the server-identified team user, never a user-supplied identity.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/agenda-slot.ts";
+import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
+import { listEvents } from "../_shared/google-calendar.ts";
 import { limparRascunho, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-const SELECT = "id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, ocorrencia_codigo, ocorrencia_tipo, coleta_status, coleta_rascunho, resumo_execucao, leads(pessoa_id, contact_name, empresa_nome, company), clients(name)";
+const SELECT = "id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, ocorrencia_codigo, ocorrencia_tipo, coleta_status, coleta_rascunho, coleta_pendencias, resumo_execucao, leads(pessoa_id, contact_name, empresa_nome, company, zip_code, city), clients(name, zip_code, city)";
+
+const spHoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+const TIPO_LABEL: Record<string, string> = { proposta: "proposta", retorno: "retorno", teste: "instalação de teste", venda_direta: "venda direta" };
+
+/** Google timed busy (READ-ONLY GET), falling back to the synced cache table. */
+async function googleOcupado(admin: any, orgId: string, from: string, to: string): Promise<{ start: number; end: number }[]> {
+  const timeMin = new Date(`${from}T00:00:00-03:00`).toISOString(), timeMax = new Date(Date.parse(`${to}T00:00:00-03:00`) + 86_400_000).toISOString();
+  try {
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY"), connKey = Deno.env.get("GOOGLE_CALENDAR_API_KEY");
+    if (!lovableKey || !connKey) throw new Error("cfg");
+    const evs = await listEvents("primary", timeMin, timeMax, { lovableKey, connKey });
+    return evs.filter((e: any) => e.status !== "cancelled" && e.transparency !== "transparent" && e.start?.dateTime && e.end?.dateTime)
+      .map((e: any) => ({ start: Date.parse(e.start.dateTime), end: Date.parse(e.end.dateTime) }));
+  } catch {
+    const { data } = await admin.from("google_calendar_busy").select("start_at, end_at").eq("organization_id", orgId).lt("start_at", timeMax).gt("end_at", timeMin);
+    return (data ?? []).map((r: any) => ({ start: Date.parse(r.start_at), end: Date.parse(r.end_at) }));
+  }
+}
 
 class AiError extends Error { constructor(public status: number, msg: string) { super(msg); } }
 
@@ -51,7 +72,7 @@ Deno.serve(async (req) => {
   const admin = createClient(url, serviceKey);
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
-  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
+  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
   // Identity: app user (JWT, caller-RLS read) or Flora path (service key + server-resolved user id).
   const interno = auth === `Bearer ${serviceKey}`;
@@ -78,6 +99,11 @@ Deno.serve(async (req) => {
     if (prof?.organization_id !== s.organization_id) return json({ error: "Não autorizado" }, 403);
   }
   if (!privileged && s.assigned_to !== userId && !(s.assigned_to === null && s.created_by === userId)) return json({ error: "Só o responsável pode alterar esta ocorrência" }, 403);
+  if (b.action === "resolver_agendar") {
+    const resto = (Array.isArray(s.coleta_pendencias) ? s.coleta_pendencias : []).filter((x: string) => x !== b.item);
+    await admin.from("schedules").update({ coleta_pendencias: resto }).eq("id", s.id);
+    return json({ ok: true, pendencias: resto });
+  }
   if (s.coleta_status === "confirmada" && b.action !== "pendencias") return json({ error: "Coleta já confirmada" }, 409);
   const tipo = s.ocorrencia_tipo as string;
   const salvar = async (r: RascunhoColeta, status: string) => {
@@ -91,7 +117,7 @@ Deno.serve(async (req) => {
   try {
     switch (b.action) {
       case "pendencias":
-        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: pendenciasColeta(tipo, s.coleta_rascunho), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
+        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendenciasColeta(tipo, s.coleta_rascunho), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
       case "salvar": {
         const r = limparRascunho(b.rascunho);
         const pend = await salvar(r, "rascunho");
@@ -147,20 +173,39 @@ Deno.serve(async (req) => {
         const itens = (r.pontos ?? []).filter((p) => p.produto || p.aparelho).map((p) => ({ descricao: `${p.produto || p.aparelho}${p.local ? ` — ${p.local}` : ""}`, quantidade: p.quantidade || "1" }));
         const nome = s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || "";
         const criados: string[] = [];
-        for (const p of r.proximos_passos ?? []) {
-          if (!p.tipo || !p.data) continue;
+        const semHorario: string[] = [];
+        const passos = (r.proximos_passos ?? []).filter((p) => p.tipo && p.data);
+        let ctx: { area: any; feriados: any[]; ocupados: any[]; google: { start: number; end: number }[]; cidade: string | null } | null = null;
+        if (passos.length) {
+          const cep = s.clients?.zip_code ?? s.leads?.zip_code ?? null, cidade = s.clients?.city ?? s.leads?.city ?? null;
+          const { data: areas } = await admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end, horario_inicio, horario_fim").eq("organization_id", s.organization_id);
+          const from = passos.map((p) => p.data!).sort()[0], to = addDias(passos.map((p) => p.data!).sort().slice(-1)[0], 60);
+          const { data: feriados } = await admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${s.organization_id}`).gte("date", from).lte("date", to);
+          const { data: ag } = await admin.from("schedules").select("scheduled_date, start_time, end_time").eq("organization_id", s.organization_id)
+            .eq("assigned_to", s.assigned_to ?? userId).gte("scheduled_date", from).lte("scheduled_date", to).in("status", ["agendado", "confirmado", "em_atendimento"]);
+          ctx = { area: areaDoCliente(areas ?? [], cep, cidade), feriados: feriados ?? [], cidade, google: await googleOcupado(admin, s.organization_id, from, to),
+            ocupados: (ag ?? []).filter((x: any) => x.start_time).map((x: any) => ({ data: x.scheduled_date, inicio: String(x.start_time).slice(0, 5), fim: x.end_time ? String(x.end_time).slice(0, 5) : null })) };
+        }
+        const norm = (v?: string | null) => (v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        for (const p of passos) {
+          const c = ctx!;
+          const hoje = spHoje(), desde = p.data! > hoje ? p.data! : addDias(hoje, 1);
+          const slot = c.area ? primeiroSlotLivre({ from: desde, rota: parseDiaSemana(c.area.dia_semana), inicio: c.area.horario_inicio, fim: c.area.horario_fim, duracao: 60,
+            ocupados: c.ocupados, google: c.google, bloqueado: (d) => c.feriados.some((h: any) => h.date === d && (!h.city || norm(h.city) === norm(c.cidade))) }) : null;
+          if (!slot) { semHorario.push(pendenciaAgendar(TIPO_LABEL[p.tipo!] ?? p.tipo!, s.ocorrencia_codigo)); continue; }
           const tecnico = (p.tipo === "teste" || p.tipo === "venda_direta") && !!s.client_id;
-          const row: Record<string, unknown> = { organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.lead_id ?? null, scheduled_date: p.data, start_time: "09:00",
+          const row: Record<string, unknown> = { organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.lead_id ?? null, scheduled_date: slot.data, start_time: slot.hora, end_time: hhmm(Number(slot.hora.slice(0, 2)) * 60 + Number(slot.hora.slice(3)) + 60),
             status: "agendado", assigned_to: s.assigned_to ?? userId, created_by: userId, source: "coleta", confirmacao_status: "nao_aplicavel",
             title: `${p.tipo === "proposta" ? "Proposta" : p.tipo === "retorno" ? "Retorno" : p.tipo === "teste" ? "Instalação de teste" : "Venda direta"} — ${nome}`,
             description: `Gerado pela coleta #${s.ocorrencia_codigo}${p.observacao ? `: ${p.observacao}` : ""}${(p.tipo === "teste" || p.tipo === "venda_direta") && !s.client_id ? " (converter o lead em cliente para agendar a instalação)" : ""}` };
           if (tecnico) Object.assign(row, { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: p.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva", itens, ocorrencia_tipo: p.tipo === "teste" ? "instalacao_teste" : "venda_direta" });
           else Object.assign(row, { schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO", ocorrencia_tipo: "primeira_visita" });
           const { data: novo, error } = await admin.from("schedules").insert(row).select("ocorrencia_codigo").single();
-          if (error) console.error("[coleta] next", error.code); else criados.push(novo.ocorrencia_codigo);
+          if (error) { console.error("[coleta] next", error.code); semHorario.push(pendenciaAgendar(TIPO_LABEL[p.tipo!] ?? p.tipo!, s.ocorrencia_codigo)); }
+          else { criados.push(novo.ocorrencia_codigo); c.ocupados.push({ data: slot.data, inicio: slot.hora, fim: null }); }
         }
-        await admin.from("schedules").update({ coleta_rascunho: r, coleta_resumo: resumo, coleta_pendencias: [], coleta_status: "confirmada", coleta_confirmada_em: now, coleta_confirmada_por: userId }).eq("id", s.id);
-        return json({ ok: true, resumo, pontos_previstos: pontos, agendamentos: criados });
+        await admin.from("schedules").update({ coleta_rascunho: r, coleta_resumo: resumo, coleta_pendencias: semHorario, coleta_status: "confirmada", coleta_confirmada_em: now, coleta_confirmada_por: userId }).eq("id", s.id);
+        return json({ ok: true, resumo, pontos_previstos: pontos, agendamentos: criados, pendencias_agendar: semHorario });
       }
     }
   } catch (e) {
