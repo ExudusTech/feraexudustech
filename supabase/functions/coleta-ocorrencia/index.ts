@@ -2,7 +2,7 @@
 // confirmar (apply: planned points, timeline, next visits), pendencias. The schedule is read with the caller's access first;
 // the Flora path (mcp) calls with the service key plus the server-identified team user, never a user-supplied identity.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { exigeColeta, limparRascunho, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { limparRascunho, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -17,7 +17,6 @@ async function transcrever(key: string, audio: Blob, nome: string): Promise<stri
   form.append("model", "openai/gpt-transcribe");
   form.append("file", new File([audio], nome, { type: audio.type?.startsWith("audio/") ? audio.type : "audio/webm" }));
   form.append("response_format", "json");
-  form.append("languages", "pt");
   const r = await fetch(`${GATEWAY}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form, signal: AbortSignal.timeout(60000) });
   if (!r.ok) { const t = await r.text(); console.error("[coleta] transcribe", r.status); throw new AiError(r.status, t.slice(0, 200)); }
   const j = await r.json();
@@ -175,4 +174,3 @@ Deno.serve(async (req) => {
   return json({ error: "Requisição inválida" }, 400);
 });
 
-export { exigeColeta };
