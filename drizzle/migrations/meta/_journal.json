@@ -288,6 +288,13 @@
       "when": 1793913875916,
       "tag": "0040_lote16_proposta_coleta",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793916794788,
+      "tag": "0041_lote17_proposta_pdf",
+      "breakpoints": true
     }
   ]
 }

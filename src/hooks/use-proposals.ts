@@ -21,6 +21,11 @@ export interface Proposal {
   final_value: number;
   valid_until: string | null;
   notes: string | null;
+  numero?: number | null;
+  forma_pagamento?: string | null;
+  prazo_entrega?: string | null;
+  periodicidade_manutencao?: string | null;
+  pdf_path?: string | null;
   created_at: string;
   updated_at: string | null;
   clients?: { name: string } | null;
@@ -101,6 +106,9 @@ export function useCreateProposal() {
         final_value: input.final_value || 0,
         valid_until: input.valid_until,
         notes: input.notes,
+        forma_pagamento: input.forma_pagamento ?? null,
+        prazo_entrega: input.prazo_entrega ?? null,
+        periodicidade_manutencao: input.periodicidade_manutencao ?? null,
         organization_id: user.organization_id,
         created_by: user.id,
       }).select().single();
