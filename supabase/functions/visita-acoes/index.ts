@@ -292,7 +292,15 @@ Deno.serve(async (req) => {
         const { data: prox } = await admin.from("schedules").select("scheduled_date").eq("client_id", s.client_id).eq("plano_manutencao_id", plano!.id)
           .gt("scheduled_date", today0).in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle();
         b.proximo = "novo_agendamento";
-        b.data_alvo = prox?.scheduled_date ?? proximaVisitaPlano(plano as any, today0);
+        if (prox?.scheduled_date) b.data_alvo = prox.scheduled_date;
+        else {
+          const { data: c } = await admin.from("clients").select("city, zip_code").eq("id", s.client_id).maybeSingle();
+          const { data: areas } = await admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end").eq("organization_id", s.organization_id).eq("is_active", true);
+          const { data: hol } = await admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${s.organization_id}`).gte("date", today0);
+          const city = (c?.city ?? "").toLowerCase();
+          const blocked = new Set((hol ?? []).filter((h: any) => !h.city || h.city.toLowerCase() === city).map((h: any) => h.date));
+          b.data_alvo = proximaVisitaPlano(plano as any, today0, parseDiaSemana(areaDoCliente(areas ?? [], c?.zip_code, c?.city)?.dia_semana), (d) => blocked.has(d));
+        }
         b.descricao = "Próxima visita do plano de manutenção";
       }
       const err = validateCheckout({ status: s.status, resultado: b.resultado, resumo: b.resumo, proximo: b.proximo, data_alvo: b.data_alvo,

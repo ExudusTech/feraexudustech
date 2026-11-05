@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import * as helpers from "../../supabase/functions/_shared/visit-exec";
-import { pontosPendentes } from "../../supabase/functions/_shared/base-instalada";
+import * as base from "../../supabase/functions/_shared/base-instalada";
+import * as prontidao from "../../supabase/functions/_shared/prontidao";
+import * as coleta from "../../supabase/functions/_shared/coleta";
 
 const id = "8261d0f0-4287-427e-b90b-52c705ed4b58";
 async function execute(body: Record<string, unknown>) {
@@ -22,7 +24,7 @@ async function execute(body: Record<string, unknown>) {
   let handler: ((req: Request) => Promise<Response>) | undefined;
   const source = readFileSync("supabase/functions/visita-acoes/index.ts", "utf8").replace(/import\s+[\s\S]*?from\s+["'][^"']+["'];/g, "");
   const js = ts.transpile(source, { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None });
-  const deps = { ...helpers, pontosPendentes, createClient: () => client, teamAlert: async () => undefined, Deno: { env: { get: () => "test" }, serve: (fn: typeof handler) => { handler = fn; } } };
+  const deps = { ...helpers, ...base, ...prontidao, ...coleta, serviceLabel: () => "", geocodeClient: async () => null, geocodeLead: async () => null, geocodeSchedule: async () => null, createClient: () => client, teamAlert: async () => undefined, Deno: { env: { get: () => "test" }, serve: (fn: typeof handler) => { handler = fn; } } };
   new Function(...Object.keys(deps), js)(...Object.values(deps));
   if (!handler) throw new Error("Missing request handler");
   const response = await handler(new Request("http://localhost/checkin", { method: "POST", headers: { Authorization: "Bearer test", "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "checkin", ...body }) }));
