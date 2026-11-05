@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/agenda-slot.ts";
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
-import { limparRascunho, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { limparRascunho, matchProduto, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
