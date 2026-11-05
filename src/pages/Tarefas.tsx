@@ -91,6 +91,7 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
           <Badge variant="outline">#T-{t.numero}</Badge>
         </div>
         <div className="flex flex-wrap gap-1">
+          {(t as any).acao && (t as any).acao !== "emitir" && <Badge variant="destructive">{(t as any).acao === "cancelar" ? "Cancelar nota (até 24h)" : "Nota de devolução de comodato"}</Badge>}
           <Badge variant="secondary">{TIPO_NOTA_LABEL[t.tipo_nota as TipoNota] ?? t.tipo_nota}</Badge>
           <Badge variant={atrasada ? "destructive" : "outline"}>Visita {fmtData(t.data_visita)} · prazo {new Date(t.prazo).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</Badge>
         </div>
@@ -105,6 +106,7 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
           <div className="text-muted-foreground">Itens</div>
           {t.itens?.length ? <ul className="list-disc pl-5">{t.itens.map((i, k) => <li key={k}>{i.quantidade}x {i.descricao}</li>)}</ul> : <p>—</p>}
         </div>
+        {(t as any).observacao && <p className="text-warning">{(t as any).observacao}</p>}
         <a className="text-xs inline-flex items-center gap-1 underline" href={`/agenda?agendamento=${t.schedule_id}`}><ExternalLink className="h-3 w-3" />Abrir a visita</a>
         {t.status === "aberta" ? (
           <div className="space-y-2 pt-2 border-t">
@@ -116,11 +118,11 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
               <Input placeholder="Número da nota" value={numero} onChange={(e) => setNumero(e.target.value.slice(0, 30))} onBlur={() => numero !== (t.numero_nota ?? "") && salvar(false)} />
             </div>
             {pdf && <NotaLink path={pdf} />}
-            <Button className="w-full" onClick={() => salvar(true)} disabled={busy}><CheckCircle2 className="h-4 w-4 mr-1" />Marcar concluída</Button>
+            <Button className="w-full" onClick={() => salvar(true)} disabled={busy}><CheckCircle2 className="h-4 w-4 mr-1" />{(t as any).acao === "cancelar" ? "Nota cancelada" : "Marcar concluída"}</Button>
           </div>
         ) : (
           <div className="flex items-center gap-2 pt-2 border-t">
-            <Badge>Nota {t.numero_nota}</Badge>{t.pdf_path && <NotaLink path={t.pdf_path} />}
+            <Badge>{(t as any).acao === "cancelar" ? "Cancelada" : `Nota ${t.numero_nota}`}</Badge>{t.pdf_path && <NotaLink path={t.pdf_path} />}
             <Button variant="ghost" size="sm" className="ml-auto" onClick={reabrir}>Reabrir</Button>
           </div>
         )}
