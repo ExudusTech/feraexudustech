@@ -63,7 +63,8 @@ export default function FieldOpsPanel() {
     && matchesFilter(s, filter, { atrasadas: m.atrasadas, foraDoLocal: m.foraDoLocal, semCoordenadas: m.semCoordenadas })) : [];
   const tomorrow = format(addDays(new Date(`${today}T12:00:00`), 1), "yyyy-MM-dd");
   const prontidaoPend = schedules.filter((s) => (s.scheduled_date === today || s.scheduled_date === tomorrow) && ["agendado", "confirmado"].includes(s.status) && s.prontidao && s.prontidao !== "pronto");
-  const lista = filter === ("prontidao" as OpsFilter) ? prontidaoPend : filtered;
+  const infoPend = schedules.filter((s: any) => s.coleta_status === "pendente");
+  const lista = filter === ("prontidao" as OpsFilter) ? prontidaoPend : filter === ("info_pendente" as OpsFilter) ? infoPend : filtered;
   const points = checkins.filter((c) => typeof c.latitude === "number" && todayList.some((s) => s.id === c.schedule_id));
   const current = schedules.find((s) => s.id === selected) ?? null;
 
@@ -99,6 +100,7 @@ export default function FieldOpsPanel() {
         <Metric label="Atrasadas sem check-in" value={m.atrasadas.length} f="atrasadas" tone="alert" />
         <Metric label="Check-in fora do local" value={m.foraDoLocal.length} f="fora_do_local" tone="alert" />
         <Metric label="Prontidão pendente (hoje/amanhã)" value={prontidaoPend.length} f={"prontidao" as OpsFilter} tone="alert" />
+        <Metric label="Realizadas — informações pendentes" value={infoPend.length} f={"info_pendente" as OpsFilter} tone="alert" />
         <Metric label="Local do cliente sem coordenadas" value={m.semCoordenadas.length} f="sem_coordenadas" tone="alert" />
         {Object.entries(m.resultados).map(([k, v]) => <Metric key={k} label={RESULT_LABEL[k] ?? k} value={v} f={`resultado:${k}`} />)}
       </div>
