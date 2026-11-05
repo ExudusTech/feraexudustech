@@ -119,3 +119,14 @@ export function semVazios(r: RascunhoColeta): RascunhoColeta {
 export function temPendenciaColeta(s: { coleta_status?: string | null; coleta_pendencias?: unknown }): boolean {
   return s.coleta_status === "pendente" || (s.coleta_status === "confirmada" && Array.isArray(s.coleta_pendencias) && s.coleta_pendencias.length > 0);
 }
+
+const foldNome = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** Matches a spoken product to a catalog product: exact name, then name containing the phrase (or vice-versa) when unique. Never guesses among several. */
+export function matchProduto<T extends { name?: string | null }>(produtos: T[], falado: string): T | null {
+  const f = foldNome(falado);
+  if (!f) return null;
+  const exato = produtos.filter((p) => foldNome(p.name) === f);
+  if (exato.length === 1) return exato[0];
+  const parcial = produtos.filter((p) => { const n = foldNome(p.name); return n.length > 2 && (n.includes(f) || f.includes(n)); });
+  return parcial.length === 1 ? parcial[0] : null;
+}
