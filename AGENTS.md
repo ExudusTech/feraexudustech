@@ -38,3 +38,4 @@
 - Check-in destination is schedule → client → lead coordinates, geocoded on demand and by the 15-min scheduler (geocode_tentado_em stops repeat lookups); a missing destination is flagged destino_sem_coordenadas, never treated as inside the radius, and a check-in position becomes the address only after the consultant confirms.
 - Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts.
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
+- Proposal PDFs are rendered only by the proposta-pdf function (_shared/proposta-pdf.ts, caller-RLS read first) into the private proposal-pdfs bucket with signed links; texts/defaults live in organizations.proposta_config with src/lib/proposta-config.ts mirroring defaults (test-enforced).
