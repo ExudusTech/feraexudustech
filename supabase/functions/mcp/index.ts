@@ -4290,9 +4290,16 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     // Block 1
     case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
     case "buscar_contato": {
+      // Team is resolved first: staff are usually not contacts, so Flora must learn it even when no contact exists.
+      const equipe = params.chat_id ? await teamInfo(params.chat_id) : null;
+      if (equipe) {
+        return { success: true, message: `Usuário da equipe: ${equipe.nome}.`,
+          data: { equipe, use_ferramentas_equipe: true },
+          next_action_hint: "Modo equipe: use só as intenções equipe_*" };
+      }
       const found = await buscarContato(params);
       if (!found.success || !params.chat_id) return found;
-      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id), equipe: await teamInfo(params.chat_id) } };
+      return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id), equipe: null } };
     }
     case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
     case "consultar_rota_consultor":     return consultarRotaConsultor(params);
