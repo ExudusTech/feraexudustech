@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
   try {
     switch (b.action) {
       case "pendencias":
-        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: pendenciasColeta(tipo, s.coleta_rascunho), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
+        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendenciasColeta(tipo, s.coleta_rascunho), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
       case "salvar": {
         const r = limparRascunho(b.rascunho);
         const pend = await salvar(r, "rascunho");

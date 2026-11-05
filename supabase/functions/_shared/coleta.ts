@@ -114,3 +114,8 @@ export function semVazios(r: RascunhoColeta): RascunhoColeta {
   };
   return limparRascunho(clean(r));
 }
+
+/** Occurrence still needs the seller: collection pending, or confirmed with "Agendar …" tasks left (no valid slot). */
+export function temPendenciaColeta(s: { coleta_status?: string | null; coleta_pendencias?: unknown }): boolean {
+  return s.coleta_status === "pendente" || (s.coleta_status === "confirmada" && Array.isArray(s.coleta_pendencias) && s.coleta_pendencias.length > 0);
+}
