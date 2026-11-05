@@ -33,6 +33,7 @@ export async function humanOpen(admin: Admin, orgId: string): Promise<{ open: bo
 export function alertCode(payload: Record<string, unknown>): string | null {
   if (typeof payload.tarefa_numero === "number") return `#T-${payload.tarefa_numero}`;
   if (typeof payload.atendimento_id === "string") return `#A-${payload.atendimento_id.slice(0, 8)}`;
+  if (typeof payload.ocorrencia_codigo === "string" && payload.ocorrencia_codigo) return `#${payload.ocorrencia_codigo}`;
   if (typeof payload.schedule_id === "string") return `#V-${payload.schedule_id.slice(0, 8)}`;
   return null;
 }
@@ -45,6 +46,12 @@ export function withAlertCode(message: string, codigo: string | null): string {
 
 export async function teamAlert(admin: Admin, orgId: string, event: string, message: string, payload: Record<string, unknown>,
   opts: { immediate?: boolean; dedupeKey?: string; extraUserIds?: string[] } = {}): Promise<void> {
+  if (typeof payload.schedule_id === "string" && !payload.ocorrencia_codigo && !payload.tarefa_numero && !payload.atendimento_id) {
+    try {
+      const { data } = await admin.from("schedules").select("ocorrencia_codigo").eq("id", payload.schedule_id).maybeSingle();
+      if (data?.ocorrencia_codigo) payload = { ...payload, ocorrencia_codigo: data.ocorrencia_codigo };
+    } catch { /* code is optional */ }
+  }
   const codigo = alertCode(payload);
   if (codigo) { payload = { ...payload, codigo }; message = withAlertCode(message, codigo); }
   try {
