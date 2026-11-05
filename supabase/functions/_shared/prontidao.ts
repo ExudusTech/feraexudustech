@@ -51,6 +51,19 @@ export function prazoNota(scheduledDate: string): Date {
   return new Date(d.getTime() - 86_400_000);
 }
 
+export interface ItemOperacao { product_id?: string | null; descricao: string; quantidade: string }
+export function itensTexto(itens: unknown): string {
+  const list = Array.isArray(itens) ? itens as ItemOperacao[] : [];
+  return list.length ? list.map((i) => `${i.quantidade}x ${i.descricao}`).join(", ") : "itens a definir";
+}
+export function tarefaMessage(kind: "nova" | "d1", t: { schedule_id: string; empresa_nome?: string | null; tipo_nota: string; data_visita: string; itens: unknown }): string {
+  const data = t.data_visita.split("-").reverse().join("/");
+  return [kind === "nova" ? "🧾 Nova nota para emitir" : "⏰ Nota pendente — visita amanhã",
+    `Cliente: ${t.empresa_nome ?? "Não informado"}`, `Tipo: ${TIPO_NOTA_LABEL[t.tipo_nota as TipoNota] ?? t.tipo_nota}`,
+    `Itens: ${itensTexto(t.itens)}`, `Visita: ${data} · prazo ${kind === "nova" ? "véspera até 17h" : "hoje até 17h"}`,
+    `Ver no Fera: ${FERA_URL}/tarefas`].join("\n");
+}
+
 // ─── CNPJ ───────────────────────────────────────────────────────────────────
 export function cnpjDigits(v?: string | null): string { return (v ?? "").replace(/\D/g, ""); }
 export function cnpjValido(v?: string | null): boolean {
