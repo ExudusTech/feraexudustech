@@ -16,6 +16,7 @@ import ScheduleFormDialog from "@/components/ekkoa/ScheduleFormDialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, addYears, subYears, isSameDay, isSameMonth, startOfYear, endOfYear, eachMonthOfInterval, eachWeekOfInterval, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ProntidaoBadge } from "@/components/agenda/MaterialPronto";
 import { cn } from "@/lib/utils";
 import { useLeads } from "@/hooks/use-leads";
 import { useClients } from "@/hooks/use-clients";
@@ -264,7 +265,7 @@ export default function Agenda() {
               <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => setExecId(s.id)}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1">
-                  <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</div>
+                  <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}</div>
                   <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
@@ -447,7 +448,7 @@ export default function Agenda() {
                 ) : (
                   filtered.map((s) => (
                     <TableRow key={s.id} className="cursor-pointer" onClick={() => setExecId(s.id)}>
-                      <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>}</TableCell>
+                      <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="mr-1">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                         {s.schedule_subtype ? (
