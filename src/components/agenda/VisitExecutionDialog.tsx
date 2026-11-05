@@ -23,6 +23,11 @@ import { clearDraft, faltasDetalhadas, readDraft, writeDraft, type FaltaAlvo } f
 import { FREQ_LABEL, FREQ_RAPIDAS } from "@/lib/base-instalada";
 import { serviceKind } from "@/lib/service-kind";
 import { spDate, sugestaoTermino } from "@/lib/visit-exec";
+import LevantamentoComercial from "@/components/agenda/LevantamentoComercial";
+import { ProntidaoBadge, MaterialFields, CnpjGate, MaterialSeparadoButton, emptyMaterial, type MaterialValue, type CnpjStatus } from "@/components/agenda/MaterialPronto";
+import { NotaLink } from "@/pages/Tarefas";
+import { OPERACAO_LABEL, TIPO_NOTA_LABEL, itensTexto, type OperacaoMaterial, type TipoNota } from "@/lib/prontidao";
+import { useCreateSchedule } from "@/hooks/use-schedules";
 import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
@@ -55,7 +60,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         (supabase as any).from("schedule_evidencias").select("*").eq("schedule_id", s.id).order("created_at"),
         (supabase as any).from("schedule_proximo_passo").select("*").eq("schedule_id", s.id).maybeSingle(),
       ]);
-      return { checkin: ck.data, evidencias: (ev.data ?? []) as any[], proximo: pp.data };
+      const tf = (s as any).operacao_material ? await (supabase as any).from("tarefas_faturamento").select("numero, status, numero_nota, pdf_path").eq("schedule_id", s.id).maybeSingle() : { data: null };
+      return { checkin: ck.data, evidencias: (ev.data ?? []) as any[], proximo: pp.data, tarefa: tf.data as any };
     },
   });
   const [status, setStatus] = useState(s?.status ?? "agendado");
@@ -82,7 +88,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       return { ...data, proxima: prox?.scheduled_date as string | undefined };
     },
   });
-  const proximoEfetivo = usaPlano ? (plano || frequencia ? "plano" : "") : proximo;
+  const [teste, setTeste] = useState<MaterialValue>({ ...emptyMaterial, operacao: "instalacao_teste", tipo_nota: "remessa_teste" });
+  const [testeCnpj, setTesteCnpj] = useState<CnpjStatus>({ ok: false });
+  const createSchedule = useCreateSchedule();
+  const proximoEfetivo = usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
   const [pts, setPts] = useState({ pending: 0, total: 0 });
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
   const [askLoc, setAskLoc] = useState(false); const [registroAberto, setRegistroAberto] = useState(false);
@@ -135,8 +144,15 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   });
 
   const checkout = () => run(async () => {
+    const ehTeste = proximo === "teste";
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
+    if (ehTeste) {
+      await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
+        end_time: null, schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", client_id: s!.client_id, lead_id: s!.lead_id,
+        location: s!.location, zip_code: s!.zip_code, assigned_to: s!.assigned_to, latitude: (s as any).latitude ?? null, longitude: (s as any).longitude ?? null,
+        operacao_material: "instalacao_teste", tipo_nota: teste.tipo_nota || "remessa_teste", itens: teste.itens } as any);
+    }
     setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done(); toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
@@ -149,6 +165,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
   const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
     fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
+  if (proximo === "teste" && !usaPlano) {
+    if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
+    if (!testeCnpj.ok) faltas.push({ label: "CNPJ da empresa", alvo: "proximo" });
+  }
   if (outroDia && !/^\d{2}:\d{2}$/.test(termino)) faltas.push({ label: "horário real de término", alvo: "resultado" });
   const irPara = (alvo: FaltaAlvo) => {
     if (alvo === "registro") setRegistroAberto(true);
@@ -165,6 +185,20 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
           <Badge>{STATUS_LABEL[status] ?? status}</Badge>
           {(status === "agendado" || status === "confirmado") && s.confirmacao_status && CONFIRMACAO_LABEL[s.confirmacao_status] && <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
         </div>
+        {(s as any).operacao_material && (
+          <div className="rounded-lg border p-3 space-y-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong>{OPERACAO_LABEL[(s as any).operacao_material as OperacaoMaterial]}</strong>
+              {(s as any).prontidao === "pronto" ? <Badge variant="outline" className="border-success text-success">Pronto: nota e material ok</Badge> : <ProntidaoBadge prontidao={(s as any).prontidao} />}
+            </div>
+            <p className="text-muted-foreground">Itens: {itensTexto((s as any).itens)}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {exec?.tarefa?.status === "concluida" ? <>Nota {exec.tarefa.numero_nota} ({TIPO_NOTA_LABEL[(s as any).tipo_nota as TipoNota] ?? "nota"}){exec.tarefa.pdf_path && <NotaLink path={exec.tarefa.pdf_path} />}</>
+                : <span className="text-muted-foreground">Nota com o Faturamento{exec?.tarefa ? ` (#T-${exec.tarefa.numero})` : ""}</span>}
+              {!finished && <MaterialSeparadoButton scheduleId={s.id} separado={(s as any).material_status === "separado"} onDone={done} />}
+            </div>
+          </div>
+        )}
         {s.location && <p className="text-sm text-muted-foreground flex gap-1"><MapPin className="h-4 w-4 mt-0.5 shrink-0" />{s.location}</p>}
 
         {exec?.checkin && (
@@ -202,6 +236,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                   <Button variant="outline" className="min-h-11" onClick={() => setAskLoc(false)}>Não</Button>
                 </div>
               </div>)}
+            {!tecnico && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
             {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
             {usaPlano && !registroAberto ? (
               <Button variant="ghost" className="w-full" onClick={() => setRegistroAberto(true)}>+ Foto ou observação extra (opcional)</Button>
@@ -247,9 +282,16 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                   <div className="grid grid-cols-3 gap-2">{FREQ_RAPIDAS.map((fq) => (
                     <Button key={fq} type="button" variant={frequencia === fq ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal" onClick={() => setFrequencia(fq)}>{FREQ_LABEL[fq]}</Button>))}</div>
                 </>)) : (<>
-                  <div className="grid grid-cols-2 gap-2">{([["novo_agendamento", "Agendar nova visita"], ["proposta", "Enviar proposta"], ["follow_up", "Retornar em…"], ["perdido", "Perdido"]] as const).map(([k, l]) => (
+                  <div className="grid grid-cols-2 gap-2">{([["novo_agendamento", "Agendar nova visita"], ["teste", "Instalação de teste"], ["proposta", "Enviar proposta"], ["follow_up", "Retornar em…"], ["perdido", "Perdido"]] as const).map(([k, l]) => (
                     <Button key={k} type="button" variant={proximo === k ? (k === "perdido" ? "destructive" : "default") : "outline"} className="min-h-12 h-auto whitespace-normal leading-tight"
                       onClick={() => { setProximo(k); setDataAlvo(""); }}>{l}</Button>))}</div>
+                  {proximo === "teste" && (
+                    <div className="space-y-2">
+                      <Input type="date" aria-label="Data da instalação de teste" value={dataAlvo} onChange={(e) => setDataAlvo(e.target.value)} />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><MaterialFields scheduleType="visita_tecnica" value={teste} onChange={(v) => setTeste({ ...v, operacao: "instalacao_teste" })} /></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2"><CnpjGate target={s.client_id ? { kind: "cliente", id: s.client_id } : s.lead_id ? { kind: "lead", id: s.lead_id } : null} onStatus={setTesteCnpj} /></div>
+                      <p className="text-xs text-muted-foreground">Ao encerrar, o Fera cria a instalação de teste com a tarefa de nota e a lista de material.</p>
+                    </div>)}
                   {(proximo === "follow_up" || proximo === "novo_agendamento") && (
                     <Input type="date" aria-label={proximo === "follow_up" ? "Data do retorno" : "Data sugerida (opcional)"} value={dataAlvo} onChange={(e) => setDataAlvo(e.target.value)} />)}
                   {proximo === "proposta" && <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="O que vai na proposta (opcional)" maxLength={300} />}
