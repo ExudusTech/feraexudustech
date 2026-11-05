@@ -4119,12 +4119,198 @@ async function confirmarColetaOcorrencia(params: Record<string, unknown>): Promi
 }
 
 
+// ─── Indicadores (flora_equipe acao=indicadores): short role-based answers + optional PNG panorama ───
+const FONT5X7: Record<string, number[]> = {
+  "0": [0x3E, 0x51, 0x49, 0x45, 0x3E], "1": [0x00, 0x42, 0x7F, 0x40, 0x00], "2": [0x42, 0x61, 0x51, 0x49, 0x46], "3": [0x21, 0x41, 0x45, 0x4B, 0x31],
+  "4": [0x18, 0x14, 0x12, 0x7F, 0x10], "5": [0x27, 0x45, 0x45, 0x45, 0x39], "6": [0x3C, 0x4A, 0x49, 0x49, 0x30], "7": [0x01, 0x71, 0x09, 0x05, 0x03],
+  "8": [0x36, 0x49, 0x49, 0x49, 0x36], "9": [0x06, 0x49, 0x49, 0x29, 0x1E],
+  A: [0x7E, 0x11, 0x11, 0x11, 0x7E], B: [0x7F, 0x49, 0x49, 0x49, 0x36], C: [0x3E, 0x41, 0x41, 0x41, 0x22], D: [0x7F, 0x41, 0x41, 0x22, 0x1C],
+  E: [0x7F, 0x49, 0x49, 0x49, 0x41], F: [0x7F, 0x09, 0x09, 0x09, 0x01], G: [0x3E, 0x41, 0x49, 0x49, 0x7A], H: [0x7F, 0x08, 0x08, 0x08, 0x7F],
+  I: [0x00, 0x41, 0x7F, 0x41, 0x00], J: [0x20, 0x40, 0x41, 0x3F, 0x01], K: [0x7F, 0x08, 0x14, 0x22, 0x41], L: [0x7F, 0x40, 0x40, 0x40, 0x40],
+  M: [0x7F, 0x02, 0x0C, 0x02, 0x7F], N: [0x7F, 0x04, 0x08, 0x10, 0x7F], O: [0x3E, 0x41, 0x41, 0x41, 0x3E], P: [0x7F, 0x09, 0x09, 0x09, 0x06],
+  Q: [0x3E, 0x41, 0x51, 0x21, 0x5E], R: [0x7F, 0x09, 0x19, 0x29, 0x46], S: [0x46, 0x49, 0x49, 0x49, 0x31], T: [0x01, 0x01, 0x7F, 0x01, 0x01],
+  U: [0x3F, 0x40, 0x40, 0x40, 0x3F], V: [0x1F, 0x20, 0x40, 0x20, 0x1F], W: [0x3F, 0x40, 0x38, 0x40, 0x3F], X: [0x63, 0x14, 0x08, 0x14, 0x63],
+  Y: [0x07, 0x08, 0x70, 0x08, 0x07], Z: [0x61, 0x51, 0x49, 0x45, 0x43],
+  ":": [0x00, 0x36, 0x36, 0x00, 0x00], "-": [0x08, 0x08, 0x08, 0x08, 0x08], ".": [0x00, 0x60, 0x60, 0x00, 0x00], "/": [0x20, 0x10, 0x08, 0x04, 0x02],
+  "%": [0x23, 0x13, 0x08, 0x64, 0x62], "#": [0x14, 0x7F, 0x14, 0x7F, 0x14], "(": [0x00, 0x1C, 0x22, 0x41, 0x00], ")": [0x00, 0x41, 0x22, 0x1C, 0x00],
+  ",": [0x00, 0x50, 0x30, 0x00, 0x00],
+};
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(buf: Uint8Array): number { let c = 0xFFFFFFFF; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+/** Plain bar chart PNG (title + labelled horizontal bars) rendered without any library. Returns null when compression is unavailable. */
+async function graficoPng(titulo: string, barras: Array<{ rotulo: string; valor: number }>): Promise<Uint8Array | null> {
+  const CS = (globalThis as any).CompressionStream;
+  if (!CS) return null;
+  const W = 800, rowH = 44, H = 90 + Math.max(1, barras.length) * rowH + 20;
+  const px = new Uint8Array(W * H * 3);
+  const fill = (x0: number, y0: number, w: number, h: number, rgb: number[]) => {
+    for (let y = Math.max(0, y0); y < Math.min(H, y0 + h); y++) for (let x = Math.max(0, x0); x < Math.min(W, x0 + w); x++) { const i = (y * W + x) * 3; px[i] = rgb[0]; px[i + 1] = rgb[1]; px[i + 2] = rgb[2]; }
+  };
+  const texto = (s: string, x: number, y: number, sc: number, rgb: number[]) => {
+    const t = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    for (const ch of t) { const g = FONT5X7[ch]; if (g) g.forEach((col, cx) => { for (let cy = 0; cy < 7; cy++) if (col & (1 << cy)) fill(x + cx * sc, y + cy * sc, sc, sc, rgb); }); x += 6 * sc; }
+  };
+  fill(0, 0, W, H, [12, 12, 14]);
+  texto(titulo.slice(0, 40), 24, 24, 4, [240, 240, 240]);
+  fill(24, 64, W - 48, 2, [225, 29, 42]);
+  const max = Math.max(1, ...barras.map((b) => b.valor));
+  barras.forEach((b, i) => {
+    const y = 84 + i * rowH;
+    texto(b.rotulo.slice(0, 22), 24, y + 8, 2, [200, 200, 200]);
+    const w = Math.round((b.valor / max) * 330);
+    fill(310, y + 4, Math.max(w, 3), 24, [225, 29, 42]);
+    texto(String(b.valor), 320 + Math.max(w, 3), y + 8, 2, [240, 240, 240]);
+  });
+  const raw = new Uint8Array(H * (W * 3 + 1));
+  for (let y = 0; y < H; y++) { raw[y * (W * 3 + 1)] = 0; raw.set(px.subarray(y * W * 3, (y + 1) * W * 3), y * (W * 3 + 1) + 1); }
+  const zipped = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CS("deflate"))).arrayBuffer());
+  const chunk = (type: string, data: Uint8Array) => {
+    const out = new Uint8Array(12 + data.length); const dv = new DataView(out.buffer);
+    dv.setUint32(0, data.length); out.set(new TextEncoder().encode(type), 4); out.set(data, 8);
+    dv.setUint32(8 + data.length, crc32(out.subarray(4, 8 + data.length))); return out;
+  };
+  const ihdr = new Uint8Array(13); const dv = new DataView(ihdr.buffer); dv.setUint32(0, W); dv.setUint32(4, H); ihdr.set([8, 2, 0, 0, 0], 8);
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", zipped), chunk("IEND", new Uint8Array())];
+  const png = new Uint8Array(parts.reduce((a, p) => a + p.length, 0)); let o = 0; for (const p of parts) { png.set(p, o); o += p.length; }
+  return png;
+}
+
+const REPORT_BUCKET = "team-reports";
+/** Uploads the PNG privately, signs it for 1h and sends it to the chat through the same GPT Maker send-message used for product images. */
+async function enviarImagemEquipe(supabase: ReturnType<typeof getClient>, chatId: string, png: Uint8Array, legenda: string): Promise<boolean> {
+  try {
+    if (!GPTMAKER_API_TOKEN) return false;
+    const path = `${NITSCLEAN_ORG_ID}/${spToday()}/${crypto.randomUUID()}.png`;
+    const { error } = await supabase.storage.from(REPORT_BUCKET).upload(path, png, { contentType: "image/png", upsert: false });
+    if (error) { console.warn("[mcp] report upload failed"); return false; }
+    const { data: signed } = await supabase.storage.from(REPORT_BUCKET).createSignedUrl(path, 3600);
+    if (!signed?.signedUrl) return false;
+    const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await fetch(`https://api.gptmaker.ai/v2/chat/${encodeURIComponent(chatId)}/send-message`, {
+        method: "POST", signal: ctrl.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${GPTMAKER_API_TOKEN}` },
+        body: JSON.stringify({ image: signed.signedUrl, message: legenda }),
+      });
+      if (!res.ok) console.warn("[mcp] report send failed", `HTTP_${res.status}`);
+      return res.ok;
+    } finally { clearTimeout(timer); }
+  } catch (e) { console.warn("[mcp] report send failed", (e as Error)?.name === "AbortError" ? "TIMEOUT" : "NETWORK"); return false; }
+}
+
+function ehPanorama(texto: string): boolean { return /como estamos|panorama|funil|semana|semanal|resumo geral|vis[aã]o geral|dashboard|gr[aá]fico/i.test(texto); }
+function visaoIndicadores(papeis: string[]): "gestor" | "faturamento" | "campo" {
+  if (papeis.some((r) => PRIVILEGED_ROLES.includes(r))) return "gestor";
+  if (papeis.includes("faturamento") && !papeis.some((r) => ["vendedor", "consultor_tecnico"].includes(r))) return "faturamento";
+  return "campo";
+}
+const addDiasIso = (iso: string, n: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const arr = (v: unknown): any[] => Array.isArray(v) ? v : [];
+const brDia = (iso: string) => iso.split("-").reverse().slice(0, 2).join("/");
+
+async function indicadores(params: Record<string, unknown>): Promise<McpResponse> {
+  return withTeam(async (u, supabase) => {
+    const texto = typeof params.texto === "string" ? params.texto : "";
+    const hoje = spToday(), amanha = addDiasIso(hoje, 1);
+    const semana = /semana/i.test(texto), desde = semana ? addDiasIso(hoje, -6) : hoje;
+    const visao = visaoIndicadores(u.papeis);
+    const org = NITSCLEAN_ORG_ID;
+    const linhas: string[] = []; let barras: Array<{ rotulo: string; valor: number }> = []; let titulo = "";
+    const amanhaSemNota = async (proprio: boolean) => {
+      let q = supabase.from("schedules").select("id, ocorrencia_codigo, title, prontidao, nota_status, material_status").eq("organization_id", org)
+        .eq("scheduled_date", amanha).in("status", ["agendado", "confirmado"]).neq("prontidao", "pronto");
+      if (proprio) q = q.eq("assigned_to", u.user_id);
+      return arr((await q.limit(50)).data);
+    };
+    if (visao === "gestor") {
+      const [leadsNovos, leadsAbertos, stages, visitas, coletas, atend, atrasadas, semNota, propostas] = await Promise.all([
+        supabase.from("leads").select("id").eq("organization_id", org).gte("created_at", `${desde}T03:00:00Z`).limit(1000),
+        supabase.from("leads").select("stage_id").eq("organization_id", org).is("client_id", null).limit(5000),
+        supabase.from("lead_stages").select("id, nome, ordem, tipo").eq("organization_id", org).eq("ativo", true).order("ordem"),
+        supabase.from("schedules").select("status").eq("organization_id", org).gte("scheduled_date", desde).lte("scheduled_date", hoje).in("status", ["concluido", "nao_realizado"]).limit(2000),
+        supabase.from("schedules").select("id").eq("organization_id", org).eq("coleta_status", "pendente").limit(500),
+        supabase.from("atendimentos").select("status, aberto_em, assumido_em").eq("organization_id", org).gte("aberto_em", `${addDiasIso(hoje, -30)}T03:00:00Z`).limit(2000),
+        supabase.from("schedules").select("id").eq("organization_id", org).eq("schedule_type", "manutencao").lt("scheduled_date", hoje).in("status", ["agendado", "confirmado"]).limit(500),
+        amanhaSemNota(false),
+        supabase.from("proposals").select("id").eq("organization_id", org).in("status", ["rascunho", "enviada"]).limit(1000),
+      ]);
+      const porEtapa = new Map<string, number>(); for (const l of arr(leadsAbertos.data)) porEtapa.set(l.stage_id, (porEtapa.get(l.stage_id) ?? 0) + 1);
+      const etapas = arr(stages.data).filter((s: any) => !["ganho", "perdido", "cliente"].includes(s.tipo)).map((s: any) => ({ rotulo: s.nome, valor: porEtapa.get(s.id) ?? 0 }));
+      const vs = arr(visitas.data), feitas = vs.filter((v) => v.status === "concluido").length;
+      const at = arr(atend.data), abertos = at.filter((a) => ["aberto", "em_atendimento"].includes(a.status)).length;
+      const tempos = at.filter((a) => a.assumido_em && a.aberto_em && a.assumido_em >= `${desde}`).map((a) => (Date.parse(a.assumido_em) - Date.parse(a.aberto_em)) / 60000).filter((m) => m >= 0);
+      const tMedio = tempos.length ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null;
+      const per = semana ? "na semana" : "hoje";
+      titulo = semana ? "Fera - semana" : "Fera - hoje";
+      linhas.push(`📊 ${semana ? "Semana" : "Hoje"}:`,
+        `• Leads novos ${per}: ${arr(leadsNovos.data).length} — funil: ${etapas.map((e) => `${e.rotulo} ${e.valor}`).join(", ") || "sem etapas"} ${feraLink("/leads")}`,
+        `• Visitas ${per}: ${feitas} feitas, ${vs.length - feitas} não realizadas ${feraLink("/agenda")}`,
+        `• Ocorrências com informações pendentes: ${arr(coletas.data).length} ${feraLink("/hoje")}`,
+        `• Atendimentos abertos: ${abertos}${tMedio !== null ? ` — resposta média ${tMedio} min` : ""} ${feraLink("/atendimentos")}`,
+        `• Manutenções atrasadas: ${arr(atrasadas.data).length} ${feraLink("/manutencoes")}`,
+        `• Amanhã sem nota/material: ${semNota.length} ${feraLink("/tarefas")}`,
+        `• Propostas abertas: ${arr(propostas.data).length} ${feraLink("/propostas")}`);
+      barras = /funil/i.test(texto) && etapas.length ? etapas : [
+        { rotulo: "Leads novos", valor: arr(leadsNovos.data).length }, { rotulo: "Visitas feitas", valor: feitas },
+        { rotulo: "Info pendente", valor: arr(coletas.data).length }, { rotulo: "Atend. abertos", valor: abertos },
+        { rotulo: "Manut. atrasadas", valor: arr(atrasadas.data).length }, { rotulo: "Amanha sem nota", valor: semNota.length },
+        { rotulo: "Propostas abertas", valor: arr(propostas.data).length }];
+      if (/funil/i.test(texto)) titulo = "Funil de leads";
+    } else if (visao === "faturamento") {
+      const [{ data: tarefas }, semNota] = await Promise.all([
+        supabase.from("tarefas_faturamento").select("acao, empresa_nome, prazo, tipo_nota").eq("organization_id", org).eq("status", "aberta").order("prazo").limit(100),
+        amanhaSemNota(false),
+      ]);
+      const t = arr(tarefas), nome: Record<string, string> = { emitir: "Emitir", cancelar: "Cancelar", devolucao: "Devolução" };
+      const fmtPrazo = (p: string | null) => p ? new Date(p).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "sem prazo";
+      titulo = "Notas abertas";
+      linhas.push(`🧾 Notas abertas: ${t.length} ${feraLink("/tarefas")}`);
+      for (const a of ["emitir", "cancelar", "devolucao"]) {
+        const g = t.filter((x) => x.acao === a); if (!g.length) continue;
+        linhas.push(`• ${nome[a]} (${g.length}): ${g.slice(0, 4).map((x) => `${x.empresa_nome ?? "?"} até ${fmtPrazo(x.prazo)}`).join("; ")}${g.length > 4 ? "…" : ""}`);
+      }
+      linhas.push(`• Operações de amanhã sem nota: ${semNota.filter((s) => s.nota_status === "pendente").length}`);
+      barras = ["emitir", "cancelar", "devolucao"].map((a) => ({ rotulo: nome[a], valor: t.filter((x) => x.acao === a).length }));
+    } else {
+      const [{ data: ag }, { data: pend }, { data: props }] = await Promise.all([
+        supabase.from("schedules").select("id, ocorrencia_codigo, title, scheduled_date, start_time, itens, material_status, prontidao").eq("organization_id", org)
+          .eq("assigned_to", u.user_id).in("scheduled_date", [hoje, amanha]).in("status", ["agendado", "confirmado", "em_atendimento"]).order("scheduled_date").order("start_time").limit(40),
+        supabase.from("schedules").select("ocorrencia_codigo, title").eq("organization_id", org).eq("assigned_to", u.user_id).eq("coleta_status", "pendente").limit(20),
+        supabase.from("proposals").select("title, status").eq("organization_id", org).in("status", ["rascunho", "enviada"]).or(`assigned_to.eq.${u.user_id},created_by.eq.${u.user_id}`).limit(20),
+      ]);
+      const vis = arr(ag), linha = (v: any) => `${String(v.start_time ?? "").slice(0, 5) || "--:--"} ${v.title}${v.ocorrencia_codigo ? ` #${v.ocorrencia_codigo}` : ""}`;
+      titulo = "Minha agenda";
+      for (const [dia, rot] of [[hoje, "Hoje"], [amanha, "Amanhã"]] as const) {
+        const d = vis.filter((v) => v.scheduled_date === dia);
+        linhas.push(`${rot} (${brDia(dia)}): ${d.length ? d.map(linha).join("; ") : "nada agendado"}`);
+      }
+      const levar = new Map<string, number>();
+      for (const v of vis.filter((x) => x.material_status === "pendente" || x.material_status === "separado")) for (const i of arr(v.itens)) levar.set(i.descricao, (levar.get(i.descricao) ?? 0) + (Number(String(i.quantidade).replace(",", ".")) || 0));
+      if (levar.size) linhas.push(`Levar: ${[...levar].map(([d, q]) => `${q}x ${d}`).join(", ")}`);
+      linhas.push(`Ocorrências com info pendente: ${arr(pend).length ? arr(pend).map((p) => `#${p.ocorrencia_codigo}`).join(", ") : "nenhuma"}`);
+      linhas.push(`Propostas abertas: ${arr(props).length}`);
+      linhas.push(`${feraLink("/hoje")} · ${feraLink("/propostas")}`);
+      barras = [{ rotulo: "Hoje", valor: vis.filter((v) => v.scheduled_date === hoje).length }, { rotulo: "Amanha", valor: vis.filter((v) => v.scheduled_date === amanha).length },
+        { rotulo: "Info pendente", valor: arr(pend).length }, { rotulo: "Propostas", valor: arr(props).length }];
+    }
+    let imagem_enviada = false;
+    if (ehPanorama(texto)) {
+      try {
+        const png = await graficoPng(titulo, barras);
+        if (png) imagem_enviada = await enviarImagemEquipe(supabase, String(params.chat_id), png, titulo);
+      } catch { imagem_enviada = false; }
+    }
+    const msg = linhas.join("\n");
+    return ok({ visao, imagem_enviada, mensagem_para_equipe: msg.length > 1200 ? `${msg.slice(0, 1197)}...` : msg });
+  }, params);
+}
+
 // ─── flora_equipe: single dispatcher (one GPT Maker intent) over the team tools ───
 const FLORA_EQUIPE_ACOES: Record<string, string> = {
   minha_agenda: "minha_agenda", agenda_equipe: "agenda_equipe", listar_pendencias: "listar_pendencias", consultar: "consultar_cliente_ou_lead",
   criar_lead: "criar_lead_equipe", agendar_visita: "agendar_visita_equipe", registrar_localizacao: "registrar_localizacao_checkin",
   registrar_nota: "registrar_nota_visita", anexar_coleta: "anexar_coleta_ocorrencia", pendencias_ocorrencia: "pendencias_ocorrencia",
-  confirmar_coleta: "confirmar_coleta_ocorrencia", contexto_aviso: "contexto_aviso",
+  confirmar_coleta: "confirmar_coleta_ocorrencia", contexto_aviso: "contexto_aviso", indicadores: "indicadores",
 };
 const CAMPO_ALIAS: Record<string, string> = {
   empresa: "empresa", nome: "empresa", estabelecimento: "empresa", cidade: "cidade", endereco: "endereco", cnpj: "cnpj",
@@ -4246,7 +4432,7 @@ const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResp
   consultar_cliente_ou_lead: consultarClienteOuLead, criar_lead_equipe: criarLeadEquipe, agendar_visita_equipe: agendarVisitaEquipe,
   registrar_localizacao_checkin: registrarLocalizacaoCheckin, registrar_nota_visita: registrarNotaVisita,
   assumir_atendimento: assumirAtendimento, resolver_atendimento: resolverAtendimento, contexto_aviso: contextoAviso,
-  marcar_material_separado: marcarMaterialSeparado, flora_equipe: floraEquipe,
+  marcar_material_separado: marcarMaterialSeparado, flora_equipe: floraEquipe, indicadores,
 };
 
 const CHAT = { chat_id: { type: "string", description: "chat_id da conversa atual (identifica o usuário da equipe pelo telefone)" } };
