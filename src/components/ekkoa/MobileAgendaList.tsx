@@ -1,4 +1,5 @@
 import { ProntidaoBadge } from "@/components/agenda/MaterialPronto";
+import { OcorrenciaTag } from "@/components/agenda/ColetaOcorrencia";
 import { useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -63,6 +64,7 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
                   <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
                   {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
+                  <OcorrenciaTag s={s as any} />
                   {s.status !== "agendado" && <Badge variant={s.status === "nao_realizado" ? "destructive" : "default"}>{STATUS_LABEL[s.status] ?? s.status}</Badge>}
                   {s.confirmacao_status && ["confirmado", "remarcar", "sem_resposta"].includes(s.confirmacao_status) && s.status === "agendado" &&
                     <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}

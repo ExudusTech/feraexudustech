@@ -1,4 +1,5 @@
 import { ProntidaoBadge } from "@/components/agenda/MaterialPronto";
+import { OcorrenciaTag } from "@/components/agenda/ColetaOcorrencia";
 import { addDays, format } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -82,7 +83,7 @@ export default function FieldOpsPanel() {
         <span className="flex-1 truncate text-sm">{s.title}</span>
         {late >= 15 && <Badge variant="destructive">Atrasada {late} min</Badge>}
         {fora && <Badge variant="destructive">Fora do local</Badge>}
-        {["agendado", "confirmado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
+        {["agendado", "confirmado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} />
         <Badge variant={s.status === "concluido" ? "secondary" : "outline"}>{STATUS_LABEL[s.status] ?? s.status}</Badge>
       </button></li>
     );
