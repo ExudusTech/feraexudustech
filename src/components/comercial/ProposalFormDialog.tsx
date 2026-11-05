@@ -11,6 +11,7 @@ import { useCreateProposal, useUpdateProposal, type Proposal } from "@/hooks/use
 import { useAcceptProposalAndCreateOrder, useRejectProposal } from "@/hooks/use-proposal-automation";
 import { CheckCircle, XCircle, ShoppingCart } from "lucide-react";
 import ProposalAcceptPanel from "@/components/comercial/ProposalAcceptPanel";
+import ProposalPdfActions from "@/components/comercial/ProposalPdfActions";
 
 interface Props {
   open: boolean;
@@ -36,7 +37,7 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
   const [form, setForm] = useState({
     title: "", description: "", client_id: "", status: "rascunho",
     total_value: 0, discount_percent: 0, discount_value: 0, final_value: 0,
-    valid_until: "", notes: "",
+    valid_until: "", notes: "", forma_pagamento: "", prazo_entrega: "", periodicidade_manutencao: "",
   });
 
   useEffect(() => {
@@ -47,9 +48,10 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
         total_value: proposal.total_value, discount_percent: proposal.discount_percent,
         discount_value: proposal.discount_value, final_value: proposal.final_value,
         valid_until: proposal.valid_until || "", notes: proposal.notes || "",
+        forma_pagamento: (proposal as any).forma_pagamento || "", prazo_entrega: (proposal as any).prazo_entrega || "", periodicidade_manutencao: (proposal as any).periodicidade_manutencao || "",
       });
     } else {
-      setForm({ title: "", description: "", client_id: "", status: "rascunho", total_value: 0, discount_percent: 0, discount_value: 0, final_value: 0, valid_until: "", notes: "" });
+      setForm({ title: "", description: "", client_id: "", status: "rascunho", total_value: 0, discount_percent: 0, discount_value: 0, final_value: 0, valid_until: "", notes: "", forma_pagamento: "", prazo_entrega: "", periodicidade_manutencao: "" });
     }
   }, [proposal, open]);
 
@@ -60,7 +62,7 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...form, client_id: form.client_id || null, valid_until: form.valid_until || null };
+    const payload = { ...form, client_id: form.client_id || null, valid_until: form.valid_until || null, forma_pagamento: form.forma_pagamento || null, prazo_entrega: form.prazo_entrega || null, periodicidade_manutencao: form.periodicidade_manutencao || null };
     if (proposal) {
       updateProposal.mutate({ id: proposal.id, ...payload }, { onSuccess: () => onOpenChange(false) });
     } else {
@@ -124,6 +126,7 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
         {isEdit && (
           <>
             {!proposal.client_id && proposal.leads && <p className="text-sm text-muted-foreground">Lead: {proposal.leads.empresa_nome || proposal.leads.company || proposal.leads.title}</p>}
+            <ProposalPdfActions proposal={proposal} />
             <ProposalAcceptPanel proposal={proposal} onDone={() => onOpenChange(false)} />
             <Separator />
           </>
@@ -175,6 +178,19 @@ export default function ProposalFormDialog({ open, onOpenChange, proposal }: Pro
             <div className="space-y-2">
               <Label>Validade</Label>
               <Input type="date" value={form.valid_until} onChange={(e) => setForm({ ...form, valid_until: e.target.value })} />
+              <p className="text-xs text-muted-foreground">Em branco: padrão de Configurações (10 dias).</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Forma de pagamento</Label>
+              <Input placeholder="Padrão de Configurações" value={form.forma_pagamento} onChange={(e) => setForm({ ...form, forma_pagamento: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Prazo de entrega</Label>
+              <Input placeholder="Padrão de Configurações" value={form.prazo_entrega} onChange={(e) => setForm({ ...form, prazo_entrega: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Manutenção dos aparelhos</Label>
+              <Input placeholder="Padrão de Configurações" value={form.periodicidade_manutencao} onChange={(e) => setForm({ ...form, periodicidade_manutencao: e.target.value })} />
             </div>
           </div>
           <div className="space-y-2">

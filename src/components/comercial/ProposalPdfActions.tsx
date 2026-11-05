@@ -16,7 +16,7 @@ export default function ProposalPdfActions({ proposal }: { proposal: Proposal })
   const { data: itens = [] } = useProposalItems(proposal.id);
   const [gerado, setGerado] = useState<Gerado | null>(null);
   const [loading, setLoading] = useState(false);
-  const semPreco = itens.filter((i) => i.unit_price == null && !i.comodato_id).length;
+  const semPreco = itens.filter((i) => i.unit_price == null).length;
 
   const gerar = async () => {
     setLoading(true);
