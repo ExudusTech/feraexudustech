@@ -4164,7 +4164,7 @@ async function graficoPng(titulo: string, barras: Array<{ rotulo: string; valor:
   });
   const raw = new Uint8Array(H * (W * 3 + 1));
   for (let y = 0; y < H; y++) { raw[y * (W * 3 + 1)] = 0; raw.set(px.subarray(y * W * 3, (y + 1) * W * 3), y * (W * 3 + 1) + 1); }
-  const zipped = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new CS("deflate"))).arrayBuffer());
+  const zipped = new Uint8Array(await new Response(new Response(raw).body!.pipeThrough(new CS("deflate"))).arrayBuffer());
   const chunk = (type: string, data: Uint8Array) => {
     const out = new Uint8Array(12 + data.length); const dv = new DataView(out.buffer);
     dv.setUint32(0, data.length); out.set(new TextEncoder().encode(type), 4); out.set(data, 8);
