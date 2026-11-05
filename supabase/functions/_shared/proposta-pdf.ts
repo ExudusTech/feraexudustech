@@ -46,15 +46,25 @@ export interface PropostaPdfData {
 }
 
 /** Brand partners shown on the PDF: active catalog brands, never Multi Química. */
-export function parceirosAtivos(brands: (string | null | undefined)[]): string[] {
-  const seen = new Map<string, string>();
+export function parceirosAtivos(brands: (string | null | undefined)[], max = 12): string[] {
+  const seen = new Map<string, string>(); const count = new Map<string, number>();
   for (const b of brands) {
     const name = (b ?? "").trim(); if (!name) continue;
     const key = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
     if (key.includes("multiquimica")) continue;
     if (!seen.has(key)) seen.set(key, name);
+    count.set(key, (count.get(key) ?? 0) + 1);
   }
-  return [...seen.values()];
+  return [...seen.entries()].sort((a, b) => (count.get(b[0]) ?? 0) - (count.get(a[0]) ?? 0)).slice(0, max).map(([, n]) => n);
+}
+
+/** Brazilian phone display: 5522992668769 -> (22) 99266-8769. Unknown shapes are returned as typed. */
+export function fmtTel(v?: string | null): string {
+  if (!v) return ""; let d = v.replace(/\D/g, "");
+  if (d.length >= 12 && d.startsWith("55")) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v;
 }
 
 export const itensSemPreco = (itens: { unit_price: number | null }[]) => itens.filter((i) => i.unit_price == null).length;
@@ -209,8 +219,8 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
       });
     };
     const r = d.cliente.responsavel ?? {};
-    card(M, cw, "CLIENTE", [["", d.cliente.razao], ["CNPJ", d.cliente.cnpj ?? ""], ["Responsável", r.nome ?? ""], ["E-mail", r.email ?? ""], ["Telefone", r.telefone ?? ""]]);
-    card(M + cw + 14, cw, "CONSULTOR NITSCLEAN", [["", d.consultor.nome || "Equipe NitsClean"], ["Telefone", d.consultor.telefone ?? ""], ["WhatsApp", d.config.whatsapp], ["Site", d.config.site]]);
+    card(M, cw, "CLIENTE", [["", d.cliente.razao], ["CNPJ", d.cliente.cnpj ?? ""], ["Responsável", r.nome ?? ""], ["E-mail", r.email ?? ""], ["Telefone", fmtTel(r.telefone)]]);
+    card(M + cw + 14, cw, "CONSULTOR NITSCLEAN", [["", d.consultor.nome || "Equipe NitsClean"], ["Telefone", fmtTel(d.consultor.telefone)], ["WhatsApp", d.config.whatsapp], ["Site", d.config.site]]);
     y = top - h - 30;
   }
 
