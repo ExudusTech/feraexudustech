@@ -7006,6 +7006,7 @@ export type Database = {
       }
       proposal_items: {
         Row: {
+          comodato_id: string | null
           created_at: string
           description: string
           discount_percent: number | null
@@ -7015,10 +7016,11 @@ export type Database = {
           proposal_id: string
           quantity: number
           sort_order: number | null
-          total_price: number
-          unit_price: number
+          total_price: number | null
+          unit_price: number | null
         }
         Insert: {
+          comodato_id?: string | null
           created_at?: string
           description: string
           discount_percent?: number | null
@@ -7028,10 +7030,11 @@ export type Database = {
           proposal_id: string
           quantity?: number
           sort_order?: number | null
-          total_price?: number
-          unit_price?: number
+          total_price?: number | null
+          unit_price?: number | null
         }
         Update: {
+          comodato_id?: string | null
           created_at?: string
           description?: string
           discount_percent?: number | null
@@ -7041,10 +7044,17 @@ export type Database = {
           proposal_id?: string
           quantity?: number
           sort_order?: number | null
-          total_price?: number
-          unit_price?: number
+          total_price?: number | null
+          unit_price?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "proposal_items_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "proposal_items_organization_id_fkey"
             columns: ["organization_id"]
@@ -7079,8 +7089,10 @@ export type Database = {
           discount_value: number | null
           final_value: number
           id: string
+          lead_id: string | null
           notes: string | null
           organization_id: string
+          origem_schedule_id: string | null
           status: string
           title: string
           total_value: number
@@ -7097,8 +7109,10 @@ export type Database = {
           discount_value?: number | null
           final_value?: number
           id?: string
+          lead_id?: string | null
           notes?: string | null
           organization_id: string
+          origem_schedule_id?: string | null
           status?: string
           title: string
           total_value?: number
@@ -7115,8 +7129,10 @@ export type Database = {
           discount_value?: number | null
           final_value?: number
           id?: string
+          lead_id?: string | null
           notes?: string | null
           organization_id?: string
+          origem_schedule_id?: string | null
           status?: string
           title?: string
           total_value?: number
@@ -7132,10 +7148,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "proposals_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "proposals_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_origem_schedule_id_fkey"
+            columns: ["origem_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
             referencedColumns: ["id"]
           },
         ]
@@ -7530,6 +7560,7 @@ export type Database = {
           plano_manutencao_id: string | null
           prontidao: string
           prontidao_alertado_em: string | null
+          proposta_id: string | null
           resultado: string | null
           resumo_execucao: string | null
           schedule_subtype: string | null
@@ -7600,6 +7631,7 @@ export type Database = {
           plano_manutencao_id?: string | null
           prontidao?: string
           prontidao_alertado_em?: string | null
+          proposta_id?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -7670,6 +7702,7 @@ export type Database = {
           plano_manutencao_id?: string | null
           prontidao?: string
           prontidao_alertado_em?: string | null
+          proposta_id?: string | null
           resultado?: string | null
           resumo_execucao?: string | null
           schedule_subtype?: string | null
@@ -7719,6 +7752,13 @@ export type Database = {
             columns: ["plano_manutencao_id"]
             isOneToOne: false
             referencedRelation: "planos_manutencao"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedules_proposta_id_fkey"
+            columns: ["proposta_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
             referencedColumns: ["id"]
           },
         ]

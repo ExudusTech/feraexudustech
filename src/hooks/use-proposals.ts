@@ -8,6 +8,8 @@ export interface Proposal {
   id: string;
   organization_id: string;
   client_id: string | null;
+  lead_id?: string | null;
+  origem_schedule_id?: string | null;
   created_by: string;
   assigned_to: string | null;
   title: string;
@@ -22,6 +24,7 @@ export interface Proposal {
   created_at: string;
   updated_at: string | null;
   clients?: { name: string } | null;
+  leads?: { empresa_nome: string | null; company: string | null; title: string | null; cnpj: string | null } | null;
 }
 
 export interface ProposalItem {
@@ -31,9 +34,10 @@ export interface ProposalItem {
   organization_id: string;
   description: string;
   quantity: number;
-  unit_price: number;
+  unit_price: number | null;
   discount_percent: number;
-  total_price: number;
+  total_price: number | null;
+  comodato_id?: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -47,7 +51,7 @@ export function useProposals() {
     queryFn: async () => {
       let query = supabase
         .from("proposals")
-        .select("*, clients(name)")
+        .select("*, clients(name), leads(empresa_nome, company, title, cnpj)")
         .order("created_at", { ascending: false });
 
       // User role: only see own proposals
@@ -112,7 +116,7 @@ export function useUpdateProposal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Proposal> & { id: string }) => {
-      const { clients, ...cleanUpdates } = updates as any;
+      const { clients, leads, ...cleanUpdates } = updates as any;
       const { data, error } = await supabase.from("proposals").update(cleanUpdates).eq("id", id).select().single();
       if (error) throw error;
       return data;
@@ -168,6 +172,26 @@ export function useDeleteProposalItem() {
       return proposalId;
     },
     onSuccess: (proposalId) => { qc.invalidateQueries({ queryKey: ["proposal_items", proposalId] }); },
+    onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
+  });
+}
+
+/** Sets a unit price on a proposal item and recomputes the proposal total (items without price count as 0). */
+export function useUpdateProposalItemPrice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ item, price }: { item: ProposalItem; price: number | null }) => {
+      const total = price == null ? null : Math.round(price * Number(item.quantity) * 100) / 100;
+      const { error } = await supabase.from("proposal_items").update({ unit_price: price, total_price: total }).eq("id", item.id);
+      if (error) throw error;
+      const { data: all } = await supabase.from("proposal_items").select("total_price").eq("proposal_id", item.proposal_id);
+      const soma = (all ?? []).reduce((a, x: any) => a + Number(x.total_price ?? 0), 0);
+      const { data: p } = await supabase.from("proposals").select("discount_percent").eq("id", item.proposal_id).single();
+      const desc = soma * (Number(p?.discount_percent ?? 0) / 100);
+      await supabase.from("proposals").update({ total_value: soma, discount_value: desc, final_value: soma - desc }).eq("id", item.proposal_id);
+      return item.proposal_id;
+    },
+    onSuccess: (id) => { qc.invalidateQueries({ queryKey: ["proposal_items", id] }); qc.invalidateQueries({ queryKey: ["proposals"] }); },
     onError: (e: Error) => toast({ title: "Erro", description: e.message, variant: "destructive" }),
   });
 }

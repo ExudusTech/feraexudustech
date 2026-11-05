@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/agenda-slot.ts";
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
-import { limparRascunho, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { limparRascunho, matchProduto, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -159,6 +159,37 @@ Deno.serve(async (req) => {
             quantidade: p.quantidade ?? "1", notes: p.produto ? `Produto previsto: ${p.produto}` : null, created_by: userId }));
           if (rows.length) { const { error } = await admin.from("comodatos").insert(rows); if (error) { console.error("[coleta] pontos", error.code); return json({ error: "Não foi possível salvar os pontos" }, 400); } pontos = rows.length; }
         }
+        // 1b) First commercial visit → draft proposal with the planned points (price only from the product; never invented).
+        let propostaId: string | null = null;
+        if (tipo === "primeira_visita") {
+          const { data: jaProp } = await admin.from("proposals").select("id").eq("origem_schedule_id", s.id).maybeSingle();
+          propostaId = jaProp?.id ?? null;
+          const { data: pts } = await admin.from("comodatos").select("id, localizacao_interna, aparelho_descricao, quantidade, notes").eq("origem_schedule_id", s.id);
+          if (!propostaId && (pts ?? []).length) {
+            const { data: prods } = await admin.from("products").select("id, name, price").eq("organization_id", s.organization_id).eq("is_active", true).limit(1000);
+            const nomeEmp = s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || "";
+            const { data: prop, error: pe } = await admin.from("proposals").insert({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.lead_id ?? null,
+              origem_schedule_id: s.id, created_by: userId, assigned_to: s.assigned_to ?? userId, title: `Proposta — ${nomeEmp}`.slice(0, 200), status: "rascunho",
+              description: `Gerada da coleta #${s.ocorrencia_codigo}`, total_value: 0, final_value: 0 }).select("id").single();
+            if (pe) console.error("[coleta] proposta", pe.code);
+            else {
+              propostaId = prop.id;
+              const itensProp = (pts ?? []).map((c: any, i: number) => {
+                const produto = String(c.notes ?? "").replace(/^Produto previsto:\s*/, "") || c.aparelho_descricao || "Item";
+                const prod = matchProduto(prods ?? [], produto);
+                const qtd = Number(String(c.quantidade ?? "1").replace(",", ".")) || 1;
+                const preco = prod?.price != null && Number(prod.price) > 0 ? Number(prod.price) : null;
+                return { proposal_id: prop.id, organization_id: s.organization_id, product_id: prod?.id ?? null, comodato_id: c.id, sort_order: i,
+                  description: `${prod?.name ?? produto}${c.localizacao_interna ? ` — ${c.localizacao_interna}` : ""}`.slice(0, 300), quantity: qtd,
+                  unit_price: preco, total_price: preco == null ? null : Math.round(preco * qtd * 100) / 100 };
+              });
+              const { error: ie } = await admin.from("proposal_items").insert(itensProp);
+              if (ie) console.error("[coleta] itens proposta", ie.code);
+              const total = itensProp.reduce((a, x) => a + (x.total_price ?? 0), 0);
+              if (total) await admin.from("proposals").update({ total_value: total, final_value: total }).eq("id", prop.id);
+            }
+          }
+        }
         // 2) Commercial history on the lead (follows to the client on conversion).
         const resumo = resumoColeta(s.ocorrencia_codigo, r);
         const proximo = (r.proximos_passos ?? []).map((p) => `${p.tipo}${p.data ? ` ${p.data}` : ""}`).join("; ").slice(0, 200) || null;
@@ -205,7 +236,7 @@ Deno.serve(async (req) => {
           else { criados.push(novo.ocorrencia_codigo); c.ocupados.push({ data: slot.data, inicio: slot.hora, fim: null }); }
         }
         await admin.from("schedules").update({ coleta_rascunho: r, coleta_resumo: resumo, coleta_pendencias: semHorario, coleta_status: "confirmada", coleta_confirmada_em: now, coleta_confirmada_por: userId }).eq("id", s.id);
-        return json({ ok: true, resumo, pontos_previstos: pontos, agendamentos: criados, pendencias_agendar: semHorario });
+        return json({ ok: true, resumo, pontos_previstos: pontos, proposta_id: propostaId, agendamentos: criados, pendencias_agendar: semHorario });
       }
     }
   } catch (e) {
