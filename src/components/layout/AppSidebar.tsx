@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, Target, FileText, Package, DollarSign,
   BarChart3, Settings, LogOut, MapPin, UserCog, HelpCircle,
-  ChevronLeft, Sun, Moon, Crown, CalendarDays, HandshakeIcon, Wrench, Boxes, Headset, ListChecks } from "lucide-react";
+  ChevronLeft, Sun, Moon, Crown, CalendarDays, HandshakeIcon, Wrench, Boxes, Headset, ListChecks, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +20,7 @@ export const mainNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Headset, label: "Atendimentos", path: "/atendimentos" },
   { icon: ListChecks, label: "Hoje", path: "/hoje" },
+  { icon: Receipt, label: "Tarefas", path: "/tarefas" },
   { icon: CalendarDays, label: "Agenda", path: "/agenda" },
   { icon: Target, label: "Leads", path: "/leads" },
   { icon: Users, label: "Clientes", path: "/clientes" },

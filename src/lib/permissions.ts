@@ -44,7 +44,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: true,
   },
   gestor: {
-    routes: ["/dashboard", "/hoje", "/atendimentos", "/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/comodatos", "/manutencoes", "/inventario", "/equipamentos", "/financeiro", "/relatorios", "/areas-cobertura", "/configuracoes", "/suporte"],
+    routes: ["/dashboard", "/hoje", "/atendimentos", "/tarefas", "/agenda", "/leads", "/clientes", "/propostas", "/produtos", "/comodatos", "/manutencoes", "/inventario", "/equipamentos", "/financeiro", "/relatorios", "/areas-cobertura", "/configuracoes", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
@@ -95,7 +95,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, PermissionConfig> = {
     canAccessConfiguracoes: false,
   },
   financeiro: {
-    routes: ["/dashboard", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
+    routes: ["/dashboard", "/tarefas", "/financeiro", "/clientes", "/propostas", "/relatorios", "/agenda", "/suporte"],
     canWrite: true,
     canDelete: false,
     canManageUsers: false,
