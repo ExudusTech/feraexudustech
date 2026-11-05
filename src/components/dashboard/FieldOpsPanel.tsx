@@ -1,4 +1,5 @@
 import { ProntidaoBadge } from "@/components/agenda/MaterialPronto";
+import { temPendenciaColeta } from "@/lib/coleta";
 import { OcorrenciaTag } from "@/components/agenda/ColetaOcorrencia";
 import { addDays, format } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
@@ -63,7 +64,7 @@ export default function FieldOpsPanel() {
     && matchesFilter(s, filter, { atrasadas: m.atrasadas, foraDoLocal: m.foraDoLocal, semCoordenadas: m.semCoordenadas })) : [];
   const tomorrow = format(addDays(new Date(`${today}T12:00:00`), 1), "yyyy-MM-dd");
   const prontidaoPend = schedules.filter((s) => (s.scheduled_date === today || s.scheduled_date === tomorrow) && ["agendado", "confirmado"].includes(s.status) && s.prontidao && s.prontidao !== "pronto");
-  const infoPend = schedules.filter((s: any) => s.coleta_status === "pendente");
+  const infoPend = schedules.filter((s: any) => temPendenciaColeta(s));
   const lista = filter === ("prontidao" as OpsFilter) ? prontidaoPend : filter === ("info_pendente" as OpsFilter) ? infoPend : filtered;
   const points = checkins.filter((c) => typeof c.latitude === "number" && todayList.some((s) => s.id === c.schedule_id));
   const current = schedules.find((s) => s.id === selected) ?? null;

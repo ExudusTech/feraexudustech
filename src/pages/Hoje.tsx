@@ -9,6 +9,7 @@ import { useSchedules, type Schedule } from "@/hooks/use-schedules";
 import { useLeads } from "@/hooks/use-leads";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { temPendenciaColeta } from "@/lib/coleta";
 import { Button } from "@/components/ui/button";
 import { Wrench } from "lucide-react";
 import NovaManutencaoDialog from "@/components/agenda/NovaManutencaoDialog";
@@ -34,7 +35,7 @@ export default function Hoje() {
   const today = format(new Date(), "yyyy-MM-dd");
   const visiveis = useMemo(() => equipe ? schedules : schedules.filter((s) => isMine(s, user?.id)), [schedules, user?.id, equipe]);
   const pendentes = useMemo(() => pendentesAnteriores(visiveis, today), [visiveis, today]);
-  const infoPendente = useMemo(() => visiveis.filter((s: any) => s.coleta_status === "pendente"), [visiveis]);
+  const infoPendente = useMemo(() => visiveis.filter((s: any) => temPendenciaColeta(s)), [visiveis]);
   const grupos = useMemo(() => porConsultor(visiveis.filter((s) => s.scheduled_date === today && s.status !== "cancelado"),
     new Map(users.map((u: any) => [u.user_id, u.name]))), [visiveis, today, users]);
   const leadInfo = useMemo(() => {
@@ -64,10 +65,24 @@ export default function Hoje() {
         {infoPendente.length > 0 && <section className="space-y-2" aria-label="Informações pendentes">
           <h2 className="font-semibold text-warning">Realizadas — informações pendentes ({infoPendente.length})</h2>
           {infoPendente.map((s: any) => (
+            s.coleta_status === "confirmada" ? (
+              <div key={s.id} className="rounded-lg border border-warning p-3 space-y-2">
+                <p className="text-sm font-medium">#{s.ocorrencia_codigo} · {(s.lead_id ? leadInfo.get(s.lead_id)?.title : s.title) ?? s.title}</p>
+                <p className="text-xs text-muted-foreground">Sem horário livre na rota: agende manualmente na Agenda.</p>
+                {(s.coleta_pendencias ?? []).map((item: string) => (
+                  <div key={item} className="flex items-center justify-between gap-2">
+                    <span className="text-sm">{item}</span>
+                    <Button size="sm" variant="outline" className="min-h-10" onClick={async () => {
+                      await supabase.functions.invoke("coleta-ocorrencia", { body: { id: s.id, action: "resolver_agendar", item } });
+                      qc.invalidateQueries({ queryKey: ["schedules"] });
+                    }}>Já agendei</Button>
+                  </div>))}
+              </div>
+            ) : (
             <button key={s.id} type="button" onClick={() => setSelected(s.id)} className="w-full text-left rounded-lg border border-warning p-3 space-y-1">
               <p className="text-sm font-medium">#{s.ocorrencia_codigo} · {(s.lead_id ? leadInfo.get(s.lead_id)?.title : s.title) ?? s.title}</p>
               <p className="text-xs text-muted-foreground">Falta: {(s.coleta_pendencias ?? []).join(" / ") || "confirmar a coleta"}</p>
-            </button>))}
+            </button>)))}
         </section>}
         {pendentes.length > 0 && <section className="space-y-2">
           <h2 className="font-semibold text-warning">Em andamento / pendentes ({pendentes.length})</h2>
