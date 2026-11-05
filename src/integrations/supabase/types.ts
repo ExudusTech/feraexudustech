@@ -7905,6 +7905,7 @@ export type Database = {
         | "vendedor"
         | "consultor_tecnico"
         | "operacional"
+        | "faturamento"
       canal_origem_enum:
         | "WIDGET"
         | "WHATSAPP"
@@ -8065,6 +8066,7 @@ export const Constants = {
         "vendedor",
         "consultor_tecnico",
         "operacional",
+        "faturamento",
       ],
       canal_origem_enum: [
         "WIDGET",

@@ -260,6 +260,13 @@
       "when": 1793877345763,
       "tag": "0036_checkin_localizacao_origem",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793881230575,
+      "tag": "0037_role_faturamento",
+      "breakpoints": true
     }
   ]
 }
