@@ -18,7 +18,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useProductImageUrls } from "@/hooks/use-product-images";
 import { toast } from "@/hooks/use-toast";
-import { DISPONIBILIDADE_LABEL, removeProductImage, uploadProductImage, type Disponibilidade } from "@/lib/product-images";
+import { DISPONIBILIDADE_LABEL, imageDimensions, podeEnviarFotoCliente, removeProductImage, uploadProductImage, type Disponibilidade } from "@/lib/product-images";
 import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 
 
@@ -51,7 +51,7 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 const empty = {
   name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
   price: "", cost: "", stock: "0", min_stock: "0", is_active: true, disponibilidade: "estoque" as Disponibilidade,
-  is_dispenser: false, dispenser_family_id: "",
+  is_dispenser: false, dispenser_family_id: "", pode_enviar_foto_cliente: false,
 };
 
 export default function ProductFormDialog({ open, onOpenChange, product }: Props) {
@@ -64,7 +64,8 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
   const [imagePath, setImagePath] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const { user } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, role } = usePermissions();
+  const canEditImage = isAdmin || role === "gestor";
   const qc = useQueryClient();
   const { data: imageUrls } = useProductImageUrls([imagePath]);
 
@@ -81,6 +82,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
         min_stock: String(product.min_stock), is_active: product.is_active,
         disponibilidade: (product.disponibilidade ?? (product.is_active ? "estoque" : "descontinuado")) as Disponibilidade,
         is_dispenser: !!product.is_dispenser, dispenser_family_id: product.dispenser_family_id || "",
+        pode_enviar_foto_cliente: !!product.pode_enviar_foto_cliente,
       });
       setCompatible(product.compatible_dispenser_families || []);
 
@@ -135,6 +137,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       is_dispenser: form.is_dispenser,
       dispenser_family_id: form.is_dispenser ? (form.dispenser_family_id || null) : null,
       compatible_dispenser_families: form.is_dispenser ? [] : compatible,
+      pode_enviar_foto_cliente: form.pode_enviar_foto_cliente,
     };
 
     if (isEdit) await update.mutateAsync({ id: product!.id, ...payload });
@@ -151,10 +154,12 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       let next: string | null = null;
       if (file) next = await uploadProductImage(user.organization_id, product, file);
       else await removeProductImage(imagePath);
-      if (!file || next !== imagePath) {
-        const { error } = await supabase.from("products").update({ image_url: next }).eq("id", product.id);
-        if (error) throw new Error("Não foi possível salvar a imagem");
-      }
+      const dims = file ? await imageDimensions(file) : null;
+      const pode = !!dims && podeEnviarFotoCliente(dims.width, dims.height);
+      const { error } = await supabase.from("products").update({ image_url: next, pode_enviar_foto_cliente: pode }).eq("id", product.id);
+      if (error) throw new Error("Não foi possível salvar a imagem");
+      if (file && imagePath && imagePath !== next) await removeProductImage(imagePath).catch(() => undefined);
+      set("pode_enviar_foto_cliente", pode);
       setImagePath(next);
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["product-image-urls"] });
@@ -214,7 +219,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
                     ? <img src={imageUrls[imagePath]} alt={form.name} className="h-full w-full object-cover" />
                     : <ImageIcon className="h-6 w-6 text-muted-foreground" />}
                 </div>
-                {isAdmin && (
+                {canEditImage && (
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" size="sm" disabled={imageBusy} asChild>
                       <label className="cursor-pointer">{imagePath ? "Trocar imagem" : "Enviar imagem"}
@@ -227,6 +232,14 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
                 )}
               </div>
             )}
+            <div className="flex items-start gap-2">
+              <Switch id="pode-enviar-foto" checked={form.pode_enviar_foto_cliente} disabled={!imagePath}
+                onCheckedChange={(v) => set("pode_enviar_foto_cliente", v)} />
+              <div>
+                <Label htmlFor="pode-enviar-foto">Pode enviar foto ao cliente</Label>
+                <p className="text-xs text-muted-foreground">Desligado: a foto fica só para uso interno e a Flora não envia.</p>
+              </div>
+            </div>
           </div>
 
           {/* Dispenser / compatibilidade */}

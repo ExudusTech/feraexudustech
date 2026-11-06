@@ -40,6 +40,17 @@ export function planImageMatches<F extends { name: string }>(files: F[], product
 export const MIN_CLIENT_IMAGE_PX = 800;
 export const podeEnviarFotoCliente = (width: number, height: number) => Math.max(width, height) >= MIN_CLIENT_IMAGE_PX;
 
+/** Natural size of an image file in the browser (null when it cannot be decoded). */
+export function imageDimensions(file: Blob): Promise<{ width: number; height: number } | null> {
+  const url = URL.createObjectURL(file);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img.naturalWidth ? { width: img.naturalWidth, height: img.naturalHeight } : null); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 export type ImagePreviewWarning = "nao_encontrado" | "ja_tem_imagem" | "pequena" | "formato" | "ilegivel" | "repetido";
 export interface ImagePreviewItem<F> {
   file: F; codigo: string; product: SkuProduct | null;
