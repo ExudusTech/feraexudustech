@@ -295,6 +295,13 @@
       "when": 1793916794788,
       "tag": "0041_lote17_proposta_pdf",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793969629911,
+      "tag": "0042_lead_conversao_move_teste",
+      "breakpoints": true
     }
   ]
 }
