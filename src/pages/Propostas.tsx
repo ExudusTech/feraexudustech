@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,16 @@ export default function Propostas() {
   const [selectedProp, setSelectedProp] = useState<Proposal | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: "proposal" | "order"; id: string } | null>(null);
+
+  // Deep link from a test return visit: ?abrir=<proposal id> or ?nova=1.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const abrir = params.get("abrir"); const nova = params.get("nova");
+    if (nova) { setSelectedProp(null); setPropDialogOpen(true); setParams({}, { replace: true }); return; }
+    if (!abrir) return;
+    const p = proposals.find((x) => x.id === abrir);
+    if (p) { setSelectedProp(p); setPropDialogOpen(true); setParams({}, { replace: true }); }
+  }, [params, proposals, setParams]);
 
   const filteredP = proposals.filter((p) =>
     [p.title, p.clients?.name, p.leads?.empresa_nome, p.leads?.company].some((f) => f?.toLowerCase().includes(searchP.toLowerCase()))

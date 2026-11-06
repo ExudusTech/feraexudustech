@@ -187,7 +187,7 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
             <Button size="sm" variant="outline" onClick={() => set((d) => { const base = d.instalacao?.itens?.length ? d.instalacao.itens : itensDosPontos(d); d.instalacao = { ...d.instalacao, itens: [...base, { descricao: "", quantidade: "1" }] }; })}><Plus className="h-4 w-4" />Item</Button>
             <div><Label className="text-xs">Tipo de nota</Label>
               <select className="h-10 w-full rounded-md border bg-background px-2 text-sm" value={draft.instalacao?.tipo_nota ?? tipoNotaPadrao(inst)} onChange={(e) => set((d) => { d.instalacao = { ...d.instalacao, tipo_nota: e.target.value }; })}>
-                <option value="remessa_teste">Remessa para teste/demonstração</option><option value="venda">Venda</option><option value="remessa_comodato">Remessa em comodato</option></select></div>
+                <option value="remessa_teste">Simples Remessa (teste)</option><option value="venda">Venda</option><option value="remessa_comodato">Remessa em comodato</option></select></div>
             {ctx.tem_cnpj === false && <div><Label className="text-xs">CNPJ</Label><div className="flex gap-1">
               <Input inputMode="numeric" placeholder="00.000.000/0000-00" value={draft.instalacao?.cnpj ?? ""} onChange={(e) => set((d) => { d.instalacao = { ...d.instalacao, cnpj: e.target.value }; })} />
               <Button variant="outline" onClick={consultarCnpj} disabled={busy}><Search className="h-4 w-4" />Consultar</Button></div></div>}

@@ -11,6 +11,35 @@ import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
 import { checkinBloqueadoPorNota, FERA_URL, prontidaoLabel } from "../_shared/prontidao.ts";
 import { exigeColeta, pendenciasColeta } from "../_shared/coleta.ts";
+import { itensDevolucaoRemessa, precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE } from "../_shared/teste-notas.ts";
+
+/** Return visit of a test (06/11): not approved → return invoice of the Simples Remessa (equipment only); approved → open the proposal. */
+async function fecharTeste(admin: any, s: any, resultado: string, emTeste: any[], timeline: (t: string, r: string, p?: string | null) => Promise<void>) {
+  await timeline("visita", `Resultado do teste: ${RESULTADO_TESTE_LABEL[resultado as keyof typeof RESULTADO_TESTE_LABEL]}`);
+  if (resultado === "aprovado") {
+    const { data: p } = await admin.from("proposals").select("id").eq("organization_id", s.organization_id).eq("lead_id", s.lead_id)
+      .not("status", "in", "(recusada,expirada)").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    return { resultado, proposta_id: p?.id ?? null };
+  }
+  if (resultado !== "reprovado") return { resultado };
+  const { data: rem } = await admin.from("tarefas_faturamento").select("*").eq("organization_id", s.organization_id).eq("lead_id", s.lead_id)
+    .eq("acao", "emitir").eq("tipo_nota", "remessa_teste").neq("status", "cancelada").order("data_visita", { ascending: false }).limit(1).maybeSingle();
+  const { data: l } = await admin.from("leads").select("empresa_nome, company, title, razao_social, cnpj, endereco, city, zip_code, contact_name, contact_phone").eq("id", s.lead_id).maybeSingle();
+  const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const nota = rem?.numero_nota ? ` nº ${rem.numero_nota}` : "";
+  const { data: t, error } = await admin.from("tarefas_faturamento").upsert({ organization_id: s.organization_id, schedule_id: s.id, acao: "devolucao_remessa",
+    lead_id: s.lead_id, client_id: null, tipo_operacao: "instalacao_teste", tipo_nota: "devolucao_remessa", itens: itensDevolucaoRemessa(emTeste),
+    empresa_nome: rem?.empresa_nome ?? l?.empresa_nome ?? l?.company ?? l?.title ?? null, razao_social: rem?.razao_social ?? l?.razao_social ?? null,
+    cnpj: rem?.cnpj ?? l?.cnpj ?? null, cnpj_verificado: rem?.cnpj_verificado ?? false,
+    endereco: rem?.endereco ?? ([l?.endereco, l?.city, l?.zip_code].filter(Boolean).join(", ") || null),
+    contato: rem?.contato ?? ([l?.contact_name, l?.contact_phone].filter(Boolean).join(" · ") || null),
+    data_visita: hoje, prazo: new Date(Date.now() + 48 * 3_600_000).toISOString(), referencia_tarefa_id: rem?.id ?? null, comodato_ids: emTeste.map((c) => c.id),
+    observacao: `NF de Devolução de Simples Remessa${nota} — só o equipamento (produto usado não volta). O aparelho volta ao estoque quando a nota for anexada.` },
+    { onConflict: "schedule_id,acao" }).select("id").single();
+  if (error) console.error("[visita-acoes] devolucao_remessa", error.code);
+  await timeline("visita", "Teste não aprovado: retirar aparelho — NF de Devolução de Simples Remessa enviada ao faturamento");
+  return { resultado, devolucao_tarefa: t?.id ?? null };
+}
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -307,6 +336,15 @@ Deno.serve(async (req) => {
       if (!tecnico && exigeColeta((s as any).ocorrencia_tipo) && !["novo_agendamento", "proposta", "follow_up", "perdido"].includes(b.proximo)) {
         b.proximo = "novo_agendamento"; b.data_alvo = null; b.descricao = "Próximo passo definido na coleta";
       }
+      // Test return visit (06/11): the result of the test is asked while the lead still has devices on test.
+      let emTeste: any[] = [];
+      if (s.lead_id && !s.client_id) {
+        const { data: et } = await admin.from("comodatos").select("id, product_id, quantidade, aparelho_descricao, localizacao_interna, products!comodatos_product_id_fkey(name)")
+          .eq("organization_id", s.organization_id).eq("lead_id", s.lead_id).is("client_id", null).eq("status", "EM_TESTE");
+        emTeste = (et ?? []).map((c: any) => ({ ...c, produto: c.products?.name ?? null }));
+      }
+      const pedeTeste = precisaResultadoTeste(s as any, emTeste.length);
+      if (pedeTeste && !RESULTADOS_TESTE.includes(b.resultado_teste)) return json({ error: "Informe o resultado do teste", precisa_resultado_teste: true }, 400);
       const err = validateCheckout({ status: s.status, resultado: b.resultado, resumo: b.resumo, proximo: b.proximo, data_alvo: b.data_alvo,
         motivo_perda: b.motivo_perda, confirmar_perdido: b.confirmar_perdido, commercial: !tecnico, fotos: count ?? 0,
         precisa_foto: !checklist && requiresPhoto(s.schedule_type, s.schedule_subtype) });
@@ -342,6 +380,7 @@ Deno.serve(async (req) => {
       // 05/11 replacement: not used → cancel the invoice within 24h; used → return invoice + signature on the next route visit.
       let substituicao: Record<string, unknown> | null = null;
       if ((s as any).operacao_material === "substituicao") substituicao = await fecharSubstituicao(admin, s, b.substituicao_resultado, user.id, timeline);
+      const teste = pedeTeste ? await fecharTeste(admin, s, b.resultado_teste, emTeste, timeline) : null;
       const stageKey = stageForCheckout(!tecnico, b.proximo);
       if (s.lead_id && stageKey) {
         const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", stageKey).maybeSingle();
@@ -353,7 +392,7 @@ Deno.serve(async (req) => {
       const { data: ck } = await admin.from("schedule_checkins").select("distancia_m").eq("schedule_id", s.id).maybeSingle();
       bg(teamAlert(admin, s.organization_id, "visita_concluida", checkoutMessage({ ...info, resultado: b.resultado, duracao,
         distancia: ck?.distancia_m ?? null, proximo: b.proximo, detalhe }), { schedule_id: s.id }, { dedupeKey: "schedule_id" }));
-      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao });
+      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao, teste });
     }
   }
   return json({ error: "Requisição inválida" }, 400);

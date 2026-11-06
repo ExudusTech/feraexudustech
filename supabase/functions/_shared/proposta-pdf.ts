@@ -2,6 +2,7 @@
 import { PDFDocument, PDFFont, PDFImage, PDFPage, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
 import { NOTA_COMODATO, ambientesComGeral } from "./proposta-ambientes.ts";
 import { siteVisivel } from "./proposta-site.ts";
+import { encaixarLogo, GRUPOS_LOGO, LOGO_LAYOUT, type GrupoLogo } from "./proposta-logos.ts";
 
 export interface PropostaConfig {
   slogan: string; experiencia: string;
@@ -44,6 +45,8 @@ export interface PropostaPdfData {
   descontoGeralPct: number; subtotal: number; total: number;
   condicoes: { forma_pagamento: string; prazo_entrega: string; periodicidade: string; validade_dias: number };
   parceiros: string[];
+  /** Uploaded brand logos, already filtered and ordered; when present they replace the brand names. */
+  logos?: { grupo: GrupoLogo; bytes: Uint8Array }[];
   config: PropostaConfig;
 }
 
@@ -167,6 +170,17 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   t(page, "QUEM SOMOS", M, y, 8, B, GREEN); y -= 30;
   t(page, "Nit's Clean", M, y, 26, B, NAVY); y -= 26;
   y = para(page, d.config.txt_empresa, M, y, W - 2 * M, 11, R, INK, 1.55) - 22;
+  // Brand logos: embedded once, rows per group (highlights first and bigger).
+  const logoImgs: { grupo: GrupoLogo; img: PDFImage }[] = [];
+  for (const l of d.logos ?? []) {
+    try { const img = l.bytes[0] === 0x89 ? await pdf.embedPng(l.bytes) : l.bytes[0] === 0xff ? await pdf.embedJpg(l.bytes) : null; if (img) logoImgs.push({ grupo: l.grupo, img }); } catch { /* skip broken file */ }
+  }
+  const logoRows: { grupo: GrupoLogo; imgs: PDFImage[] }[] = [];
+  for (const g of GRUPOS_LOGO) {
+    const imgs = logoImgs.filter((l) => l.grupo === g).map((l) => l.img);
+    for (let i = 0; i < imgs.length; i += LOGO_LAYOUT[g].porLinha) logoRows.push({ grupo: g, imgs: imgs.slice(i, i + LOGO_LAYOUT[g].porLinha) });
+  }
+  const GAP = 8;
   const blocks: [string, string][] = [
     ["Parcerias com marcas líderes", d.config.txt_parcerias],
     ["Tecnologia", d.config.txt_tecnologia],
@@ -175,14 +189,31 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   for (const [title, body] of blocks) {
     const lines = wrap(body, R, 10.5, W - 2 * M - 34);
     let extra = 0;
-    if (title.startsWith("Parcerias") && d.parceiros.length) extra = 14 + Math.ceil(d.parceiros.length / 4) * 26;
+    const usaLogos = title.startsWith("Parcerias") && logoRows.length > 0;
+    if (usaLogos) extra = 10 + logoRows.reduce((a, r) => a + LOGO_LAYOUT[r.grupo].altura + GAP, 0);
+    else if (title.startsWith("Parcerias") && d.parceiros.length) extra = 14 + Math.ceil(d.parceiros.length / 4) * 26;
     const h = 46 + lines.length * 15 + extra;
     page.drawRectangle({ x: M, y: y - h, width: W - 2 * M, height: h, color: SOFT });
     page.drawRectangle({ x: M, y: y - h, width: 4, height: h, color: GREEN });
     t(page, title, M + 20, y - 26, 13, B, TEAL);
     let yy = y - 46;
     for (const l of lines) { t(page, l, M + 20, yy, 10.5, R, INK); yy -= 15; }
-    if (extra) {
+    if (usaLogos) {
+      yy -= 2; const inner = W - 2 * M - 40;
+      for (const r of logoRows) {
+        const { porLinha, altura } = LOGO_LAYOUT[r.grupo];
+        const cw = (inner - (porLinha - 1) * GAP) / porLinha;
+        const rowW = r.imgs.length * cw + (r.imgs.length - 1) * GAP;
+        let cx = M + 20 + (inner - rowW) / 2; const cy = yy - altura;
+        for (const img of r.imgs) {
+          page.drawRectangle({ x: cx, y: cy, width: cw, height: altura, color: WHITE, borderColor: LINE, borderWidth: 0.8 });
+          const f = encaixarLogo(img.width, img.height, cw - 12, altura - 10);
+          page.drawImage(img, { x: cx + 6 + f.dx, y: cy + 5 + f.dy, width: f.w, height: f.h });
+          cx += cw + GAP;
+        }
+        yy -= altura + GAP;
+      }
+    } else if (extra) {
       yy -= 6; const cw = (W - 2 * M - 40 - 18) / 4;
       d.parceiros.forEach((nome, i) => {
         const cx = M + 20 + (i % 4) * (cw + 6), cy = yy - Math.floor(i / 4) * 26;

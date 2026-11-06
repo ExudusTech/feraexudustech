@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { itensInstalacaoDefinitiva } from "@/lib/teste-notas";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
@@ -21,12 +22,24 @@ export default function ProposalAcceptPanel({ proposal, onDone, onReject, onAcce
   const [cnpj, setCnpj] = useState<CnpjStatus>({ ok: false });
   const [candidatos, setCandidatos] = useState<ConversionCandidate[] | null>(null);
   const [agendar, setAgendar] = useState<{ clientId: string | null; leadId: string | null; tipo: Tipo } | null>(null);
+  // Devices already on test at this lead stay installed: the definitive installation never carries them again.
+  const { data: emTeste } = useQuery({
+    queryKey: ["proposta-em-teste", proposal.lead_id, itens.map((i) => i.product_id).join(",")], enabled: !!proposal.lead_id,
+    queryFn: async () => {
+      const { data: com } = await (supabase as any).from("comodatos").select("id, product_id").eq("lead_id", proposal.lead_id).eq("status", "EM_TESTE");
+      const pids = itens.map((i) => i.product_id).filter(Boolean) as string[];
+      const { data: disp } = pids.length ? await (supabase as any).from("products").select("id").in("id", pids).eq("is_dispenser", true) : { data: [] };
+      return { com: (com ?? []) as { id: string; product_id: string | null }[], disp: new Set(((disp ?? []) as { id: string }[]).map((d) => d.id)) };
+    },
+  });
+  const itensLevar = useMemo(() => itensInstalacaoDefinitiva(itens.map((i) => ({ ...i, comodato_id: (i as any).comodato_id ?? null, is_dispenser: !!i.product_id && !!emTeste?.disp.has(i.product_id) })), emTeste?.com ?? []),
+    [itens, emTeste]);
   const precisaConverter = !proposal.client_id && !!proposal.lead_id;
   const preset = useMemo(() => agendar ? { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", proposta_id: proposal.id,
     material: { operacao: (agendar.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva") as "instalacao_teste" | "instalacao_definitiva", tipo_nota: "" as const,
-      itens: itens.map((i) => ({ product_id: i.product_id, descricao: i.description, quantidade: String(i.quantity) })) } } : null,
+      itens: (agendar.tipo === "definitiva" ? itensLevar : itens).map((i) => ({ product_id: i.product_id, descricao: i.description, quantidade: String(i.quantity) })) } } : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [agendar?.clientId, agendar?.leadId, agendar?.tipo, proposal.id]);
+    [agendar?.clientId, agendar?.leadId, agendar?.tipo, proposal.id, itensLevar]);
   const fechada = ["recusada", "expirada"].includes(proposal.status);
 
   const seguir = async (clientId: string, t: Tipo) => {
@@ -66,6 +79,9 @@ export default function ProposalAcceptPanel({ proposal, onDone, onReject, onAcce
             {onReject && <DropdownMenuItem className="text-destructive" onClick={onReject}><XCircle className="h-4 w-4 mr-2" />Rejeitar</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
+      )}
+      {!!emTeste?.com.length && !fechada && (
+        <p className="text-xs text-muted-foreground">{emTeste.com.length} aparelho(s) em teste ficam instalados. No aceite, o faturamento recebe "Baixar a Simples Remessa" e "Emitir NF de Comodato"; o aparelho fica ativo com a NF de Comodato.</p>
       )}
       {tipo && precisaConverter && !agendar && (
         <div className="space-y-2">

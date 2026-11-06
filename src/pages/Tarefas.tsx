@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "@/hooks/use-toast";
-import { OPERACAO_LABEL, TIPO_NOTA_LABEL, formatCnpj, type OperacaoMaterial, type TipoNota, type ItemOperacao } from "@/lib/prontidao";
+import { OPERACAO_LABEL, TIPO_NOTA_LABEL, TAREFA_ACAO_LABEL, TIPO_NOTA_TAREFA_LABEL, DICA_SIMPLES_REMESSA, formatCnpj, type OperacaoMaterial, type TipoNota, type ItemOperacao } from "@/lib/prontidao";
 
 interface Tarefa {
   id: string; numero: number; organization_id: string; schedule_id: string; tipo_operacao: string; tipo_nota: string; itens: ItemOperacao[];
@@ -53,7 +53,9 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
   const [pdf, setPdf] = useState(t.pdf_path);
   const [busy, setBusy] = useState(false);
   const atrasada = useMemo(() => t.status === "aberta" && new Date(t.prazo).getTime() < Date.now(), [t.prazo, t.status]);
-  const titulo = `Emitir nota — ${OPERACAO_LABEL[t.tipo_operacao as OperacaoMaterial] ?? t.tipo_operacao} — ${t.empresa_nome ?? "Cliente"}`;
+  const acao = (t as any).acao as string | undefined;
+  const semPdf = acao === "cancelar" || acao === "baixar_remessa";
+  const titulo = acao && TAREFA_ACAO_LABEL[acao] && acao !== "cancelar" && acao !== "devolucao" ? `${TAREFA_ACAO_LABEL[acao]} — ${t.empresa_nome ?? "Cliente"}` : `Emitir nota — ${OPERACAO_LABEL[t.tipo_operacao as OperacaoMaterial] ?? t.tipo_operacao} — ${t.empresa_nome ?? "Cliente"}`;
 
   const upload = async (file: File) => {
     if (file.type !== "application/pdf") { toast({ title: "Envie um PDF", variant: "destructive" }); return; }
@@ -70,7 +72,7 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
     finally { setBusy(false); }
   };
   const salvar = async (concluir: boolean) => {
-    if (concluir && (t as any).acao !== "cancelar" && (!pdf || !numero.trim())) { toast({ title: "Anexe o PDF e informe o número da nota", variant: "destructive" }); return; }
+    if (concluir && !semPdf && (!pdf || !numero.trim())) { toast({ title: "Anexe o PDF e informe o número da nota", variant: "destructive" }); return; }
     setBusy(true);
     const { error } = await (supabase as any).from("tarefas_faturamento").update({ numero_nota: numero.trim() || null, ...(concluir ? { status: "concluida" } : {}) }).eq("id", t.id);
     setBusy(false);
@@ -91,8 +93,8 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
           <Badge variant="outline">#T-{t.numero}</Badge>
         </div>
         <div className="flex flex-wrap gap-1">
-          {(t as any).acao && (t as any).acao !== "emitir" && <Badge variant="destructive">{(t as any).acao === "cancelar" ? "Cancelar nota (até 24h)" : "Nota de devolução de comodato"}</Badge>}
-          <Badge variant="secondary">{TIPO_NOTA_LABEL[t.tipo_nota as TipoNota] ?? t.tipo_nota}</Badge>
+          {acao && acao !== "emitir" && <Badge variant="destructive">{TAREFA_ACAO_LABEL[acao] ?? acao}</Badge>}
+          <Badge variant="secondary">{TIPO_NOTA_TAREFA_LABEL[t.tipo_nota] ?? TIPO_NOTA_LABEL[t.tipo_nota as TipoNota] ?? t.tipo_nota}</Badge>
           <Badge variant={atrasada ? "destructive" : "outline"}>Visita {fmtData(t.data_visita)} · prazo {new Date(t.prazo).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</Badge>
         </div>
         <dl className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-1">
@@ -106,6 +108,7 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
           <div className="text-muted-foreground">Itens</div>
           {t.itens?.length ? <ul className="list-disc pl-5">{t.itens.map((i, k) => <li key={k}>{i.quantidade}x {i.descricao}</li>)}</ul> : <p>—</p>}
         </div>
+        {t.tipo_nota === "remessa_teste" && acao === "emitir" && <p className="text-xs text-muted-foreground">{DICA_SIMPLES_REMESSA}</p>}
         {(t as any).observacao && <p className="text-warning">{(t as any).observacao}</p>}
         <a className="text-xs inline-flex items-center gap-1 underline" href={`/agenda?agendamento=${t.schedule_id}`}><ExternalLink className="h-3 w-3" />Abrir a visita</a>
         {t.status === "aberta" ? (
@@ -118,11 +121,11 @@ function TarefaCard({ t, onChange }: { t: Tarefa; onChange: () => void }) {
               <Input placeholder="Número da nota" value={numero} onChange={(e) => setNumero(e.target.value.slice(0, 30))} onBlur={() => numero !== (t.numero_nota ?? "") && salvar(false)} />
             </div>
             {pdf && <NotaLink path={pdf} />}
-            <Button className="w-full" onClick={() => salvar(true)} disabled={busy}><CheckCircle2 className="h-4 w-4 mr-1" />{(t as any).acao === "cancelar" ? "Nota cancelada" : "Marcar concluída"}</Button>
+            <Button className="w-full" onClick={() => salvar(true)} disabled={busy}><CheckCircle2 className="h-4 w-4 mr-1" />{acao === "cancelar" ? "Nota cancelada" : acao === "baixar_remessa" ? "Remessa baixada" : "Marcar concluída"}</Button>
           </div>
         ) : (
           <div className="flex items-center gap-2 pt-2 border-t">
-            <Badge>{(t as any).acao === "cancelar" ? "Cancelada" : `Nota ${t.numero_nota}`}</Badge>{t.pdf_path && <NotaLink path={t.pdf_path} />}
+            <Badge>{acao === "cancelar" ? "Cancelada" : acao === "baixar_remessa" && !t.numero_nota ? "Baixada" : `Nota ${t.numero_nota}`}</Badge>{t.pdf_path && <NotaLink path={t.pdf_path} />}
             <Button variant="ghost" size="sm" className="ml-auto" onClick={reabrir}>Reabrir</Button>
           </div>
         )}

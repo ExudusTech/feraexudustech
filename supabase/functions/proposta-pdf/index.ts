@@ -1,6 +1,7 @@
 // Generates the commercial proposal PDF (A4) for a proposal the caller can read (RLS), stores it in the private
 // proposal-pdfs bucket and returns a 30-day signed link. Items without price block generation.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { logosVisiveis, marcasSoInativas, parseLogos } from "../_shared/proposta-logos.ts";
 import { mergeConfig, parceirosAtivos, renderPropostaPdf, type PropostaPdfData } from "../_shared/proposta-pdf.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -82,7 +83,14 @@ Deno.serve(async (req) => {
   const dg = Number(p.discount_percent) || 0;
   const total = Math.round(subtotal * (1 - dg / 100) * 100) / 100;
 
-  const { data: brands } = await db.from("products").select("brand").eq("organization_id", p.organization_id).eq("is_active", true).not("brand", "is", null).limit(5000);
+  const { data: brandRows } = await db.from("products").select("brand, is_active").eq("organization_id", p.organization_id).not("brand", "is", null).limit(5000);
+  const brands = (brandRows ?? []).filter((b) => b.is_active);
+  // Uploaded logos replace the brand names; inactive brands (e.g. Multi Química) never show.
+  const logos: { grupo: "destaque" | "parceiros" | "produtos"; bytes: Uint8Array }[] = [];
+  for (const l of logosVisiveis(parseLogos((org?.proposta_config as Record<string, unknown> | null)?.logos, p.organization_id), marcasSoInativas(brandRows ?? []))) {
+    const { data: f } = await db.storage.from("org-logos").download(l.path);
+    if (f) logos.push({ grupo: l.grupo, bytes: new Uint8Array(await f.arrayBuffer()) });
+  }
   const emit = new Date(p.created_at);
   const valid = p.valid_until ? new Date(p.valid_until + "T12:00:00Z") : new Date(emit.getTime() + config.validade_dias * 86400000);
   const validadeDias = Math.max(1, Math.round((valid.getTime() - emit.getTime()) / 86400000));
@@ -94,7 +102,7 @@ Deno.serve(async (req) => {
     descontoGeralPct: dg, subtotal, total,
     condicoes: { forma_pagamento: p.forma_pagamento || config.forma_pagamento, prazo_entrega: p.prazo_entrega || config.prazo_entrega,
       periodicidade: p.periodicidade_manutencao || config.periodicidade_manutencao, validade_dias: validadeDias },
-    parceiros: parceirosAtivos((brands ?? []).map((b) => b.brand)), config,
+    parceiros: parceirosAtivos(brands.map((b) => b.brand)), logos, config,
   };
 
   let logo: Uint8Array | null = null;
