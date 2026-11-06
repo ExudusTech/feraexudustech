@@ -6,7 +6,7 @@ import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/a
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
 import { stageForCheckout } from "../_shared/visit-exec.ts";
-import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, converteLeadNaColeta, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
