@@ -7882,6 +7882,7 @@ export type Database = {
           client_id: string | null
           cnpj: string | null
           cnpj_verificado: boolean
+          comodato_ids: string[]
           concluida_em: string | null
           concluida_por: string | null
           contato: string | null
@@ -7914,6 +7915,7 @@ export type Database = {
           client_id?: string | null
           cnpj?: string | null
           cnpj_verificado?: boolean
+          comodato_ids?: string[]
           concluida_em?: string | null
           concluida_por?: string | null
           contato?: string | null
@@ -7946,6 +7948,7 @@ export type Database = {
           client_id?: string | null
           cnpj?: string | null
           cnpj_verificado?: boolean
+          comodato_ids?: string[]
           concluida_em?: string | null
           concluida_por?: string | null
           contato?: string | null
