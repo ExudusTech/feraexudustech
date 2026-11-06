@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
   const admin = createClient(url, serviceKey);
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
-  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
+  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar", "audios", "excluir_audio"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
   // Identity: app user (JWT, caller-RLS read) or Flora path (service key + server-resolved user id).
   const interno = auth === `Bearer ${serviceKey}`;
@@ -107,6 +107,17 @@ Deno.serve(async (req) => {
     await admin.from("schedules").update({ coleta_pendencias: resto }).eq("id", s.id);
     return json({ ok: true, pendencias: resto });
   }
+  if (b.action === "audios") {
+    const { data: evs } = await admin.from("schedule_evidencias").select("id, tipo, audio_path, transcricao, observacoes, duracao_s, created_at")
+      .eq("schedule_id", s.id).in("tipo", ["audio", "texto"]).order("created_at");
+    const out = [];
+    for (const e of evs ?? []) {
+      let url: string | null = null;
+      if (e.audio_path) { const { data: sg } = await admin.storage.from("visit-audio").createSignedUrl(e.audio_path, 3600); url = sg?.signedUrl ?? null; }
+      out.push({ id: e.id, tipo: e.tipo, criado_em: e.created_at, duracao_s: e.duracao_s, url, transcrito: !!e.transcricao, texto: e.tipo === "texto" ? (e.observacoes ?? e.transcricao) : null });
+    }
+    return json({ audios: out, pode_excluir: s.coleta_status !== "confirmada" });
+  }
   if (s.coleta_status === "confirmada" && b.action !== "pendencias") return json({ error: "Coleta já confirmada" }, 409);
   const tipo = s.ocorrencia_tipo as string;
   const temCnpj = () => String(s.clients?.document ?? s.leads?.cnpj ?? "").replace(/\D/g, "").length === 14;
@@ -121,8 +132,16 @@ Deno.serve(async (req) => {
 
   try {
     switch (b.action) {
+      case "excluir_audio": {
+        if (!UUID.test(b.evidencia_id ?? "")) return json({ error: "Requisição inválida" }, 400);
+        const { data: ev } = await admin.from("schedule_evidencias").select("id, audio_path").eq("id", b.evidencia_id).eq("schedule_id", s.id).in("tipo", ["audio", "texto"]).maybeSingle();
+        if (!ev) return json({ error: "Áudio não encontrado" }, 404);
+        if (ev.audio_path) await admin.storage.from("visit-audio").remove([ev.audio_path]);
+        await admin.from("schedule_evidencias").delete().eq("id", ev.id);
+        return json({ ok: true });
+      }
       case "pendencias":
-        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendDe(s.coleta_rascunho ?? {}), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
+        return json({ tem_cnpj: temCnpj(), segmento: s.leads?.category ?? null, codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendDe(s.coleta_rascunho ?? {}), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
       case "salvar": {
         const r = limparRascunho(b.rascunho);
         const pend = await salvar(r, "rascunho");
@@ -226,6 +245,9 @@ Deno.serve(async (req) => {
         // 2d) Test installation / direct sale needs a client: convert the lead now (CNPJ already checked by the pending list).
         const inst = precisaInstalacao(r);
         const semHorario: string[] = [];
+        if (inst && !s.client_id && s.lead_id && r.instalacao?.cnpj && !temCnpj()) {
+          await admin.from("leads").update({ cnpj: r.instalacao.cnpj }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
+        }
         if (inst && !s.client_id && s.lead_id) {
           const { data: conv, error: ce } = caller ? await caller.rpc("converter_lead_em_cliente", { _lead: s.lead_id }) : { data: null, error: null };
           if (!ce && conv?.client_id) { s.client_id = conv.client_id; await admin.from("schedules").update({ client_id: conv.client_id }).eq("id", s.id); }
