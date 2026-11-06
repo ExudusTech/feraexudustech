@@ -6,7 +6,7 @@ import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/a
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
 import { stageForCheckout } from "../_shared/visit-exec.ts";
-import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, converteLeadNaColeta, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -242,13 +242,14 @@ Deno.serve(async (req) => {
           const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", stageForCheckout(true, "perdido")).maybeSingle();
           if (st) await admin.from("leads").update({ stage_id: st.id, stage: "fechado_perdido" }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
         }
-        // 2d) Test installation / direct sale needs a client: convert the lead now (CNPJ already checked by the pending list).
+        // 2d) Only a direct sale converts the lead; a test installation stays on the lead (CNPJ saved on the lead for the shipping note).
         const inst = precisaInstalacao(r);
         const semHorario: string[] = [];
         if (inst && !s.client_id && s.lead_id && r.instalacao?.cnpj && !temCnpj()) {
           await admin.from("leads").update({ cnpj: r.instalacao.cnpj }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
         }
-        if (inst && !s.client_id && s.lead_id) {
+        const vendaDireta = converteLeadNaColeta(r);
+        if (vendaDireta && !s.client_id && s.lead_id) {
           const { data: conv, error: ce } = caller ? await caller.rpc("converter_lead_em_cliente", { _lead: s.lead_id }) : { data: null, error: null };
           if (!ce && conv?.client_id) { s.client_id = conv.client_id; await admin.from("schedules").update({ client_id: conv.client_id }).eq("id", s.id); }
           else semHorario.push(conv?.status === "duplicados" ? "Converter o lead em cliente (há cadastro parecido)" : "Converter o lead em cliente");
@@ -275,11 +276,11 @@ Deno.serve(async (req) => {
           const slot = c.area ? primeiroSlotLivre({ from: desde, rota: parseDiaSemana(c.area.dia_semana), inicio: c.area.horario_inicio, fim: c.area.horario_fim, duracao: 60,
             ocupados: c.ocupados, google: c.google, bloqueado: (d) => c.feriados.some((h: any) => h.date === d && (!h.city || norm(h.city) === norm(c.cidade))) }) : null;
           if (!slot) { semHorario.push(pendenciaAgendar(TIPO_LABEL[p.tipo!] ?? p.tipo!, s.ocorrencia_codigo)); continue; }
-          const tecnico = (p.tipo === "teste" || p.tipo === "venda_direta") && !!s.client_id;
+          const tecnico = p.tipo === "teste" ? !!(s.client_id || s.lead_id) : p.tipo === "venda_direta" && !!s.client_id;
           const row: Record<string, unknown> = { organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.lead_id ?? null, scheduled_date: slot.data, start_time: slot.hora, end_time: hhmm(Number(slot.hora.slice(0, 2)) * 60 + Number(slot.hora.slice(3)) + 60),
             status: "agendado", assigned_to: s.assigned_to ?? userId, created_by: userId, source: "coleta", confirmacao_status: "nao_aplicavel",
             title: `${p.tipo === "proposta" ? "Proposta" : p.tipo === "retorno" ? "Retorno" : p.tipo === "teste" ? "Instalação de teste" : "Venda direta"} — ${nome}`,
-            description: `Gerado pela coleta #${s.ocorrencia_codigo}${p.observacao ? `: ${p.observacao}` : ""}${(p.tipo === "teste" || p.tipo === "venda_direta") && !s.client_id ? " (converter o lead em cliente para agendar a instalação)" : ""}` };
+            description: `Gerado pela coleta #${s.ocorrencia_codigo}${p.observacao ? `: ${p.observacao}` : ""}${p.tipo === "venda_direta" && !s.client_id ? " (converter o lead em cliente para agendar a instalação)" : ""}` };
           if (tecnico) Object.assign(row, { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: p.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva", itens, tipo_nota: r.instalacao?.tipo_nota || tipoNotaPadrao(p.tipo), proposta_id: propostaId, ocorrencia_tipo: p.tipo === "teste" ? "instalacao_teste" : "venda_direta" });
           else Object.assign(row, { schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO", ocorrencia_tipo: "primeira_visita" });
           const { data: novo, error } = await admin.from("schedules").insert(row).select("ocorrencia_codigo").single();

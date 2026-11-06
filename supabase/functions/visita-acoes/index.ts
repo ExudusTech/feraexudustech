@@ -5,7 +5,7 @@ import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
   NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
-import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
+import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
@@ -269,12 +269,12 @@ Deno.serve(async (req) => {
       const { count } = await admin.from("schedule_evidencias").select("id", { count: "exact", head: true }).eq("schedule_id", s.id).not("foto_path", "is", null);
       // Maintenance with registered points: every active point must be evaluated; the checklist photos replace the generic photo rule.
       let checklist = false;
-      if (s.client_id && tecnico) {
-        const { data: pts } = await admin.from("comodatos").select("id, status").eq("client_id", s.client_id).eq("organization_id", s.organization_id);
+      if ((s.client_id || s.lead_id) && tecnico) {
+        const { data: pts } = await admin.from("comodatos").select("id, status").eq(s.client_id ? "client_id" : "lead_id", s.client_id ?? s.lead_id).eq("organization_id", s.organization_id);
         const { data: avs } = await admin.from("schedule_evidencias").select("comodato_id").eq("schedule_id", s.id).not("estado", "is", null);
         const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id));
         if (pend.length) return json({ error: `Avalie todos os pontos antes de encerrar (${pend.length} pendente(s))` }, 400);
-        checklist = (pts ?? []).some((p: any) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");
+        checklist = (pts ?? []).some((p: any) => pontoEmUso(p.status));
       }
       // Maintenance: the next step is the maintenance plan's next visit; without a plan, the consultant picks a frequency and the plan is created.
       if (tecnico && s.client_id && (!b.proximo || b.proximo === "plano")) {

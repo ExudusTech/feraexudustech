@@ -1,5 +1,6 @@
 // Commercial proposal PDF (A4) rendered server-side with pdf-lib. Pure: data in, bytes out (testable without network).
 import { PDFDocument, PDFFont, PDFImage, PDFPage, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
+import { NOTA_COMODATO, ambientesComGeral } from "./proposta-ambientes.ts";
 import { siteVisivel } from "./proposta-site.ts";
 
 export interface PropostaConfig {
@@ -99,6 +100,8 @@ function wrap(text: string, font: PDFFont, size: number, max: number): string[] 
   }
   return out;
 }
+
+export { NOTA_COMODATO, ambientesComGeral };
 
 export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Array | null): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
@@ -251,10 +254,12 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
     y -= 18;
   };
 
-  if (d.ambientes.length) {
+  const linhasAmbiente = ambientesComGeral(d.ambientes, d.comodatos);
+  if (linhasAmbiente.length) {
     section("Solução por ambiente", "Pontos de higiene");
-    table([{ label: "AMBIENTE", w: 3 }, { label: "APARELHO (COMODATO)", w: 3 }, { label: "PRODUTO / REFIL", w: 3.4 }, { label: "QTD", w: 1, align: "c" }],
-      d.ambientes.map((a) => [a.local, a.aparelho || "-", a.produto || "-", a.quantidade || "-"]), { bold: [0] });
+    ensure(30); t(page, NOTA_COMODATO, M, y, 9, R, INK); y -= 18;
+    table([{ label: "AMBIENTE", w: 3 }, { label: "APARELHO", w: 3 }, { label: "PRODUTO / REFIL", w: 3.4 }, { label: "QTD", w: 1, align: "c" }],
+      linhasAmbiente.map((a) => [a.local, a.aparelho || "-", a.produto || "-", a.quantidade || "-"]), { bold: [0] });
   }
 
   section("Produtos", "Investimento");
@@ -274,12 +279,6 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
     t(page, "TOTAL GERAL", bx + 20, y - bh + 20, 10, B, GREEN);
     right(page, brl(d.total), W - M - 16, y - bh + 17, 18, B, WHITE);
     y -= bh + 26;
-  }
-
-  if (d.comodatos.length) {
-    section("Aparelhos em comodato", "Sem custo");
-    table([{ label: "APARELHO", w: 6 }, { label: "QTD", w: 1, align: "c" }, { label: "VALOR", w: 2.4, align: "r" }],
-      d.comodatos.map((c) => [c.descricao, String(c.quantidade), "sem custo (comodato)"]), { bold: [2] });
   }
 
   section("Condições comerciais");

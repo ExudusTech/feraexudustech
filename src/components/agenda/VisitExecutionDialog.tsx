@@ -275,7 +275,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
               </div>)}
             <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />
             {!tecnico && !comColeta && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
-            {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
+            {tecnico && (s.client_id || s.lead_id) && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} leadId={s.lead_id} onPendingChange={onPts} />}
             {usaPlano && !registroAberto ? (
               <Button variant="ghost" className="w-full" onClick={() => setRegistroAberto(true)}>+ Foto ou observação extra (opcional)</Button>
             ) : (

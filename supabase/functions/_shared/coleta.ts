@@ -38,6 +38,10 @@ export function precisaInstalacao(r: RascunhoColeta | null | undefined): "teste"
   const p = (r?.proximos_passos ?? []).find((x) => PASSOS_INSTALACAO.includes(x.tipo ?? ""));
   return (p?.tipo as "teste" | "venda_direta" | undefined) ?? null;
 }
+/** Only a direct sale turns the lead into a client at confirmation; a test installation keeps the lead. */
+export function converteLeadNaColeta(r: RascunhoColeta | null | undefined): boolean {
+  return (r?.proximos_passos ?? []).some((p) => p.tipo === "venda_direta");
+}
 export function tipoNotaPadrao(passo: string | null | undefined): string { return passo === "venda_direta" ? "venda" : "remessa_teste"; }
 /** Installation items from the points (device + product + quantity), the editable default. */
 export function itensDosPontos(r: RascunhoColeta | null | undefined): { descricao: string; quantidade: string }[] {

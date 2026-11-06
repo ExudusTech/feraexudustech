@@ -17,7 +17,7 @@ import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, 
 import { cn } from "@/lib/utils";
 import { clearDraft, useDraftState } from "@/lib/visit-draft";
 
-interface Props { scheduleId: string; orgId: string; clientId: string; onPendingChange?: (pending: number, total: number) => void }
+interface Props { scheduleId: string; orgId: string; clientId?: string | null; leadId?: string | null; onPendingChange?: (pending: number, total: number) => void }
 
 function PhotoButton({ label, busy, onFile }: { label: string; busy: boolean; onFile: (f: File) => void }) {
   return (
@@ -29,7 +29,7 @@ function PhotoButton({ label, busy, onFile }: { label: string; busy: boolean; on
 }
 
 /** Maintenance checklist: one card per installed point, plus "add point". Closing requires every point evaluated. */
-export default function PointChecklist({ scheduleId, orgId, clientId, onPendingChange }: Props) {
+export default function PointChecklist({ scheduleId, orgId, clientId, leadId, onPendingChange }: Props) {
   const qc = useQueryClient();
   const { data: products = [] } = useProducts();
   const dispensers = products.filter((p) => p.is_dispenser && p.is_active);
@@ -38,11 +38,11 @@ export default function PointChecklist({ scheduleId, orgId, clientId, onPendingC
     queryKey: ["checklist", scheduleId],
     queryFn: async () => {
       const [pts, avs, ocs] = await Promise.all([
-        (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id").eq("client_id", clientId).order("created_at"),
+        (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id").eq(clientId ? "client_id" : "lead_id", clientId ?? leadId).order("created_at"),
         (supabase as any).from("schedule_evidencias").select("comodato_id, estado, itens, precisa_substituir").eq("schedule_id", scheduleId).not("estado", "is", null),
-        (supabase as any).from("maintenance_schedule").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
+        (supabase as any).from("maintenance_schedule").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId ?? "00000000-0000-0000-0000-000000000000").eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
-      const pontos = ((pts.data ?? []) as any[]).filter((p) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO");
+      const pontos = ((pts.data ?? []) as any[]).filter((p) => ["ATIVO", "EM_TESTE"].includes((p.status ?? "ATIVO").toUpperCase()));
       return { pontos, avaliacoes: (avs.data ?? []) as any[], ocorrencias: (ocs.data ?? []) as any[] };
     },
   });

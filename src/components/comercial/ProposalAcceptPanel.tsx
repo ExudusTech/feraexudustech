@@ -22,19 +22,27 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
   const [tipo, setTipo] = useState<Tipo | null>(null);
   const [cnpj, setCnpj] = useState<CnpjStatus>({ ok: false });
   const [candidatos, setCandidatos] = useState<ConversionCandidate[] | null>(null);
-  const [agendar, setAgendar] = useState<{ clientId: string; tipo: Tipo } | null>(null);
+  const [agendar, setAgendar] = useState<{ clientId: string | null; leadId: string | null; tipo: Tipo } | null>(null);
   const precisaConverter = !proposal.client_id && !!proposal.lead_id;
   const preset = useMemo(() => agendar ? { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", proposta_id: proposal.id,
     material: { operacao: (agendar.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva") as "instalacao_teste" | "instalacao_definitiva", tipo_nota: "" as const,
       itens: itens.map((i) => ({ product_id: i.product_id, descricao: i.description, quantidade: String(i.quantity) })) } } : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [agendar?.clientId, agendar?.tipo, proposal.id]);
+    [agendar?.clientId, agendar?.leadId, agendar?.tipo, proposal.id]);
   const fechada = ["recusada", "expirada"].includes(proposal.status);
 
   const seguir = async (clientId: string, t: Tipo) => {
     await supabase.from("proposals").update({ status: "aceita", client_id: clientId }).eq("id", proposal.id);
     qc.invalidateQueries({ queryKey: ["proposals"] });
-    setAgendar({ clientId, tipo: t });
+    setAgendar({ clientId, leadId: null, tipo: t });
+  };
+  // Test installation never converts: the booking stays on the lead (CNPJ on the lead for the shipping note).
+  const agendarTeste = () => {
+    setTipo("teste");
+    if (proposal.client_id) { setAgendar({ clientId: proposal.client_id, leadId: null, tipo: "teste" }); return; }
+    if (!proposal.lead_id) { toast({ title: "Escolha o cliente da proposta antes", variant: "destructive" }); return; }
+    if (!cnpj.ok) return; // CNPJ panel shows below
+    setAgendar({ clientId: null, leadId: proposal.lead_id, tipo: "teste" });
   };
   const aceitar = async (t: Tipo, clienteExistente?: string) => {
     setTipo(t);
@@ -64,16 +72,18 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
 
       {!fechada && (
         <div className="flex flex-col sm:flex-row gap-2">
-          <Button type="button" size="sm" onClick={() => aceitar("teste")} disabled={convert.isPending}><FlaskConical className="h-4 w-4 mr-1" />Aceita — agendar instalação de teste</Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => aceitar("definitiva")} disabled={convert.isPending}><Truck className="h-4 w-4 mr-1" />Aceita — venda direta (instalação definitiva)</Button>
+          <Button type="button" size="sm" onClick={agendarTeste} disabled={convert.isPending}><FlaskConical className="h-4 w-4 mr-1" />Agendar instalação de teste</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => aceitar("definitiva")} disabled={convert.isPending}><Truck className="h-4 w-4 mr-1" />Proposta aceita — virar cliente</Button>
         </div>
       )}
       {tipo && precisaConverter && !agendar && (
         <div className="space-y-2">
-          <p className="text-sm">Ainda é lead: informe o CNPJ para virar cliente.</p>
+          <p className="text-sm">{tipo === "teste" ? "Informe o CNPJ para a nota de remessa (continua lead)." : "Ainda é lead: informe o CNPJ para virar cliente."}</p>
           <CnpjGate target={{ kind: "lead", id: proposal.lead_id! }} onStatus={setCnpj} />
-          <Button type="button" size="sm" disabled={!cnpj.ok || convert.isPending} onClick={() => aceitar(tipo)}>Converter em cliente e agendar</Button>
-          {candidatos && (
+          {tipo === "teste"
+            ? <Button type="button" size="sm" disabled={!cnpj.ok} onClick={agendarTeste}>Agendar instalação de teste</Button>
+            : <Button type="button" size="sm" disabled={!cnpj.ok || convert.isPending} onClick={() => aceitar(tipo)}>Converter em cliente e agendar</Button>}
+          {candidatos && tipo !== "teste" && (
             <div className="space-y-1 rounded-md border p-2">
               <p className="text-sm">Já existe cliente parecido. Usar um deles?</p>
               {candidatos.map((c) => (
@@ -86,7 +96,7 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
         </div>
       )}
 
-      <ScheduleFormDialog open={!!agendar} onOpenChange={(o) => { if (!o) { setAgendar(null); onDone(); } }} defaultClientId={agendar?.clientId ?? null}
+      <ScheduleFormDialog open={!!agendar} onOpenChange={(o) => { if (!o) { setAgendar(null); onDone(); } }} defaultClientId={agendar?.clientId ?? null} defaultLeadId={agendar?.leadId ?? null}
         preset={preset} />
     </div>
   );
