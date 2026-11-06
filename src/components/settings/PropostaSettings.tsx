@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FileText } from "lucide-react";
 import { DEFAULT_PROPOSTA_CONFIG, type PropostaConfig } from "@/lib/proposta-config";
+import PropostaLogos from "@/components/settings/PropostaLogos";
 
 const LONG: [keyof PropostaConfig, string][] = [
   ["txt_empresa", "Nit's Clean (quem somos)"], ["txt_parcerias", "Parcerias com marcas líderes"],
@@ -35,7 +36,9 @@ export default function PropostaSettings() {
       const t = val.trim(); if (!t) continue;
       if (k === "validade_dias") { const n = Math.round(Number(t)); if (n > 0 && n <= 365) out[k] = n; } else out[k] = t.slice(0, 1000);
     }
-    update.mutate({ proposta_config: out } as any);
+    const atual = ((org as Record<string, any> | undefined)?.proposta_config ?? {}) as Record<string, unknown>;
+    if (Array.isArray(atual.logos)) out.logos = atual.logos; // logos are managed by their own area
+    update.mutate({ id: (org as any)?.id, proposta_config: out } as any);
   };
   const ph = (k: keyof PropostaConfig) => String(DEFAULT_PROPOSTA_CONFIG[k]);
   return (
@@ -52,6 +55,7 @@ export default function PropostaSettings() {
           <div key={k}><Label>{label}</Label><Textarea rows={3} value={v[k] ?? ""} placeholder={ph(k)} disabled={!isAdmin} onChange={(e) => setV({ ...v, [k]: e.target.value })} /></div>
         ))}
         {isAdmin && <Button onClick={save} disabled={update.isPending}>Salvar</Button>}
+        {(org as any)?.id && <PropostaLogos orgId={(org as any).id} config={((org as any).proposta_config ?? {}) as Record<string, unknown>} canEdit={isAdmin} />}
       </CardContent>
     </Card>
   );
