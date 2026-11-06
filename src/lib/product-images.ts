@@ -40,7 +40,7 @@ export function planImageMatches<F extends { name: string }>(files: F[], product
 export const MIN_CLIENT_IMAGE_PX = 800;
 export const podeEnviarFotoCliente = (width: number, height: number) => Math.max(width, height) >= MIN_CLIENT_IMAGE_PX;
 
-export type ImagePreviewWarning = "nao_encontrado" | "ja_tem_imagem" | "pequena" | "formato";
+export type ImagePreviewWarning = "nao_encontrado" | "ja_tem_imagem" | "pequena" | "formato" | "ilegivel" | "repetido";
 export interface ImagePreviewItem<F> {
   file: F; codigo: string; product: SkuProduct | null;
   width: number | null; height: number | null;
@@ -51,7 +51,11 @@ export const WARNING_LABEL: Record<ImagePreviewWarning, string> = {
   ja_tem_imagem: "Produto já tem imagem — substituir?",
   pequena: `Imagem pequena < ${MIN_CLIENT_IMAGE_PX} px (fica só para uso interno)`,
   formato: "Formato não aceito (use PNG ou JPG)",
+  ilegivel: "Não foi possível ler a imagem",
+  repetido: "Código repetido — só o primeiro arquivo será usado",
 };
+/** Warnings that keep the file out of the import (the others only inform or ask). */
+export const BLOCKING_WARNINGS: ImagePreviewWarning[] = ["nao_encontrado", "formato", "ilegivel", "repetido"];
 
 /** One preview card per file: matched product (file name without extension = SKU), dimensions and warnings. */
 export function buildImagePreview<F extends { name: string }>(
@@ -59,15 +63,19 @@ export function buildImagePreview<F extends { name: string }>(
 ): ImagePreviewItem<F>[] {
   const bySku = new Map<string, SkuProduct>();
   for (const p of products) if (p.sku) bySku.set(normalizeSku(p.sku), p);
+  const seen = new Set<string>();
   return files.map((file) => {
     const codigo = fileBaseName(file.name).trim();
     const okExt = ALLOWED_IMAGE_EXT.includes(fileExt(file.name));
     const product = okExt ? bySku.get(normalizeSku(codigo)) ?? null : null;
-    const d = dims(file);
+    const d = okExt ? dims(file) : null;
     const warnings: ImagePreviewWarning[] = [];
     if (!okExt) warnings.push("formato");
     else if (!product) warnings.push("nao_encontrado");
+    if (product && seen.has(product.id)) warnings.push("repetido");
+    if (product) seen.add(product.id);
     if (product?.image_url) warnings.push("ja_tem_imagem");
+    if (okExt && !d) warnings.push("ilegivel");
     const podeEnviar = !!d && podeEnviarFotoCliente(d.width, d.height);
     if (d && !podeEnviar) warnings.push("pequena");
     return { file, codigo, product, width: d?.width ?? null, height: d?.height ?? null, warnings, podeEnviar };
