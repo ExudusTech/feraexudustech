@@ -11,6 +11,7 @@ import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, FileText, Shoppi
 
 import { useProposals, useDeleteProposal, type Proposal } from "@/hooks/use-proposals";
 import { useOrders, useDeleteOrder, type Order } from "@/hooks/use-orders";
+import { useOrganizationUsers } from "@/hooks/use-users";
 import ProposalFormDialog from "@/components/comercial/ProposalFormDialog";
 import OrderFormDialog from "@/components/comercial/OrderFormDialog";
 
@@ -20,6 +21,11 @@ const PROPOSAL_STATUS: Record<string, { label: string; variant: "default" | "sec
   aceita: { label: "Aceita", variant: "default" },
   recusada: { label: "Recusada", variant: "destructive" },
   expirada: { label: "Expirada", variant: "secondary" },
+};
+
+const PROPOSAL_COLOR: Record<string, string> = {
+  rascunho: "bg-muted text-muted-foreground border-transparent", enviada: "bg-primary/15 text-primary border-primary/30",
+  aceita: "bg-success/15 text-success border-success/30", recusada: "bg-destructive/15 text-destructive border-destructive/30", expirada: "bg-warning/15 text-warning border-warning/30",
 };
 
 const ORDER_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -42,6 +48,8 @@ export default function Propostas() {
   const deleteProposal = useDeleteProposal();
   const { data: orders = [], isLoading: loadingO } = useOrders();
   const deleteOrder = useDeleteOrder();
+  const { data: users = [] } = useOrganizationUsers();
+  const userName = (id: string | null) => users.find((u) => u.user_id === id)?.name ?? "—";
 
   const [searchP, setSearchP] = useState("");
   const [searchO, setSearchO] = useState("");
@@ -78,8 +86,8 @@ export default function Propostas() {
 
         {/* PROPOSTAS TAB */}
         <TabsContent value="propostas" className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-0 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar propostas..." className="pl-9" value={searchP} onChange={(e) => setSearchP(e.target.value)} />
             </div>
@@ -97,12 +105,12 @@ export default function Propostas() {
               </div>
             </div>
           ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
+            <div className="md:rounded-lg md:border md:bg-card">
+              <Table className="table-cards">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Título</TableHead><TableHead>Cliente</TableHead><TableHead>Valor</TableHead>
-                    <TableHead>Status</TableHead><TableHead>Validade</TableHead><TableHead className="w-10" />
+                    <TableHead>Status</TableHead><TableHead>Validade</TableHead><TableHead>Responsável</TableHead><TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -110,12 +118,13 @@ export default function Propostas() {
                     const st = PROPOSAL_STATUS[p.status] || { label: p.status, variant: "secondary" as const };
                     return (
                       <TableRow key={p.id} className="cursor-pointer" onClick={() => { setSelectedProp(p); setPropDialogOpen(true); }}>
-                        <TableCell className="font-medium">{p.title}</TableCell>
+                        <TableCell data-card="title" className="font-medium">{p.numero ? `Nº ${String(p.numero).padStart(4, "0")} · ` : ""}{p.title}</TableCell>
                         <TableCell className="text-muted-foreground">{p.clients?.name || (p.leads ? `${p.leads.empresa_nome || p.leads.company || p.leads.title} (lead)` : "—")}</TableCell>
-                        <TableCell className="font-medium">{fmt(p.final_value)}</TableCell>
-                        <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
-                        <TableCell className="text-muted-foreground">{fmtDate(p.valid_until)}</TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell data-label="Valor" className="font-medium">{fmt(p.final_value)}</TableCell>
+                        <TableCell><Badge variant="outline" className={PROPOSAL_COLOR[p.status]}>{st.label}</Badge></TableCell>
+                        <TableCell data-label="Validade" className="text-muted-foreground">{fmtDate(p.valid_until)}</TableCell>
+                        <TableCell data-label="Responsável" className="text-muted-foreground">{userName(p.assigned_to || p.created_by)}</TableCell>
+                        <TableCell data-card="actions" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -135,8 +144,8 @@ export default function Propostas() {
 
         {/* PEDIDOS TAB */}
         <TabsContent value="pedidos" className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-0 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar pedidos..." className="pl-9" value={searchO} onChange={(e) => setSearchO(e.target.value)} />
             </div>
@@ -154,8 +163,8 @@ export default function Propostas() {
               </div>
             </div>
           ) : (
-            <div className="rounded-lg border bg-card">
-              <Table>
+            <div className="md:rounded-lg md:border md:bg-card">
+              <Table className="table-cards">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nº Pedido</TableHead><TableHead>Cliente</TableHead><TableHead>Valor</TableHead>
@@ -168,13 +177,13 @@ export default function Propostas() {
                     const ps = PAYMENT_STATUS[o.payment_status || "pendente"] || { label: o.payment_status, variant: "secondary" as const };
                     return (
                       <TableRow key={o.id} className="cursor-pointer" onClick={() => { setSelectedOrder(o); setOrderDialogOpen(true); }}>
-                        <TableCell className="font-medium">{o.order_number || "—"}</TableCell>
+                        <TableCell data-card="title" className="font-medium">{o.order_number || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{o.clients?.name || "—"}</TableCell>
-                        <TableCell className="font-medium">{fmt(o.total_value)}</TableCell>
+                        <TableCell data-label="Valor" className="font-medium">{fmt(o.total_value)}</TableCell>
                         <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
                         <TableCell><Badge variant={ps.variant}>{ps.label}</Badge></TableCell>
-                        <TableCell className="text-muted-foreground">{fmtDate(o.delivery_date)}</TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell data-label="Entrega" className="text-muted-foreground">{fmtDate(o.delivery_date)}</TableCell>
+                        <TableCell data-card="actions" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">

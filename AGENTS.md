@@ -15,7 +15,6 @@
 - Role edits check backups before writes, add idempotently before removing old roles, and verify the saved set; failures expose only allowlisted messages and log stage/code without personal data.
 - Organization branding is applied at runtime from the organizations row (colors via injected CSS vars with WCAG-checked foregrounds, logo, favicon, manifest); legacy default colors count as "not customized" so other tenants keep the Exudus brand.
 - Organization logos live in the private org-logos bucket (public buckets are blocked in this workspace) and are referenced by long-lived signed URLs in organizations.logo_url.
-- Below the md breakpoint the side menu is replaced by a bottom nav and dialogs render full-screen; installability is manifest-only (no service worker).
 - Notification recipients reference org users by user_id and read WhatsApp live from profiles.phone (external contacts keep their own number); a trigger blocks duplicate users/numbers so one person is never alerted twice.
 - Loan equipment is manufacturer-neutral: comodatos and maintenance_schedule (work orders) carry a fabricante field; legacy ekkoa_* tables are DEPRECATED except ekkoa_coverage_areas (used by Flora), and /ekkoa only redirects.
 - Per-role read-only screens use readOnlyRoutes in src/lib/permissions.ts (read-only only if every granting role says so), and denied routes redirect to the first allowed home screen.
@@ -31,10 +30,10 @@
 - Company contacts are pessoas linked through empresa_contatos (lead or client, one primary mirrored to leads.pessoa_id/contact_*); client_contacts is DEPRECATED, so one person can represent many companies without duplicate person rows.
 - Leads become clients only via converter_lead_em_cliente (dedupe CNPJ > place_id > name+city, copies contacts, idempotent); direct client inserts are privileged or origem base_existente, so prospects never bypass the lead pipeline.
 - Same-user auth events (token refresh, focus SIGNED_IN) never show the global loader or downgrade a loaded user, and visit forms keep local drafts (src/lib/visit-draft.ts); returning from the phone camera previously unmounted the visit and lost data.
-- Phone lists opt into the .table-cards CSS (index.css) so table rows render as one-column cards; mark cells with data-card (title/actions/hide) and data-label instead of building separate mobile markup.
 - Check-in geolocation uses the typed capture helper with memory-only recent-position fallback; the server validates diagnostics and marks sem_permissao only for explicit denial, because missing GPS does not establish permission state.
 - Refill compatibility is resolved by refisCompativeis: refill specifications naming the dispenser, then products.compatible_dispenser_families ∋ dispenser_family_id, then same brand with "ver todos"; no new table.
 - Maintenance checkout derives the next step from planos_manutencao (creating a plan from a quick frequency when missing), and new points are saved already evaluated, so closing never waits on hidden steps.
 - Check-in destination is schedule → client → lead coordinates, geocoded on demand and by the 15-min scheduler (geocode_tentado_em stops repeat lookups); a missing destination is flagged destino_sem_coordenadas, never treated as inside the radius, and a check-in position becomes the address only after the consultant confirms.
 - Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts.
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
+- Mobile (390px) never scrolls sideways: lists use .table-cards (index.css; data-card/data-label cells), dialogs render full-screen, side-by-side fields stack; below md a bottom nav replaces the side menu, installability is manifest-only.

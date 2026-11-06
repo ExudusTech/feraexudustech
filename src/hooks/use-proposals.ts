@@ -59,10 +59,8 @@ export function useProposals() {
         .select("*, clients(name), leads(empresa_nome, company, title, cnpj)")
         .order("created_at", { ascending: false });
 
-      // User role: only see own proposals
-      if (!isAdmin && role !== "gestor") {
-        query = query.eq("created_by", user!.id);
-      }
+      // Visibility (own, assigned, portfolio lead/client; managers all) is enforced by RLS can_see_proposal.
+      void isAdmin;
 
       const { data, error } = await query;
       if (error) throw error;
@@ -188,9 +186,10 @@ export function useDeleteProposalItem() {
 export function useUpdateProposalItemPrice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ item, price }: { item: ProposalItem; price: number | null }) => {
-      const total = price == null ? null : Math.round(price * Number(item.quantity) * 100) / 100;
-      const { error } = await supabase.from("proposal_items").update({ unit_price: price, total_price: total }).eq("id", item.id);
+    mutationFn: async ({ item, price, discount }: { item: ProposalItem; price: number | null; discount?: number }) => {
+      const d = discount ?? Number(item.discount_percent ?? 0);
+      const total = price == null ? null : Math.round(price * Number(item.quantity) * (1 - d / 100) * 100) / 100;
+      const { error } = await supabase.from("proposal_items").update({ unit_price: price, discount_percent: d, total_price: total }).eq("id", item.id);
       if (error) throw error;
       const { data: all } = await supabase.from("proposal_items").select("total_price").eq("proposal_id", item.proposal_id);
       const soma = (all ?? []).reduce((a, x: any) => a + Number(x.total_price ?? 0), 0);
