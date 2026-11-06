@@ -14,14 +14,15 @@ export interface ScheduleTarget {
   longitude: number | null;
 }
 
-/** Manutenção, Entrega e Visita técnica exigem cliente; Visita comercial aceita cliente ou lead. */
-export function requiresClient(scheduleType: string): boolean {
-  return scheduleType !== "visita_comercial";
+/** Manutenção, Entrega e Visita técnica exigem cliente; Visita comercial e instalação de teste (lead ainda não é cliente) aceitam lead. */
+export function requiresClient(scheduleType: string, operacao?: string | null): boolean {
+  if (scheduleType === "visita_comercial") return false;
+  return !(scheduleType === "visita_tecnica" && operacao === "instalacao_teste");
 }
 
-export function targetAllowed(scheduleType: string, target: ScheduleTarget | null): boolean {
+export function targetAllowed(scheduleType: string, target: ScheduleTarget | null, operacao?: string | null): boolean {
   if (!target) return false;
-  return requiresClient(scheduleType) ? target.kind === "cliente" : true;
+  return requiresClient(scheduleType, operacao) ? target.kind === "cliente" : true;
 }
 
 export function typeLabel(scheduleType: string): string {
@@ -47,10 +48,10 @@ export function resolveAssignee(roles: string[], userId: string, chosen?: string
   return canChoose && chosen ? chosen : userId;
 }
 
-export function searchTargets(targets: ScheduleTarget[], term: string, scheduleType: string, limit = 20): ScheduleTarget[] {
+export function searchTargets(targets: ScheduleTarget[], term: string, scheduleType: string, limit = 20, operacao?: string | null): ScheduleTarget[] {
   const t = term.trim().toLowerCase();
   return targets
-    .filter((x) => (requiresClient(scheduleType) ? x.kind === "cliente" : true))
+    .filter((x) => (requiresClient(scheduleType, operacao) ? x.kind === "cliente" : true))
     .filter((x) => !t || [x.name, x.city, x.address].some((f) => f?.toLowerCase().includes(t)))
     .slice(0, limit);
 }

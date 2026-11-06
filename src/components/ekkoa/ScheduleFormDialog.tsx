@@ -35,6 +35,8 @@ interface Props {
   schedule?: Schedule | null;
   /** Pre-select this client when creating (e.g. "Agendar" from the client record). */
   defaultClientId?: string | null;
+  /** Pre-select this lead when creating (e.g. test installation from a lead's proposal). */
+  defaultLeadId?: string | null;
   /** Pre-fill a new technical booking (e.g. accepted proposal → installation). */
   preset?: { schedule_type: string; schedule_subtype?: string; material: MaterialValue; proposta_id?: string } | null;
 }
@@ -49,7 +51,7 @@ const clientTarget = (c: Client): ScheduleTarget => ({
   latitude: (c as any).latitude ?? null, longitude: (c as any).longitude ?? null,
 });
 
-export default function ScheduleFormDialog({ open, onOpenChange, schedule, defaultClientId, preset }: Props) {
+export default function ScheduleFormDialog({ open, onOpenChange, schedule, defaultClientId, defaultLeadId, preset }: Props) {
   const [form, setForm] = useState(empty);
   const [target, setTarget] = useState<ScheduleTarget | null>(null);
   const [term, setTerm] = useState("");
@@ -105,12 +107,12 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
   useEffect(() => {
     if (!open) return;
     const cid = schedule?.client_id ?? (schedule ? null : defaultClientId);
-    const lid = schedule?.lead_id ?? null;
+    const lid = schedule?.lead_id ?? (schedule ? null : defaultLeadId ?? null);
     const found = targets.find((t) => (cid && t.kind === "cliente" && t.id === cid) || (!cid && lid && t.kind === "lead" && t.id === lid));
     setTarget(found ?? null);
     if (found && !schedule) applyTarget(found);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, schedule?.id, defaultClientId, targets.length]);
+  }, [open, schedule?.id, defaultClientId, defaultLeadId, targets.length]);
 
   const set = (k: keyof typeof empty, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -148,9 +150,9 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
     return hasScheduleOverlap(allSchedules, assignedTo, form.scheduled_date, form.start_time, form.end_time || null, schedule?.id);
   }, [allSchedules, assignedTo, form.scheduled_date, form.start_time, form.end_time, schedule?.id]);
 
-  const results = useMemo(() => searchTargets(targets, term, form.schedule_type), [targets, term, form.schedule_type]);
-  const needsClient = requiresClient(form.schedule_type);
-  const targetOk = targetAllowed(form.schedule_type, target);
+  const results = useMemo(() => searchTargets(targets, term, form.schedule_type, 20, material.operacao), [targets, term, form.schedule_type, material.operacao]);
+  const needsClient = requiresClient(form.schedule_type, material.operacao);
+  const targetOk = targetAllowed(form.schedule_type, target, material.operacao);
   const precisaNota = !!material.operacao;
   const materialOk = !precisaNota || (cnpjStatus.ok && material.itens.length > 0 && material.itens.every((i) => Number(i.quantidade) > 0));
   const valid = targetOk && !!form.scheduled_date && !!form.start_time && !overlapDetected && materialOk;
