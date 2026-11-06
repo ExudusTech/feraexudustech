@@ -303,6 +303,10 @@ Deno.serve(async (req) => {
         }
         b.descricao = "Próxima visita do plano de manutenção";
       }
+      // Commercial visit with collection: the next step lives only in the draft; closing needs just the result.
+      if (!tecnico && exigeColeta((s as any).ocorrencia_tipo) && !["novo_agendamento", "proposta", "follow_up", "perdido"].includes(b.proximo)) {
+        b.proximo = "novo_agendamento"; b.data_alvo = null; b.descricao = "Próximo passo definido na coleta";
+      }
       const err = validateCheckout({ status: s.status, resultado: b.resultado, resumo: b.resumo, proximo: b.proximo, data_alvo: b.data_alvo,
         motivo_perda: b.motivo_perda, confirmar_perdido: b.confirmar_perdido, commercial: !tecnico, fotos: count ?? 0,
         precisa_foto: !checklist && requiresPhoto(s.schedule_type, s.schedule_subtype) });

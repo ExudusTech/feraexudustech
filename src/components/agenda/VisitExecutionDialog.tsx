@@ -94,7 +94,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [teste, setTeste] = useState<MaterialValue>({ ...emptyMaterial, operacao: "instalacao_teste", tipo_nota: "remessa_teste" });
   const [testeCnpj, setTesteCnpj] = useState<CnpjStatus>({ ok: false });
   const createSchedule = useCreateSchedule();
-  const proximoEfetivo = usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
+  const comColeta = !tecnico && exigeColeta((s as any)?.ocorrencia_tipo);
+  const proximoEfetivo = comColeta ? "coleta" : usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
   const [pts, setPts] = useState({ pending: 0, total: 0 });
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
   const [askLoc, setAskLoc] = useState(false); const [registroAberto, setRegistroAberto] = useState(false);
@@ -154,8 +155,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   });
 
   const checkout = () => run(async () => {
-    const ehTeste = proximo === "teste";
-    const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: proximoEfetivo, data_alvo: dataAlvo || null,
+    const ehTeste = !comColeta && proximo === "teste";
+    const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: comColeta ? undefined : proximoEfetivo, data_alvo: dataAlvo || null,
       motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
     if (ehTeste) {
       await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
@@ -177,7 +178,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
   const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
     fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
-  if (proximo === "teste" && !usaPlano) {
+  if (proximo === "teste" && !usaPlano && !comColeta) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataAlvo) || dataAlvo <= spDate(new Date())) faltas.push({ label: "data da instalação de teste", alvo: "proximo" });
     if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
     if (!testeCnpj.ok) faltas.push({ label: "CNPJ da empresa", alvo: "proximo" });
@@ -273,7 +274,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 </Button>
               </div>)}
             <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />
-            {!tecnico && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
+            {!tecnico && !comColeta && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
             {tecnico && s.client_id && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} onPendingChange={onPts} />}
             {usaPlano && !registroAberto ? (
               <Button variant="ghost" className="w-full" onClick={() => setRegistroAberto(true)}>+ Foto ou observação extra (opcional)</Button>
@@ -315,7 +316,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <p className="text-xs text-muted-foreground">{substResultado === "nao_trocou" ? "O faturamento cancela a nota (até 24h) e o aparelho volta ao estoque." : substResultado === "trocou" ? "Registre o aparelho novo no ponto com foto. A nota de devolução será assinada na próxima visita da rota." : ""}</p></div>}
               {exigeColeta(sx.ocorrencia_tipo) && sx.coleta_status !== "confirmada" && <p className="text-xs text-muted-foreground">Pode encerrar agora: a ocorrência fica "Realizada — informações pendentes" até você confirmar a coleta.</p>}
               <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
-              <div id="visita-proximo" className="space-y-2 scroll-mt-4">
+              {!comColeta && <div id="visita-proximo" className="space-y-2 scroll-mt-4">
                 <Label>Próximo passo</Label>
                 {usaPlano ? (plano ? (
                   <p className="text-sm">Próxima visita do plano ({FREQ_LABEL[plano.frequencia] ?? plano.frequencia}){plano.proxima && `: ${plano.proxima.split("-").reverse().join("/")}`}. Nada a escolher.</p>
@@ -339,7 +340,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                   {proximo === "proposta" && <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="O que vai na proposta (opcional)" maxLength={300} />}
                   {proximo === "perdido" && <Input value={motivoPerda} onChange={(e) => setMotivoPerda(e.target.value)} placeholder="Motivo da perda" maxLength={200} />}
                 </>)}
-              </div>
+              </div>}
             </section>
             <Button variant="ghost" className="w-full" onClick={() => setShowNao((v) => !v)}>Não foi possível realizar</Button>
             {/* Fixed footer: what is still missing + the close button, always visible. */}
