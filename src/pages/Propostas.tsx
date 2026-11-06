@@ -23,6 +23,11 @@ const PROPOSAL_STATUS: Record<string, { label: string; variant: "default" | "sec
   expirada: { label: "Expirada", variant: "secondary" },
 };
 
+const PROPOSAL_COLOR: Record<string, string> = {
+  rascunho: "bg-muted text-muted-foreground border-transparent", enviada: "bg-primary/15 text-primary border-primary/30",
+  aceita: "bg-success/15 text-success border-success/30", recusada: "bg-destructive/15 text-destructive border-destructive/30", expirada: "bg-warning/15 text-warning border-warning/30",
+};
+
 const ORDER_STATUS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pendente: { label: "Pendente", variant: "secondary" },
   confirmado: { label: "Confirmado", variant: "outline" },
@@ -116,7 +121,7 @@ export default function Propostas() {
                         <TableCell data-card="title" className="font-medium">{p.numero ? `Nº ${String(p.numero).padStart(4, "0")} · ` : ""}{p.title}</TableCell>
                         <TableCell className="text-muted-foreground">{p.clients?.name || (p.leads ? `${p.leads.empresa_nome || p.leads.company || p.leads.title} (lead)` : "—")}</TableCell>
                         <TableCell data-label="Valor" className="font-medium">{fmt(p.final_value)}</TableCell>
-                        <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
+                        <TableCell><Badge variant="outline" className={PROPOSAL_COLOR[p.status]}>{st.label}</Badge></TableCell>
                         <TableCell data-label="Validade" className="text-muted-foreground">{fmtDate(p.valid_until)}</TableCell>
                         <TableCell data-label="Responsável" className="text-muted-foreground">{userName(p.assigned_to || p.created_by)}</TableCell>
                         <TableCell data-card="actions" onClick={(e) => e.stopPropagation()}>
