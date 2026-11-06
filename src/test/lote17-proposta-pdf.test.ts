@@ -24,7 +24,7 @@ describe("Lote 17 — proposta em PDF", () => {
 describe("PDF: comodato só na solução por ambiente", () => {
   it("não tem seção separada e inclui aparelho sem ponto como Geral", async () => {
     expect(shared).not.toContain('section("Aparelhos em comodato"');
-    const { ambientesComGeral } = await import("../../supabase/functions/_shared/proposta-pdf");
+    const { ambientesComGeral } = await import("../../supabase/functions/_shared/proposta-ambientes");
     const r = ambientesComGeral([{ local: "Banheiro feminino", aparelho: "Dispenser X", produto: "Refil", quantidade: "2" }],
       [{ descricao: "Dispenser X", quantidade: 1 }, { descricao: "Aromatizador Y", quantidade: 3 }]);
     expect(r).toHaveLength(2);

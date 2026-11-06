@@ -1,5 +1,6 @@
 // Commercial proposal PDF (A4) rendered server-side with pdf-lib. Pure: data in, bytes out (testable without network).
 import { PDFDocument, PDFFont, PDFImage, PDFPage, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
+import { NOTA_COMODATO, ambientesComGeral } from "./proposta-ambientes.ts";
 import { siteVisivel } from "./proposta-site.ts";
 
 export interface PropostaConfig {
@@ -100,13 +101,7 @@ function wrap(text: string, font: PDFFont, size: number, max: number): string[] 
   return out;
 }
 
-export const NOTA_COMODATO = "Os aparelhos são cedidos em comodato, sem custo, com manutenção periódica.";
-/** Single comodato listing: the per-point rows plus a "Geral" row for each device not tied to a point. */
-export function ambientesComGeral(ambientes: PropostaPdfData["ambientes"], avulsos: { descricao: string; quantidade: number }[]): PropostaPdfData["ambientes"] {
-  const naTabela = new Set(ambientes.map((a) => (a.aparelho ?? "").trim().toLowerCase()).filter(Boolean));
-  return [...ambientes, ...avulsos.filter((c) => !naTabela.has(c.descricao.trim().toLowerCase()))
-    .map((c) => ({ local: "Geral", aparelho: c.descricao, produto: null, quantidade: String(c.quantidade) }))];
-}
+export { NOTA_COMODATO, ambientesComGeral };
 
 export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Array | null): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
