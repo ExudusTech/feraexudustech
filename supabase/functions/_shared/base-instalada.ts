@@ -131,9 +131,16 @@ export function refisCompativeis<T extends Compativel>(disp: Compativel | null |
 }
 
 /** Ids of active points still without an evaluation in this visit. */
+/** Installed points that count as in service: active, or on test at a lead (EM_TESTE). */
+export const STATUS_EM_USO = ["ATIVO", "EM_TESTE"];
+export function pontoEmUso(status?: string | null): boolean { return STATUS_EM_USO.includes((status ?? "ATIVO").toUpperCase()); }
+/** A point installed on a test installation (or while the company is still a lead) stays EM_TESTE until the sale. */
+export function statusPontoNovo(v: { client_id?: string | null; operacao_material?: string | null }): "ATIVO" | "EM_TESTE" {
+  return !v.client_id || v.operacao_material === "instalacao_teste" ? "EM_TESTE" : "ATIVO";
+}
 export function pontosPendentes(pontos: { id: string; status?: string | null }[], avaliados: string[]): string[] {
   const done = new Set(avaliados);
-  return pontos.filter((p) => (p.status ?? "ATIVO").toUpperCase() === "ATIVO" && !done.has(p.id)).map((p) => p.id);
+  return pontos.filter((p) => pontoEmUso(p.status) && !done.has(p.id)).map((p) => p.id);
 }
 
 export function piorEstado(estados: (string | null | undefined)[]): Estado | null {

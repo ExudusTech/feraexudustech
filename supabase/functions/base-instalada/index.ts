@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
   // Visit the caller may execute (assigned consultant or manager).
   const loadVisit = async (id: unknown) => {
     if (!UUID.test(String(id ?? ""))) return null;
-    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, clients(name, latitude)").eq("id", id).maybeSingle();
+    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, operacao_material, clients(name, latitude), leads(empresa_nome, company)").eq("id", id).maybeSingle();
     if (!s) return null;
     if (!privileged && s.assigned_to !== user.id && !(s.assigned_to === null && s.created_by === user.id)) return null;
     return s as any;
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
     }
     case "ponto_novo": {
       const s = await loadVisit(b.schedule_id);
-      if (!s || !s.client_id) return json({ error: "Visita não encontrada" }, 404);
+      if (!s || (!s.client_id && !s.lead_id)) return json({ error: "Visita não encontrada" }, 404);
       if (s.status !== "em_atendimento") return json({ error: "Inicie o atendimento antes" }, 409);
       const foto = txt(b.foto_path, 300);
       if (foto && !foto.startsWith(`${s.organization_id}/${s.id}/`)) return json({ error: "Foto inválida" }, 400);
@@ -121,10 +121,12 @@ Deno.serve(async (req) => {
       const err = pontoErro({ localizacao_interna: b.localizacao_interna, foto_path: foto, quantidade: qtd });
       if (err) return json({ error: err }, 400);
       const disp = await productOk(uuidOrNull(b.product_id)); const refil = await productOk(uuidOrNull(b.refil_product_id));
-      const { data: c } = await admin.from("clients").select("city, state, address").eq("id", s.client_id).maybeSingle();
-      const { data, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, client_id: s.client_id, product_id: disp?.id ?? null,
+      const { data: c } = s.client_id ? await admin.from("clients").select("city, state, address").eq("id", s.client_id).maybeSingle()
+        : await admin.from("leads").select("city, state, address:endereco").eq("id", s.lead_id).maybeSingle();
+      // Test installation (or still a lead): the device stays EM_TESTE on the lead; the conversion trigger moves it to the client.
+      const { data, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, product_id: disp?.id ?? null,
         refil_product_id: refil?.id ?? null, quantidade: qtd, foto_path: foto, localizacao_interna: txt(b.localizacao_interna, 120), notes: txt(b.observacao, 500) || null,
-        cidade: c?.city ?? null, estado: c?.state ?? null, endereco_instalacao: c?.address ?? null, status: "ATIVO", origem: "campo",
+        cidade: c?.city ?? null, estado: c?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo",
         periodicidade_manut: "mensal", data_inicio: new Date().toISOString().slice(0, 10), created_by: user.id }).select("id").single();
       if (error) { console.error("[base-instalada] ponto", error.code); return json({ error: "Não foi possível salvar o ponto" }, 400); }
       // The new point leaves already evaluated (estado + checks + the same photo), so closing is never blocked by a hidden step.
@@ -143,10 +145,10 @@ Deno.serve(async (req) => {
     case "avaliar": {
       // Point evaluation = a schedule_evidencias row with estado (one per point and visit).
       const s = await loadVisit(b.schedule_id);
-      if (!s || !s.client_id) return json({ error: "Visita não encontrada" }, 404);
+      if (!s || (!s.client_id && !s.lead_id)) return json({ error: "Visita não encontrada" }, 404);
       if (s.status !== "em_atendimento") return json({ error: "Inicie o atendimento antes" }, 409);
       const { data: p } = await admin.from("comodatos").select("id, localizacao_interna, periodicidade_manut, linha_produto, fabricante")
-        .eq("id", b.comodato_id).eq("client_id", s.client_id).eq("organization_id", s.organization_id).maybeSingle();
+        .eq("id", b.comodato_id).eq(s.client_id ? "client_id" : "lead_id", s.client_id ?? s.lead_id).eq("organization_id", s.organization_id).maybeSingle();
       if (!p) return json({ error: "Ponto não encontrado" }, 404);
       const foto = txt(b.foto_path, 300);
       if (foto && !foto.startsWith(`${s.organization_id}/${s.id}/`)) return json({ error: "Foto inválida" }, 400);
