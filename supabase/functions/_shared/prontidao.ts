@@ -13,8 +13,16 @@ export const OPERACOES = Object.keys(OPERACAO_LABEL) as OperacaoMaterial[];
 
 export type TipoNota = "remessa_comodato" | "remessa_teste" | "venda" | "retorno";
 export const TIPO_NOTA_LABEL: Record<TipoNota, string> = {
-  remessa_comodato: "Remessa em comodato", remessa_teste: "Remessa para teste/demonstração", venda: "Venda", retorno: "Retorno de comodato/teste",
+  remessa_comodato: "Remessa em comodato", remessa_teste: "Simples Remessa (teste)", venda: "Venda", retorno: "Retorno de comodato/teste",
 };
+/** Simples Remessa (teste) covers the equipment and the product when it goes in a box or drum. */
+export const DICA_SIMPLES_REMESSA = "Equipamento + produto quando vai em caixa ou bombona";
+/** Billing task kinds beyond "emitir" (test return, sale of a test device, replacement). */
+export const TAREFA_ACAO_LABEL: Record<string, string> = {
+  cancelar: "Cancelar nota (até 24h)", devolucao: "Nota de devolução de comodato",
+  devolucao_remessa: "NF de Devolução de Simples Remessa", baixar_remessa: "Baixar a Simples Remessa", emitir_comodato: "Emitir NF de Comodato do aparelho",
+};
+export const TIPO_NOTA_TAREFA_LABEL: Record<string, string> = { devolucao_remessa: "Devolução de Simples Remessa (só equipamento)" };
 export const TIPOS_NOTA = Object.keys(TIPO_NOTA_LABEL) as TipoNota[];
 
 /** Default invoice type per operation (same mapping as the database trigger). */
