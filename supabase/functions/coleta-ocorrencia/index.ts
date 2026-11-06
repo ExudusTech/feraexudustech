@@ -248,7 +248,7 @@ Deno.serve(async (req) => {
         if (inst && !s.client_id && s.lead_id && r.instalacao?.cnpj && !temCnpj()) {
           await admin.from("leads").update({ cnpj: r.instalacao.cnpj }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
         }
-        const vendaDireta = (r.proximos_passos ?? []).some((p) => p.tipo === "venda_direta");
+        const vendaDireta = converteLeadNaColeta(r);
         if (vendaDireta && !s.client_id && s.lead_id) {
           const { data: conv, error: ce } = caller ? await caller.rpc("converter_lead_em_cliente", { _lead: s.lead_id }) : { data: null, error: null };
           if (!ce && conv?.client_id) { s.client_id = conv.client_id; await admin.from("schedules").update({ client_id: conv.client_id }).eq("id", s.id); }
