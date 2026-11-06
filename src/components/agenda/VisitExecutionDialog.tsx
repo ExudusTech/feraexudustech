@@ -179,7 +179,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done();
     const rt = (r as any).teste as { resultado?: string; proposta_id?: string | null } | null | undefined;
     if (rt?.resultado === "reprovado") toast({ title: "Faturamento vai emitir a NF de Devolução", description: "O aparelho volta ao estoque quando a nota for anexada." });
-    if (rt?.resultado === "aprovado") { onOpenChange(false); navigate(rt.proposta_id ? `/propostas?abrir=${rt.proposta_id}` : `/propostas?nova_lead=${s!.lead_id}`); return; }
+    if (rt?.resultado === "aprovado") { onOpenChange(false); navigate(rt.proposta_id ? `/propostas?abrir=${rt.proposta_id}` : "/propostas?nova=1"); return; }
     const cp = (r as any).coleta_pendente as string[] | undefined;
     toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
   });
