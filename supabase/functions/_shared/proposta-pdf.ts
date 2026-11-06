@@ -220,7 +220,7 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
     };
     const r = d.cliente.responsavel ?? {};
     card(M, cw, "CLIENTE", [["", d.cliente.razao], ["CNPJ", d.cliente.cnpj ?? ""], ["Responsável", r.nome ?? ""], ["E-mail", r.email ?? ""], ["Telefone", fmtTel(r.telefone)]]);
-    card(M + cw + 14, cw, "CONSULTOR NITSCLEAN", [["", d.consultor.nome || "Equipe NitsClean"], ["Telefone", fmtTel(d.consultor.telefone)], ["WhatsApp", d.config.whatsapp], ["Site", d.config.site]]);
+    card(M + cw + 14, cw, "CONSULTOR NITSCLEAN", [["", d.consultor.nome || "Equipe NitsClean"], ["Telefone", fmtTel(d.consultor.telefone)], ["WhatsApp", d.config.whatsapp], ...(siteVisivel(d.config.site) ? [["Site", d.config.site] as [string, string]] : [])]);
     y = top - h - 30;
   }
 
@@ -323,7 +323,7 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
     const sub = "Será um prazer cuidar da higiene do seu negócio."; t(p, sub, (W - R.widthOfTextAtSize(sub, 13)) / 2, ty - 52, 13, R, TEAL);
     p.drawRectangle({ x: 0, y: 0, width: W, height: 300, color: NAVY });
     p.drawRectangle({ x: 0, y: 300, width: W, height: 6, color: GREEN });
-    const contatos: [string, string][] = [["WHATSAPP", d.config.whatsapp], ["SITE", d.config.site], ["INSTAGRAM", d.config.instagram]];
+    const contatos: [string, string][] = [["WHATSAPP", d.config.whatsapp], ...(siteVisivel(d.config.site) ? [["SITE", d.config.site] as [string, string]] : []), ["INSTAGRAM", d.config.instagram]];
     const cw = (W - 2 * M) / 3;
     contatos.forEach(([k, v], i) => {
       const cx = M + i * cw + cw / 2;
@@ -336,6 +336,12 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
 
   // page numbers (skip cover and thanks)
   const pages = pdf.getPages();
-  pages.forEach((p, i) => { if (i === 0 || i === pages.length - 1) return; right(p, `${i + 1} / ${pages.length}`, W - M, 34, 8, R, MUTED); t(p, "NitsClean · " + d.config.site, M, 34, 8, R, MUTED); });
+  pages.forEach((p, i) => { if (i === 0 || i === pages.length - 1) return; right(p, `${i + 1} / ${pages.length}`, W - M, 34, 8, R, MUTED); t(p, "NitsClean" + (siteVisivel(d.config.site) ? " · " + d.config.site : ""), M, 34, 8, R, MUTED); });
   return await pdf.save();
+}
+
+/** The official site is not live yet: hide it when empty or still the default placeholder. */
+export function siteVisivel(site: string | null | undefined): boolean {
+  const v = (site ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  return !!v && v !== "www.nitsclean.com.br" && v !== "nitsclean.com.br";
 }
