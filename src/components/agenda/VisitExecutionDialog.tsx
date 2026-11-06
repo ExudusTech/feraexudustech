@@ -32,6 +32,8 @@ import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@
 import ColetaOcorrencia from "@/components/agenda/ColetaOcorrencia";
 import { OCORRENCIA_LABEL, exigeColeta, type OcorrenciaTipo } from "@/lib/coleta";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useNavigate } from "react-router-dom";
+import { precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE, type ResultadoTeste } from "@/lib/teste-notas";
 
 interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
 
@@ -105,6 +107,16 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [liberarMotivo, setLiberarMotivo] = useState(""); const [bloqueioNota, setBloqueioNota] = useState<string | null>(null);
   const [substResultado, setSubstResultado] = useState<"" | "trocou" | "nao_trocou">("");
   const sx = s as any;
+  const navigate = useNavigate();
+  const [resTeste, setResTeste] = useState<ResultadoTeste | "">("");
+  const { data: emTeste = 0 } = useQuery({
+    queryKey: ["lead-em-teste", s?.lead_id], enabled: open && !!s?.lead_id && !s?.client_id,
+    queryFn: async () => {
+      const { count } = await (supabase as any).from("comodatos").select("id", { count: "exact", head: true }).eq("lead_id", s!.lead_id).is("client_id", null).eq("status", "EM_TESTE");
+      return count ?? 0;
+    },
+  });
+  const pedeTeste = !!s && precisaResultadoTeste(s as any, emTeste);
   const ehSubstituicao = sx?.operacao_material === "substituicao";
   useEffect(() => {
     setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false);
@@ -157,7 +169,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const checkout = () => run(async () => {
     const ehTeste = !comColeta && proximo === "teste";
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: comColeta ? undefined : proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, resultado_teste: pedeTeste ? resTeste : undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
     if (ehTeste) {
       await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
         end_time: null, schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", client_id: s!.client_id, lead_id: s!.lead_id,
@@ -165,6 +177,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         operacao_material: "instalacao_teste", tipo_nota: teste.tipo_nota || "remessa_teste", itens: teste.itens } as any);
     }
     setStatus("concluido"); clearDraft(`encerrar:${s!.id}`); done();
+    const rt = (r as any).teste as { resultado?: string; proposta_id?: string | null } | null | undefined;
+    if (rt?.resultado === "reprovado") toast({ title: "Faturamento vai emitir a NF de Devolução", description: "O aparelho volta ao estoque quando a nota for anexada." });
+    if (rt?.resultado === "aprovado") { onOpenChange(false); navigate(rt.proposta_id ? `/propostas?abrir=${rt.proposta_id}` : `/propostas?nova_lead=${s!.lead_id}`); return; }
     const cp = (r as any).coleta_pendente as string[] | undefined;
     toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
   });
@@ -183,6 +198,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
     if (!testeCnpj.ok) faltas.push({ label: "CNPJ da empresa", alvo: "proximo" });
   }
+  if (pedeTeste && !resTeste) faltas.push({ label: "resultado do teste", alvo: "resultado" });
   if (ehSubstituicao && !substResultado) faltas.push({ label: "se o aparelho foi trocado", alvo: "resultado" });
   if (outroDia && !/^\d{2}:\d{2}$/.test(termino)) faltas.push({ label: "horário real de término", alvo: "resultado" });
   const irPara = (alvo: FaltaAlvo) => {
@@ -310,6 +326,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <Label htmlFor="termino-real">A visita ficou aberta desde {checkinEm!.slice(8, 10)}/{checkinEm!.slice(5, 7)}. Que horas ela terminou de verdade?</Label>
                 <Input id="termino-real" type="time" value={termino} onChange={(e) => setTermino(e.target.value)} />
                 <p className="text-xs text-muted-foreground">Sugestão: check-in + 1 h. A duração é calculada por este horário.</p></div>}
+              {pedeTeste && <div className="space-y-1"><Label>Resultado do teste ({emTeste} aparelho(s) em teste)</Label>
+                <div className="grid gap-2">{RESULTADOS_TESTE.map((k) => (
+                  <Button key={k} type="button" variant={resTeste === k ? "default" : "outline"} className="min-h-12 h-auto whitespace-normal" onClick={() => setResTeste(k)}>{RESULTADO_TESTE_LABEL[k]}</Button>))}</div>
+                <p className="text-xs text-muted-foreground">{resTeste === "reprovado" ? "O faturamento emite a NF de Devolução de Simples Remessa só do equipamento. Continua lead." : resTeste === "aprovado" ? "Ao encerrar, a proposta abre para seguir." : ""}</p></div>}
               {ehSubstituicao && <div className="space-y-1"><Label>O aparelho levado foi trocado?</Label>
                 <div className="grid grid-cols-2 gap-2">{([["trocou", "Sim, troquei"], ["nao_trocou", "Não precisou"]] as const).map(([k, l]) => (
                   <Button key={k} type="button" variant={substResultado === k ? "default" : "outline"} className="min-h-12" onClick={() => setSubstResultado(k)}>{l}</Button>))}</div>
