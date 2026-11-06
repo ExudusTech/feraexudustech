@@ -1,0 +1,2 @@
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS pode_enviar_foto_cliente boolean NOT NULL DEFAULT false;
+COMMENT ON COLUMN public.products.pode_enviar_foto_cliente IS 'Flora may send the product image to clients only when true (bulk import sets true when the longest side is >= 800 px).';
