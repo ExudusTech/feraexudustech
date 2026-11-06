@@ -69,9 +69,10 @@ Deno.serve(async (req) => {
   const itemDoPonto = (cid: string) => itens.find((i) => i.comodato_id === cid);
   const ambientes = comodatos.map((c) => ({ local: c.localizacao_interna || "Ponto", aparelho: c.aparelho_descricao || c.inv?.name || null,
     produto: c.refil?.name || itemDoPonto(c.id)?.description || null, quantidade: c.quantidade || (itemDoPonto(c.id) ? String(itemDoPonto(c.id)!.quantity) : null) }));
+  // Devices without a linked point become "Geral" rows in the same per-environment table (no separate comodato section).
+  const pontosIds = new Set(comodatos.map((c) => c.id));
   const aparelhos = new Map<string, number>();
-  for (const c of comodatos) { const n = c.aparelho_descricao || c.inv?.name; if (n) aparelhos.set(n, (aparelhos.get(n) ?? 0) + 1); }
-  for (const i of itens) if (i.products?.is_dispenser) aparelhos.set(i.description, Math.max(aparelhos.get(i.description) ?? 0, Number(i.quantity) || 1));
+  for (const i of itens) if (i.products?.is_dispenser && !(i.comodato_id && pontosIds.has(i.comodato_id))) aparelhos.set(i.description, Math.max(aparelhos.get(i.description) ?? 0, Number(i.quantity) || 1));
 
   const vendidos = itens.filter((i) => !i.products?.is_dispenser).map((i) => {
     const q = Number(i.quantity) || 0, pr = Number(i.unit_price) || 0, ds = Number(i.discount_percent) || 0;
