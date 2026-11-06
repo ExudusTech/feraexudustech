@@ -37,4 +37,4 @@
 - Occurrences are schedules (OC number, type, coleta_*); audio/text notes are schedule_evidencias; planned points are comodatos PREVISTO; only coleta-ocorrencia processes drafts.
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
 - Mobile (390px) never scrolls sideways: lists use .table-cards (index.css; data-card/data-label cells), dialogs render full-screen, side-by-side fields stack; below md a bottom nav replaces the side menu, installability is manifest-only.
-- Test devices stay comodatos EM_TESTE: a not-approved return visit creates a devolucao_remessa task, the sale creates baixar_remessa + emitir_comodato (tarefas_faturamento.comodato_ids), and only concluding those tasks changes the device status, so stock and loans follow the invoices.
+- EM_TESTE devices change status only when their billing tasks (comodato_ids) conclude, so stock follows invoices.
