@@ -5,13 +5,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/agenda-slot.ts";
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
-import { limparRascunho, matchProduto, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { stageForCheckout } from "../_shared/visit-exec.ts";
+import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-const SELECT = "id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, ocorrencia_codigo, ocorrencia_tipo, coleta_status, coleta_rascunho, coleta_pendencias, resumo_execucao, leads(pessoa_id, contact_name, empresa_nome, company, zip_code, city), clients(name, zip_code, city)";
+const SELECT = "id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, ocorrencia_codigo, ocorrencia_tipo, coleta_status, coleta_rascunho, coleta_pendencias, resumo_execucao, leads(pessoa_id, contact_name, empresa_nome, company, zip_code, city, cnpj, category, levantamento), clients(name, zip_code, city, document, levantamento)";
 
 const spHoje = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 const TIPO_LABEL: Record<string, string> = { proposta: "proposta", retorno: "retorno", teste: "instalação de teste", venda_direta: "venda direta" };
@@ -60,7 +61,9 @@ async function extrair(key: string, tipo: string, textos: string[], atual: Rascu
   const j = await r.json();
   const out = j.output_text ?? (j.output ?? []).flatMap((o: any) => o.content ?? []).find((c: any) => c.type === "output_text")?.text;
   if (!out) throw new AiError(422, "A IA não devolveu o rascunho");
-  return semVazios(JSON.parse(out));
+  const novo = semVazios(JSON.parse(out));
+  // Fields the seller edits on screen (installation items/invoice) are kept; survey details merge (new speech wins only when said).
+  return limparRascunho({ ...novo, instalacao: atual?.instalacao, levantamento: { ...(atual?.levantamento ?? {}), ...(novo.levantamento ?? {}) } });
 }
 
 Deno.serve(async (req) => {
@@ -76,7 +79,7 @@ Deno.serve(async (req) => {
 
   // Identity: app user (JWT, caller-RLS read) or Flora path (service key + server-resolved user id).
   const interno = auth === `Bearer ${serviceKey}`;
-  let userId: string; let s: any;
+  let userId: string; let s: any; let caller: any = null;
   if (interno) {
     const acting = req.headers.get("x-acting-user") ?? "";
     if (!UUID.test(acting)) return json({ error: "Não autorizado" }, 401);
@@ -84,7 +87,7 @@ Deno.serve(async (req) => {
     const { data } = await admin.from("schedules").select(SELECT).eq("id", b.id).maybeSingle();
     s = data;
   } else {
-    const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
+    caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
     const { data: { user } } = await caller.auth.getUser();
     if (!user) return json({ error: "Não autorizado" }, 401);
     userId = user.id;
@@ -106,8 +109,10 @@ Deno.serve(async (req) => {
   }
   if (s.coleta_status === "confirmada" && b.action !== "pendencias") return json({ error: "Coleta já confirmada" }, 409);
   const tipo = s.ocorrencia_tipo as string;
+  const temCnpj = () => String(s.clients?.document ?? s.leads?.cnpj ?? "").replace(/\D/g, "").length === 14;
+  const pendDe = (r: RascunhoColeta) => pendenciasColeta(tipo, r, { cnpj: temCnpj() });
   const salvar = async (r: RascunhoColeta, status: string) => {
-    const pend = pendenciasColeta(tipo, r);
+    const pend = pendDe(r);
     const { error } = await admin.from("schedules").update({ coleta_rascunho: r, coleta_resumo: resumoColeta(s.ocorrencia_codigo, r), coleta_pendencias: pend,
       coleta_status: s.status === "concluido" && status === "rascunho" ? "pendente" : status, coleta_processada_em: new Date().toISOString() }).eq("id", s.id);
     if (error) { console.error("[coleta] save", error.code); throw new Error("save"); }
@@ -117,7 +122,7 @@ Deno.serve(async (req) => {
   try {
     switch (b.action) {
       case "pendencias":
-        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendenciasColeta(tipo, s.coleta_rascunho), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
+        return json({ codigo: s.ocorrencia_codigo, status: s.coleta_status, pendencias: s.coleta_status === "confirmada" ? (s.coleta_pendencias ?? []) : pendDe(s.coleta_rascunho ?? {}), resumo: resumoColeta(s.ocorrencia_codigo, s.coleta_rascunho), rascunho: s.coleta_rascunho ?? {} });
       case "salvar": {
         const r = limparRascunho(b.rascunho);
         const pend = await salvar(r, "rascunho");
@@ -147,7 +152,7 @@ Deno.serve(async (req) => {
       }
       case "confirmar": {
         const r = limparRascunho(b.rascunho ?? s.coleta_rascunho);
-        const pend = pendenciasColeta(tipo, r);
+        const pend = pendDe(r);
         if (pend.length) { await salvar(r, "rascunho"); return json({ error: "Ainda faltam informações", pendencias: pend }, 422); }
         const now = new Date().toISOString();
         // 1) Planned points (not active: activation still needs the installation photo).
@@ -201,11 +206,35 @@ Deno.serve(async (req) => {
           }
         }
         // 3) Next visits (proposal/return = commercial; test/direct sale = technical with the points as items, only for a client).
-        const itens = (r.pontos ?? []).filter((p) => p.produto || p.aparelho).map((p) => ({ descricao: `${p.produto || p.aparelho}${p.local ? ` — ${p.local}` : ""}`, quantidade: p.quantidade || "1" }));
+        // 2b) Survey details go to the visit and the company (segment from the lead; decision maker/flow from the draft).
+        const lvAtual = (s.clients?.levantamento ?? s.leads?.levantamento ?? {}) as Record<string, unknown>;
+        const n = (v?: string) => v ? Number(v) : undefined;
+        const lv = Object.fromEntries(Object.entries({ ...lvAtual, segmento: (lvAtual as any).segmento ?? s.leads?.category ?? undefined,
+          porte: n(r.levantamento?.porte) ?? lvAtual.porte, banheiros_f: n(r.levantamento?.banheiros_f) ?? lvAtual.banheiros_f, banheiros_m: n(r.levantamento?.banheiros_m) ?? lvAtual.banheiros_m,
+          banheiros_pne: n(r.levantamento?.banheiros_pne) ?? lvAtual.banheiros_pne, problema: r.levantamento?.problema ?? lvAtual.problema, fornecedor: r.levantamento?.fornecedor ?? lvAtual.fornecedor,
+          decisor: r.decisor?.nome ? `${r.decisor.nome}${r.decisor.cargo ? ` (${r.decisor.cargo})` : ""}` : lvAtual.decisor,
+          produtos_atuais: r.produto_atual ?? lvAtual.produtos_atuais }).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+        await admin.from("schedules").update({ levantamento: lv }).eq("id", s.id);
+        if (s.client_id) await admin.from("clients").update({ levantamento: lv }).eq("id", s.client_id).eq("organization_id", s.organization_id);
+        else if (s.lead_id) await admin.from("leads").update({ levantamento: lv }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
+        // 2c) Lost: the lead goes to the lost stage (the step lives only in the draft).
+        const perdido = (r.proximos_passos ?? []).find((p) => p.tipo === "perdido");
+        if (perdido && s.lead_id) {
+          const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", stageForCheckout(true, "perdido")).maybeSingle();
+          if (st) await admin.from("leads").update({ stage_id: st.id, stage: "fechado_perdido" }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
+        }
+        // 2d) Test installation / direct sale needs a client: convert the lead now (CNPJ already checked by the pending list).
+        const inst = precisaInstalacao(r);
+        const semHorario: string[] = [];
+        if (inst && !s.client_id && s.lead_id) {
+          const { data: conv, error: ce } = caller ? await caller.rpc("converter_lead_em_cliente", { _lead: s.lead_id }) : { data: null, error: null };
+          if (!ce && conv?.client_id) { s.client_id = conv.client_id; await admin.from("schedules").update({ client_id: conv.client_id }).eq("id", s.id); }
+          else semHorario.push(conv?.status === "duplicados" ? "Converter o lead em cliente (há cadastro parecido)" : "Converter o lead em cliente");
+        }
+        const itens = (r.instalacao?.itens?.length ? r.instalacao.itens.filter((i) => i.descricao).map((i) => ({ descricao: i.descricao!, quantidade: i.quantidade || "1" })) : itensDosPontos(r));
         const nome = s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || "";
         const criados: string[] = [];
-        const semHorario: string[] = [];
-        const passos = (r.proximos_passos ?? []).filter((p) => p.tipo && p.data);
+        const passos = (r.proximos_passos ?? []).filter((p) => p.tipo && p.tipo !== "perdido" && p.data);
         let ctx: { area: any; feriados: any[]; ocupados: any[]; google: { start: number; end: number }[]; cidade: string | null } | null = null;
         if (passos.length) {
           const cep = s.clients?.zip_code ?? s.leads?.zip_code ?? null, cidade = s.clients?.city ?? s.leads?.city ?? null;
@@ -229,7 +258,7 @@ Deno.serve(async (req) => {
             status: "agendado", assigned_to: s.assigned_to ?? userId, created_by: userId, source: "coleta", confirmacao_status: "nao_aplicavel",
             title: `${p.tipo === "proposta" ? "Proposta" : p.tipo === "retorno" ? "Retorno" : p.tipo === "teste" ? "Instalação de teste" : "Venda direta"} — ${nome}`,
             description: `Gerado pela coleta #${s.ocorrencia_codigo}${p.observacao ? `: ${p.observacao}` : ""}${(p.tipo === "teste" || p.tipo === "venda_direta") && !s.client_id ? " (converter o lead em cliente para agendar a instalação)" : ""}` };
-          if (tecnico) Object.assign(row, { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: p.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva", itens, ocorrencia_tipo: p.tipo === "teste" ? "instalacao_teste" : "venda_direta" });
+          if (tecnico) Object.assign(row, { schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: p.tipo === "teste" ? "instalacao_teste" : "instalacao_definitiva", itens, tipo_nota: r.instalacao?.tipo_nota || tipoNotaPadrao(p.tipo), proposta_id: propostaId, ocorrencia_tipo: p.tipo === "teste" ? "instalacao_teste" : "venda_direta" });
           else Object.assign(row, { schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO", ocorrencia_tipo: "primeira_visita" });
           const { data: novo, error } = await admin.from("schedules").insert(row).select("ocorrencia_codigo").single();
           if (error) { console.error("[coleta] next", error.code); semHorario.push(pendenciaAgendar(TIPO_LABEL[p.tipo!] ?? p.tipo!, s.ocorrencia_codigo)); }

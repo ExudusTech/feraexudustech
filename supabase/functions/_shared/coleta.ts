@@ -132,7 +132,7 @@ export function limparRascunho(input: unknown): RascunhoColeta {
 const str = { type: "string" };
 export const RASCUNHO_JSON_SCHEMA = {
   type: "object", additionalProperties: false,
-  required: ["contato", "decisor", "pontos", "fluxo_pessoas", "dores", "produto_atual", "concorrente", "produtos_oferecidos", "proximos_passos", "observacoes"],
+  required: ["contato", "decisor", "pontos", "fluxo_pessoas", "dores", "produto_atual", "concorrente", "produtos_oferecidos", "proximos_passos", "observacoes", "levantamento"],
   properties: {
     contato: { type: "object", additionalProperties: false, required: ["nome", "cargo", "telefone", "email"], properties: { nome: str, cargo: str, telefone: str, email: str } },
     decisor: { type: "object", additionalProperties: false, required: ["nome", "cargo"], properties: { nome: str, cargo: str } },
@@ -141,6 +141,8 @@ export const RASCUNHO_JSON_SCHEMA = {
     produtos_oferecidos: { type: "array", items: { type: "object", additionalProperties: false, required: ["produto", "reacao"], properties: { produto: str, reacao: str } } },
     proximos_passos: { type: "array", items: { type: "object", additionalProperties: false, required: ["tipo", "data", "observacao"], properties: { tipo: { type: "string", enum: ["proposta", "teste", "venda_direta", "retorno", "perdido", ""] }, data: { type: "string", description: "AAAA-MM-DD ou vazio" }, observacao: str } } },
     observacoes: str,
+    levantamento: { type: "object", additionalProperties: false, required: ["porte", "banheiros_f", "banheiros_m", "banheiros_pne", "problema", "fornecedor"],
+      properties: { porte: { type: "string", description: "nº de funcionários/quartos/mesas" }, banheiros_f: str, banheiros_m: str, banheiros_pne: str, problema: str, fornecedor: { type: "string", description: "de quem compra hoje" } } },
   },
 };
 
