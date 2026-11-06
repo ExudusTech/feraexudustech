@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { itensDosPontos, limparRascunho, pendenciasColeta, sugerirProdutos, tipoNotaPadrao } from "@/lib/coleta";
-import { siteVisivel } from "../../supabase/functions/_shared/proposta-pdf";
+import { siteVisivel } from "../../supabase/functions/_shared/proposta-site";
 
 describe("visita comercial unificada", () => {
   it("perdido sem motivo pede o motivo; com motivo não", () => {

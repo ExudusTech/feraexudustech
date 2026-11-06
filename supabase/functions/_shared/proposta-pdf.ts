@@ -1,5 +1,6 @@
 // Commercial proposal PDF (A4) rendered server-side with pdf-lib. Pure: data in, bytes out (testable without network).
 import { PDFDocument, PDFFont, PDFImage, PDFPage, rgb, StandardFonts } from "npm:pdf-lib@1.17.1";
+import { siteVisivel } from "./proposta-site.ts";
 
 export interface PropostaConfig {
   slogan: string; experiencia: string;
@@ -340,8 +341,3 @@ export async function renderPropostaPdf(d: PropostaPdfData, logoBytes?: Uint8Arr
   return await pdf.save();
 }
 
-/** The official site is not live yet: hide it when empty or still the default placeholder. */
-export function siteVisivel(site: string | null | undefined): boolean {
-  const v = (site ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "");
-  return !!v && v !== "www.nitsclean.com.br" && v !== "nitsclean.com.br";
-}
