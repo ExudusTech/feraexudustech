@@ -8043,6 +8043,10 @@ export type Database = {
         Returns: boolean
       }
       can_see_lead: { Args: { _lead: string; _user: string }; Returns: boolean }
+      can_see_proposal: {
+        Args: { _proposal: string; _user: string }
+        Returns: boolean
+      }
       can_see_schedule: {
         Args: { _schedule: string; _user: string }
         Returns: boolean
