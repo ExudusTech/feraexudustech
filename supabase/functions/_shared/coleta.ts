@@ -15,7 +15,7 @@ export interface PontoColeta { local?: string; aparelho?: string; produto?: stri
 export interface OfertaColeta { produto?: string; reacao?: string }
 export interface PassoColeta { tipo?: "proposta" | "teste" | "venda_direta" | "retorno" | "perdido"; data?: string; observacao?: string }
 /** What a test installation / direct sale needs (asked at confirmation, never to close the visit). */
-export interface InstalacaoColeta { tipo_nota?: string; itens?: { descricao?: string; quantidade?: string }[] }
+export interface InstalacaoColeta { tipo_nota?: string; cnpj?: string; itens?: { descricao?: string; quantidade?: string }[] }
 /** Optional survey details ("Mais detalhes"); never block. Segment comes from the lead, decision maker and flow live in the draft. */
 export interface LevantamentoColeta { porte?: string; banheiros_f?: string; banheiros_m?: string; banheiros_pne?: string; problema?: string; fornecedor?: string }
 export interface RascunhoColeta {
@@ -61,7 +61,7 @@ export function pendenciasColeta(tipo: string | null | undefined, r: RascunhoCol
   if (inst) {
     const itens = d.instalacao?.itens?.length ? d.instalacao.itens.filter((i) => has(i.descricao)) : itensDosPontos(d);
     if (!itens.length) out.push(`Itens da ${PASSO_LABEL[inst].toLowerCase()}`);
-    if (ctx.cnpj === false) out.push("CNPJ da empresa");
+    if (ctx.cnpj === false && (d.instalacao?.cnpj ?? "").replace(/\D/g, "").length !== 14) out.push("CNPJ da empresa");
   }
   if (!exigeColeta(tipo)) return out;
   if (!has(d.contato?.nome)) out.push("Nome do contato");
@@ -122,6 +122,7 @@ export function limparRascunho(input: unknown): RascunhoColeta {
     proximos_passos: arr(o.proximos_passos, (p) => ({ tipo: passos.includes(p?.tipo) ? p.tipo : undefined, data: typeof p?.data === "string" && ISO.test(p.data) ? p.data : undefined, observacao: s(p?.observacao, 200) }), 5),
     observacoes: s(o.observacoes, 1000),
     ...(inst ? { instalacao: { tipo_nota: ["remessa_comodato", "remessa_teste", "venda", "retorno"].includes(inst.tipo_nota) ? inst.tipo_nota : undefined,
+      cnpj: typeof inst.cnpj === "string" && inst.cnpj.replace(/\D/g, "").length === 14 ? inst.cnpj.replace(/\D/g, "") : undefined,
       itens: arr(inst.itens, (i) => ({ descricao: s(i?.descricao, 300), quantidade: s(i?.quantidade == null ? undefined : String(i.quantidade), 20) })).filter((i) => i.descricao) } } : {}),
     ...(lv ? { levantamento: { porte: num(lv.porte), banheiros_f: num(lv.banheiros_f), banheiros_m: num(lv.banheiros_m), banheiros_pne: num(lv.banheiros_pne),
       problema: s(lv.problema, 100), fornecedor: s(lv.fornecedor, 100) } } : {}),

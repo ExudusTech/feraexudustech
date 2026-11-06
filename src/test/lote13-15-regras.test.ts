@@ -57,7 +57,7 @@ describe("Lote 15 — coleta", () => {
     expect(p).toEqual(["Você ofereceu Ekkoa — o que o cliente achou?", 'Qual a data para "Enviar proposta"?']);
   });
   it("rascunho completo não tem pendências e o resumo leva o número da ocorrência", () => {
-    const r = limparRascunho({ contato: { nome: "Ana" }, decisor: { nome: "Carlos" }, pontos: [{ local: "Banheiro F", produto: "Sabonete", quantidade: 2 }],
+    const r = limparRascunho({ contato: { nome: "Ana" }, decisor: { nome: "Carlos" }, pontos: [{ local: "Banheiro F", aparelho: "Dispenser", produto: "Sabonete", quantidade: 2 }],
       fluxo_pessoas: "200/dia", dores: ["odor"], concorrente: "Marca Z", produtos_oferecidos: [{ produto: "Ekkoa", reacao: "gostou" }],
       proximos_passos: [{ tipo: "teste", data: "2026-11-12" }] });
     expect(pendenciasColeta("primeira_visita", r)).toEqual([]);
