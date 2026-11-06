@@ -2,7 +2,7 @@
 // maintenance_schedule (replacement work orders and urgent requests). No parallel tables.
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao } from "../_shared/base-instalada.ts";
+import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo } from "../_shared/base-instalada.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 
@@ -122,11 +122,11 @@ Deno.serve(async (req) => {
       if (err) return json({ error: err }, 400);
       const disp = await productOk(uuidOrNull(b.product_id)); const refil = await productOk(uuidOrNull(b.refil_product_id));
       const { data: c } = s.client_id ? await admin.from("clients").select("city, state, address").eq("id", s.client_id).maybeSingle()
-        : await admin.from("leads").select("city, state, address:endereco").eq("id", s.lead_id).maybeSingle();
+        : await admin.from("leads").select("city, address:endereco").eq("id", s.lead_id).maybeSingle();
       // Test installation (or still a lead): the device stays EM_TESTE on the lead; the conversion trigger moves it to the client.
       const { data, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, product_id: disp?.id ?? null,
         refil_product_id: refil?.id ?? null, quantidade: qtd, foto_path: foto, localizacao_interna: txt(b.localizacao_interna, 120), notes: txt(b.observacao, 500) || null,
-        cidade: c?.city ?? null, estado: c?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo",
+        cidade: c?.city ?? null, estado: (c as any)?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo",
         periodicidade_manut: "mensal", data_inicio: new Date().toISOString().slice(0, 10), created_by: user.id }).select("id").single();
       if (error) { console.error("[base-instalada] ponto", error.code); return json({ error: "Não foi possível salvar o ponto" }, 400); }
       // The new point leaves already evaluated (estado + checks + the same photo), so closing is never blocked by a hidden step.

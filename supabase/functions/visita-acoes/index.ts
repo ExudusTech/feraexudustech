@@ -5,7 +5,7 @@ import {
   checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
   NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
-import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
+import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
