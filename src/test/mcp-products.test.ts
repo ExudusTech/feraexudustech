@@ -8,15 +8,16 @@ const catalog = [
   { id: "2", name: "Álcool Gel 70%", brand: "Higiclean", category: "Higienização", fornecedor: null, unit: "UN", description: "Álcool para mãos", price: "10" },
   { id: "4", name: "Glade N.Fresh Aerosol", brand: "Glade", category: "Aromatizador", fornecedor: null, unit: "UN", description: "Odorizador", price: "20" },
   { id: "3", name: "Papel Toalha Interfolhado", brand: "Nits", category: "Papel", fornecedor: null, unit: "CX", description: "Folha dupla", price: "50" },
-  { id: "d1", name: "Suma Break Up D3.5", brand: "DIVERSEY", category: "Desengordurante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengordurante cozinha", disponibilidade: "sob_encomenda", image_url: "org/NC-DIV-001.jpg", specifications: { segmentos: ["Cozinha industrial", "Hotelaria"] } },
+  { id: "d1", name: "Suma Break Up D3.5", brand: "DIVERSEY", category: "Desengordurante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengordurante cozinha", disponibilidade: "sob_encomenda", image_url: "org/NC-DIV-001.jpg", pode_enviar_foto_cliente: true, specifications: { segmentos: ["Cozinha industrial", "Hotelaria"] } },
   { id: "d2", name: "Clax Personril", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Lavanderia", "Hotelaria"] } },
   { id: "d3", name: "Taski Jontec", brand: "DIVERSEY", category: "Pisos", fornecedor: "DIVERSEY", unit: "GL", description: "Cera", disponibilidade: "sob_encomenda", specifications: { segmentos: ["Hospitalar"] } },
   { id: "d9", name: "SUMA GRILL D9", brand: "DIVERSEY", category: "Limpeza de chapas e fornos", fornecedor: "DIVERSEY", unit: "GL", description: "Limpador de fornos", disponibilidade: "sob_encomenda" },
-  { id: "h1", name: "INSPIRACOES - AGUA DE CHEIRO / AGUA DE LENCOL 500ML E 5L", brand: "Inspiracoes", category: "Aromatizador", fornecedor: null, unit: "UN", description: "Ideal para hotel e hotelaria", image_url: "org/NC-INS-001.jpg" },
-  { id: "sc", name: "SOFT CARE DES-E", brand: "DIVERSEY", category: "Higiene das mãos", fornecedor: "DIVERSEY", unit: "GL", description: "Sabonete", image_url: "org/NC-DIV-050.jpg" },
-  { id: "ox", name: "OXIVIR TB PRONTO USO", brand: "DIVERSEY", category: "Desinfecção", fornecedor: "DIVERSEY", unit: "UN", description: "Desinfetante hospitalar", image_url: "org/NC-DIV-060.jpg" },
-  { id: "sm", name: "Dispenser Smart Autocorte", brand: "Nits", category: "Dispensers", fornecedor: null, unit: "UN", description: "Dispenser de papel", image_url: "org/NC-NIT-001.jpg" },
-  { id: "gh", name: "GUARD GRAND HOTEL CQT 90X50FLS", brand: "Guard", category: "Papel", fornecedor: null, unit: "CX", description: "Papel", image_url: "org/NC-GH-1.jpg" },
+  { id: "h1", name: "INSPIRACOES - AGUA DE CHEIRO / AGUA DE LENCOL 500ML E 5L", brand: "Inspiracoes", category: "Aromatizador", fornecedor: null, unit: "UN", description: "Ideal para hotel e hotelaria", image_url: "org/NC-INS-001.jpg", pode_enviar_foto_cliente: true },
+  { id: "sc", name: "SOFT CARE DES-E", brand: "DIVERSEY", category: "Higiene das mãos", fornecedor: "DIVERSEY", unit: "GL", description: "Sabonete", image_url: "org/NC-DIV-050.jpg", pode_enviar_foto_cliente: true },
+  { id: "ox", name: "OXIVIR TB PRONTO USO", brand: "DIVERSEY", category: "Desinfecção", fornecedor: "DIVERSEY", unit: "UN", description: "Desinfetante hospitalar", image_url: "org/NC-DIV-060.jpg", pode_enviar_foto_cliente: true },
+  { id: "sm", name: "Dispenser Smart Autocorte", brand: "Nits", category: "Dispensers", fornecedor: null, unit: "UN", description: "Dispenser de papel", image_url: "org/NC-NIT-001.jpg", pode_enviar_foto_cliente: true },
+  { id: "gh", name: "GUARD GRAND HOTEL CQT 90X50FLS", brand: "Guard", category: "Papel", fornecedor: null, unit: "CX", description: "Papel", image_url: "org/NC-GH-1.jpg", pode_enviar_foto_cliente: true },
+  { id: "pi", name: "Pano Microfibra Interno", brand: "Nits", category: "Panos", fornecedor: null, unit: "UN", description: "Pano", image_url: "org/NC-PAN-001.jpg", pode_enviar_foto_cliente: false },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -185,5 +186,13 @@ describe("consultar_produto: total só pelo nome", () => {
   it("match só na descrição nunca é total", async () => {
     const r = await harness().route("consultar_produto", { termo: "limpador de fornos" });
     expect(r.data.correspondencia).toBe("segmento");
+  });
+  it("foto só para uso interno (pode_enviar_foto_cliente=false) → não envia nem expõe image_url", async () => {
+    const h = harness();
+    const r = await h.route("consultar_produto", { termo: "Pano Microfibra Interno", chat_id: "chat-1" });
+    expect(r.data.correspondencia).toBe("total");
+    expect(r.data.produtos[0].image_url).toBeNull();
+    expect(r.data.imagem_enviada).toBe(false);
+    expect(h.fetchMock).not.toHaveBeenCalled();
   });
 });

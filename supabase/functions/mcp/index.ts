@@ -1884,7 +1884,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   const supabase = getClient();
   const { data: rows } = await supabase
     .from("products")
-    .select("id, name, brand, category, fornecedor, linha_produto, unit, description, disponibilidade, image_url, specifications")
+    .select("id, name, brand, category, fornecedor, linha_produto, unit, description, disponibilidade, image_url, pode_enviar_foto_cliente, specifications")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true)
     .neq("disponibilidade", "descontinuado")
@@ -1897,6 +1897,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   const termFold = foldProductText(termo ?? "");
   const words = termFold.split(" ").filter((w) => w.length >= 3);
   const haystack = (p: Record<string, unknown>) => PRODUCT_SEARCH_FIELDS.map((f) => foldProductText(p[f])).join(" ");
+  const clientPhoto = (p: Record<string, unknown>) => typeof p.image_url === "string" && p.image_url.trim() !== "" && p.pode_enviar_foto_cliente === true;
   const fmt = (p: Record<string, unknown>, urls: Map<string, string>) => {
     const desc = typeof p.description === "string" ? p.description.trim() : "";
     return {
@@ -1904,12 +1905,13 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
       descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
       disponibilidade: p.disponibilidade ?? "estoque",
-      image_url: typeof p.image_url === "string" ? (urls.get(p.image_url) ?? null) : null,
+      // Internal-only photos (pode_enviar_foto_cliente=false) are never exposed to the client conversation.
+      image_url: clientPhoto(p) ? (urls.get(p.image_url as string) ?? null) : null,
     };
   };
   const produtoCitado = termo ?? categoria ?? null;
   const respondFound = async (corr: string, list: Array<Record<string, unknown>>, allowImage: boolean) => {
-    const urls = await resolveProductImageUrls(supabase, list.map((p) => p.image_url));
+    const urls = await resolveProductImageUrls(supabase, list.filter(clientPhoto).map((p) => p.image_url));
     const produtos = list.map((p) => fmt(p, urls));
     let imagemEnviada = false;
     if (allowImage && chatId && list.length === 1 && produtos[0].image_url) {
@@ -3223,7 +3225,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url. Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {

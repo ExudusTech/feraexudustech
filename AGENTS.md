@@ -20,7 +20,7 @@
 - Per-role read-only screens use readOnlyRoutes in src/lib/permissions.ts (read-only only if every granting role says so), and denied routes redirect to the first allowed home screen.
 - Visit alerts split into commercial/technical events; Flora notifies from mcp, Fera visits via notify-schedule (caller's access, notification_logs dedupe), keeping tenants isolated with no new secret.
 - Sync products.disponibilidade/is_active; MCP category ranks or suggests, never filters term matches.
-- Product images: storage paths in private product-images, signed 1h only at display/send so nothing expires; Flora sends ≤1 image per chat/product/24h (product_image_sends).
+- Product images: storage paths in private product-images, signed 1h only at display/send so nothing expires; Flora sends ≤1 image per chat/product/24h (product_image_sends), only if pode_enviar_foto_cliente.
 - Human-service hours live in supabase/functions/_shared/business-hours.ts; mcp embeds an identical copy (test-enforced) because its test harness cannot load imports, so Flora, the queue and screens agree.
 - Team alerts outside human hours are stored as QUEUED notification_logs and released by release-notification-queue (5-min cron), which also sends atendimento wait reminders; bookings still alert immediately.
 - Atendimentos (one open per lead) are created by mcp; Fera actions go through atendimento-acoes, which reads the row with caller RLS before using the GPT Maker token or writing the timeline.

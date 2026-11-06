@@ -6882,6 +6882,7 @@ export type Database = {
           min_stock: number
           name: string
           organization_id: string
+          pode_enviar_foto_cliente: boolean
           price: number
           sku: string | null
           specifications: Json | null
@@ -6909,6 +6910,7 @@ export type Database = {
           min_stock?: number
           name: string
           organization_id: string
+          pode_enviar_foto_cliente?: boolean
           price?: number
           sku?: string | null
           specifications?: Json | null
@@ -6936,6 +6938,7 @@ export type Database = {
           min_stock?: number
           name?: string
           organization_id?: string
+          pode_enviar_foto_cliente?: boolean
           price?: number
           sku?: string | null
           specifications?: Json | null

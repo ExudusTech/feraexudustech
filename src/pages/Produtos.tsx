@@ -106,7 +106,7 @@ export default function Produtos() {
       actions={canEditProducts ? (
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar</Button>
-          {isAdmin && <Button variant="outline" onClick={() => setImagesOpen(true)}><Images className="h-4 w-4 mr-2" />Importar imagens em lote</Button>}
+          {(isAdmin || role === "gestor") && <Button variant="outline" onClick={() => setImagesOpen(true)}><Images className="h-4 w-4 mr-2" />Importar imagens em lote</Button>}
           <Button onClick={handleNew}><Plus className="h-4 w-4 mr-2" />Novo Produto</Button>
         </div>
       ) : undefined}

@@ -17,6 +17,7 @@ export interface Product {
   stock: number;
   min_stock: number;
   image_url: string | null;
+  pode_enviar_foto_cliente?: boolean;
   is_active: boolean;
   disponibilidade?: "estoque" | "sob_encomenda" | "descontinuado";
   specifications: Record<string, any>;
