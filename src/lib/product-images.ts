@@ -36,6 +36,44 @@ export function planImageMatches<F extends { name: string }>(files: F[], product
   return plan;
 }
 
+/** Longest side (px) from which a product photo may be sent to clients by Flora. */
+export const MIN_CLIENT_IMAGE_PX = 800;
+export const podeEnviarFotoCliente = (width: number, height: number) => Math.max(width, height) >= MIN_CLIENT_IMAGE_PX;
+
+export type ImagePreviewWarning = "nao_encontrado" | "ja_tem_imagem" | "pequena" | "formato";
+export interface ImagePreviewItem<F> {
+  file: F; codigo: string; product: SkuProduct | null;
+  width: number | null; height: number | null;
+  warnings: ImagePreviewWarning[]; podeEnviar: boolean;
+}
+export const WARNING_LABEL: Record<ImagePreviewWarning, string> = {
+  nao_encontrado: "Código não encontrado",
+  ja_tem_imagem: "Produto já tem imagem — substituir?",
+  pequena: `Imagem pequena < ${MIN_CLIENT_IMAGE_PX} px (fica só para uso interno)`,
+  formato: "Formato não aceito (use PNG ou JPG)",
+};
+
+/** One preview card per file: matched product (file name without extension = SKU), dimensions and warnings. */
+export function buildImagePreview<F extends { name: string }>(
+  files: F[], products: SkuProduct[], dims: (f: F) => { width: number; height: number } | null,
+): ImagePreviewItem<F>[] {
+  const bySku = new Map<string, SkuProduct>();
+  for (const p of products) if (p.sku) bySku.set(normalizeSku(p.sku), p);
+  return files.map((file) => {
+    const codigo = fileBaseName(file.name).trim();
+    const okExt = ALLOWED_IMAGE_EXT.includes(fileExt(file.name));
+    const product = okExt ? bySku.get(normalizeSku(codigo)) ?? null : null;
+    const d = dims(file);
+    const warnings: ImagePreviewWarning[] = [];
+    if (!okExt) warnings.push("formato");
+    else if (!product) warnings.push("nao_encontrado");
+    if (product?.image_url) warnings.push("ja_tem_imagem");
+    const podeEnviar = !!d && podeEnviarFotoCliente(d.width, d.height);
+    if (d && !podeEnviar) warnings.push("pequena");
+    return { file, codigo, product, width: d?.width ?? null, height: d?.height ?? null, warnings, podeEnviar };
+  });
+}
+
 export function productImagePath(orgId: string, sku: string | null, productId: string, ext: string) {
   const base = (sku ? normalizeSku(sku) : productId).replace(/[^A-Z0-9._-]/gi, "_");
   return `${orgId}/${base}.${ext === "jpeg" ? "jpg" : ext}`;
