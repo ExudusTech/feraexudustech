@@ -59,10 +59,8 @@ export function useProposals() {
         .select("*, clients(name), leads(empresa_nome, company, title, cnpj)")
         .order("created_at", { ascending: false });
 
-      // User role: only see own proposals
-      if (!isAdmin && role !== "gestor") {
-        query = query.eq("created_by", user!.id);
-      }
+      // Visibility (own, assigned, portfolio lead/client; managers all) is enforced by RLS can_see_proposal.
+      void isAdmin;
 
       const { data, error } = await query;
       if (error) throw error;
