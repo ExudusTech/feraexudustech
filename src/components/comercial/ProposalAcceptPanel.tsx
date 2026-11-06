@@ -1,23 +1,21 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { useProposalItems, useUpdateProposalItemPrice, type Proposal } from "@/hooks/use-proposals";
+import { useProposalItems, type Proposal } from "@/hooks/use-proposals";
 import { useConvertLeadToClient, MOTIVO_LABEL, type ConversionCandidate } from "@/hooks/use-lead-conversion";
 import { CnpjGate, type CnpjStatus } from "@/components/agenda/MaterialPronto";
 import ScheduleFormDialog from "@/components/ekkoa/ScheduleFormDialog";
-import { FlaskConical, Truck } from "lucide-react";
+import { FlaskConical, Truck, ChevronDown, ShoppingCart, XCircle } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 type Tipo = "teste" | "definitiva";
 
-/** Items of the proposal (price editable, blank = to fill) and the two "accepted" actions that open the existing booking flow. */
-export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Proposal; onDone: () => void }) {
+/** "Resultado da proposta" menu: test installation, accepted (convert), order, reject — opening the existing booking flow that open the existing booking flow. */
+export default function ProposalAcceptPanel({ proposal, onDone, onReject, onAcceptOrder }: { proposal: Proposal; onDone: () => void; onReject?: () => void; onAcceptOrder?: () => void }) {
   const qc = useQueryClient();
   const { data: itens = [] } = useProposalItems(proposal.id);
-  const setPrice = useUpdateProposalItemPrice();
   const convert = useConvertLeadToClient();
   const [tipo, setTipo] = useState<Tipo | null>(null);
   const [cnpj, setCnpj] = useState<CnpjStatus>({ ok: false });
@@ -56,25 +54,18 @@ export default function ProposalAcceptPanel({ proposal, onDone }: { proposal: Pr
 
   return (
     <div className="space-y-3">
-      <Label>Itens</Label>
-      {itens.length === 0 && <p className="text-sm text-muted-foreground">Sem itens.</p>}
-      <div className="space-y-2">
-        {itens.map((i) => (
-          <div key={i.id} className="flex items-center gap-2 text-sm">
-            <span className="flex-1 min-w-0 truncate">{Number(i.quantity)}x {i.description}</span>
-            <Input aria-label={`Preço ${i.description}`} className="w-28 h-8" type="number" step="0.01" min="0" placeholder="Preço"
-              defaultValue={i.unit_price ?? ""} disabled={fechada}
-              onBlur={(e) => { const v = e.target.value === "" ? null : Number(e.target.value); if (v !== (i.unit_price ?? null)) setPrice.mutate({ item: i, price: v }); }} />
-          </div>
-        ))}
-      </div>
-      {itens.some((i) => i.unit_price == null) && <p className="text-xs text-warning">Itens sem preço: preencha antes de enviar ao cliente.</p>}
-
       {!fechada && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Button type="button" size="sm" onClick={agendarTeste} disabled={convert.isPending}><FlaskConical className="h-4 w-4 mr-1" />Agendar instalação de teste</Button>
-          <Button type="button" size="sm" variant="secondary" onClick={() => aceitar("definitiva")} disabled={convert.isPending}><Truck className="h-4 w-4 mr-1" />Proposta aceita — virar cliente</Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" className="w-full justify-between" disabled={convert.isPending}>Resultado da proposta <ChevronDown className="h-4 w-4" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[min(92vw,22rem)]">
+            <DropdownMenuItem onClick={agendarTeste}><FlaskConical className="h-4 w-4 mr-2" />Agendar instalação de teste</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => aceitar("definitiva")}><Truck className="h-4 w-4 mr-2" />Proposta aceita — virar cliente</DropdownMenuItem>
+            {onAcceptOrder && <DropdownMenuItem onClick={onAcceptOrder}><ShoppingCart className="h-4 w-4 mr-2" />Aceitar e gerar pedido</DropdownMenuItem>}
+            {onReject && <DropdownMenuItem className="text-destructive" onClick={onReject}><XCircle className="h-4 w-4 mr-2" />Rejeitar</DropdownMenuItem>}
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
       {tipo && precisaConverter && !agendar && (
         <div className="space-y-2">
