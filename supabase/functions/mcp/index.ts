@@ -1622,9 +1622,8 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
           "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
-        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3,
-          ...(!cidade ? { locationBias: { circle: { center: { latitude: -22.88, longitude: -42.02 }, radius: 50000 } } } : {}) }),
-      }, `places:${cidade ? "city" : "lagos-bias"}:${textQuery}`);
+        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 }),
+      }, `places:city:${textQuery}`);
       places = Array.isArray(result.places) ? result.places.slice(0, 3) : [];
     }
     places = places.filter(isPlaceInRj);
@@ -1669,7 +1668,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
     const mensagem = candidatos.length === 1
       ? `Só pra confirmar: é o ${first.nome}${addresses[0] ? ` da ${addresses[0]}` : ""}${first.bairro ? `, no bairro ${first.bairro}` : ""}?`
       : `Encontrei mais de um com esse nome por aqui 😊 Qual é o seu?\n${candidatos.map((candidate, i) => `${i + 1}. ${candidate.nome}${addresses[i] || candidate.bairro ? ` — ${[addresses[i], candidate.bairro].filter(Boolean).join(", ")}` : ""}`).join("\n")}`;
-    return ok({ encontrado: true, candidatos, precisa_confirmar: true, correspondencia_exata: correspondenciaExata, mensagem_para_lead: mensagem });
+    return ok({ cobertura: "DISTRIBUIDORA", encontrado: true, candidatos, precisa_confirmar: true, correspondencia_exata: correspondenciaExata, mensagem_para_lead: mensagem });
   } catch { return fallback(); }
 }
 
@@ -1704,6 +1703,14 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   const areas = await selectCoverage(supabase, selectorParams);
 
   if (!areas || areas.length === 0) {
+    // Same check as verificar_cobertura_regiao: out-of-area cities never receive dates or times.
+    const coverage = !regiao ? await verificarCoberturaRegiao({ cidade, cep, estado: params.estado }) : null;
+    const vinculo = coverage?.success ? (coverage.data as { vinculo?: string | null } | undefined)?.vinculo : null;
+    if (vinculo === "SEM_COBERTURA" || vinculo === "MATRIZ") {
+      const mensagem = vinculo === "MATRIZ" ? MSG_MATRIZ : MSG_SEM_COBERTURA;
+      return ok({ coberto: false, cobertura: vinculo, vinculo, cidade: cidade ?? cep, proximas_datas: [], opcoes_horario: [], mensagem_para_lead: mensagem },
+        mensagem, vinculo === "MATRIZ" ? HINT_MATRIZ : `${HINT_SEM_COBERTURA}; nunca ofereça horários`);
+    }
     return ok(
       { coberto: false, cidade: regiao ?? cidade ?? cep, proximas_datas: [] },
       `${regiao ?? cidade ?? cep} não está coberta`,
