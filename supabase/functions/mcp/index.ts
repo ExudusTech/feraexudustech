@@ -3040,7 +3040,15 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
     if (error) return fail(dbFail("consultar lead", error));
     if (data) candidates.push(data);
   }
-  const existingId = candidates.find(sameTarget)?.id as string | undefined;
+  // One outside-coverage record per chat: reuse it instead of inserting a duplicate.
+  let chatLeadId: string | undefined;
+  if (chat_id) {
+    const { data, error } = await supabase.from("leads").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("gptmaker_chat_id", chat_id).eq("fora_cobertura", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) return fail(dbFail("consultar lead", error));
+    chatLeadId = (data as { id?: string } | null)?.id;
+  }
+  const existingId = (candidates.find(sameTarget)?.id as string | undefined) ?? chatLeadId;
   const values = {
         organization_id:  NITSCLEAN_ORG_ID,
         contact_name:     currentContactName(nome, pessoa?.nome),
@@ -3236,10 +3244,11 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 const TOOLS_MANIFEST_CLIENTE = [
   {
     name: "localizar_estabelecimento",
-    description: "Localiza estabelecimento por nome, com cidade opcional, ou pelo CEP via ViaCEP. Sem cidade, prioriza a Região dos Lagos. Retorna somente a correspondência única de nome ou até três candidatos; sempre confirme com o lead.",
+    description: "Localiza estabelecimento por nome + cidade ou CEP. Antes de buscar, checa a cobertura: SEM_COBERTURA registra fora de cobertura e devolve a mensagem de fora de área; MATRIZ orienta transferir; sem cidade/CEP pede cidade e bairro. Só busca em DISTRIBUIDORA; sempre confirme o candidato com o lead.",
     parameters: { type: "object", required: ["nome"], properties: {
       nome: { type: "string", maxLength: 200 }, cidade: { type: "string", maxLength: 120 },
       bairro: { type: "string", maxLength: 120 }, cep: { type: "string" },
+      estado: { type: "string", maxLength: 60, description: "UF ou nome do estado, se o lead informou" },
     } },
   },
   // ── Block 1: Identification ──────────────────────────────────────────────
