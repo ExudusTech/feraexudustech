@@ -85,9 +85,14 @@ describe("booking with \"Búzios\" uses the Búzios area days and hours", () => 
     const r = await harness().route("consultar_rota_consultor", { cidade: "Buzios" });
     expect(r.data.coberto).toBe(true);
     expect(r.data.proximas_datas.length).toBeGreaterThan(0);
-    for (const d of r.data.proximas_datas) expect([1, 5]).toContain(new Date(`${d.data ?? d}T12:00:00`).getDay());
-    for (const o of r.data.opcoes_horario ?? []) {
-      const [hh, mm] = String(o.horario).split(":").map(Number);
+    for (const d of r.data.proximas_datas) {
+      expect([1, 5]).toContain(new Date(`${d.data}T12:00:00`).getDay());
+      expect(d.horario).toBe("09:00:00 às 12:00:00");
+    }
+    expect(r.data.opcoes_horario.length).toBeGreaterThan(0);
+    for (const o of r.data.opcoes_horario) {
+      expect([1, 5]).toContain(new Date(`${o.data}T12:00:00`).getDay());
+      const [hh, mm] = String(o.hora).split(":").map(Number);
       expect(hh * 60 + mm).toBeGreaterThanOrEqual(9 * 60);
       expect(hh * 60 + mm).toBeLessThanOrEqual(12 * 60);
     }
@@ -96,7 +101,7 @@ describe("booking with \"Búzios\" uses the Búzios area days and hours", () => 
     const h = harness();
     const r = await h.route("agendar_visita_tecnica", { nome_contato: "PH", cidade: "Búzios", data_visita: "2026-11-11", horario: "10:00" });
     expect(r.success).toBe(false);
-    expect(r.message).toContain("2ª feira e 6ª feira");
+    expect(r.message).toContain("Segunda-feira e Sexta-feira");
     expect(h.writes()).toHaveLength(0);
   });
   it("agendar_visita_tecnica rejects Monday outside 09:00–12:00 with the area window", async () => {
