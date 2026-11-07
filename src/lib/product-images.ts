@@ -37,7 +37,7 @@ export function planImageMatches<F extends { name: string }>(files: F[], product
 }
 
 /** Longest side (px) from which a product photo may be sent to clients by Flora. */
-export const MIN_CLIENT_IMAGE_PX = 800;
+export const MIN_CLIENT_IMAGE_PX = 500;
 export const podeEnviarFotoCliente = (width: number, height: number) => Math.max(width, height) >= MIN_CLIENT_IMAGE_PX;
 
 /** Natural size of an image file in the browser (null when it cannot be decoded). */

@@ -9,7 +9,7 @@ import { AlertTriangle, CheckCircle2, FolderOpen, ImagePlus, Loader2, Send } fro
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  ALLOWED_IMAGE_EXT, BLOCKING_WARNINGS, WARNING_LABEL, buildImagePreview, fileExt, removeProductImage, uploadProductImage,
+  ALLOWED_IMAGE_EXT, BLOCKING_WARNINGS, MIN_CLIENT_IMAGE_PX, WARNING_LABEL, buildImagePreview, fileExt, removeProductImage, uploadProductImage,
   type ImagePreviewItem,
 } from "@/lib/product-images";
 import type { Product } from "@/hooks/use-products";
@@ -196,7 +196,7 @@ export default function ImportImagesDialog({ open, onOpenChange, products }: Pro
         {result && (
           <div className="space-y-2 text-sm">
             <p><strong>{result.ok}</strong> imagens gravadas{result.replaced > 0 ? ` e ${result.replaced} substituídas` : ""}.</p>
-            <p><strong>{result.envio}</strong> liberadas para envio ao cliente (800 px ou mais); as demais ficam só para uso interno.</p>
+            <p><strong>{result.envio}</strong> liberadas para envio ao cliente ({MIN_CLIENT_IMAGE_PX} px ou mais); as demais ficam só para uso interno.</p>
             {result.failed.length > 0 && <p className="text-destructive break-words">Falharam: {result.failed.join(", ")}</p>}
           </div>
         )}

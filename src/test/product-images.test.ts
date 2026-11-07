@@ -32,16 +32,16 @@ describe("reactivation", () => {
 
 describe("bulk image preview", () => {
   const dims = (m: Record<string, [number, number]>) => (f: { name: string }) => m[f.name] ? { width: m[f.name][0], height: m[f.name][1] } : null;
-  it("800 px on the longest side allows sending to client; smaller stays internal", () => {
-    expect(podeEnviarFotoCliente(800, 300)).toBe(true);
-    expect(podeEnviarFotoCliente(300, 800)).toBe(true);
-    expect(podeEnviarFotoCliente(799, 799)).toBe(false);
+  it("500 px on the longest side allows sending to client; smaller stays internal", () => {
+    expect(podeEnviarFotoCliente(500, 300)).toBe(true);
+    expect(podeEnviarFotoCliente(300, 500)).toBe(true);
+    expect(podeEnviarFotoCliente(499, 499)).toBe(false);
   });
   it("cards carry product, size and warnings", () => {
     const items = buildImagePreview(
       [{ name: "NC-DIV-036.png" }, { name: "NC-SUZ-005.jpg" }, { name: "3833.png" }],
       products,
-      dims({ "NC-DIV-036.png": [1200, 900], "NC-SUZ-005.jpg": [640, 480], "3833.png": [1000, 1000] }),
+      dims({ "NC-DIV-036.png": [1200, 900], "NC-SUZ-005.jpg": [400, 300], "3833.png": [1000, 1000] }),
     );
     expect(items[0]).toMatchObject({ codigo: "NC-DIV-036", podeEnviar: true, warnings: [] });
     expect(items[0].product?.id).toBe("1");
