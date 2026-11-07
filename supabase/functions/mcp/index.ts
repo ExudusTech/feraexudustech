@@ -2489,14 +2489,22 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     catch (error) { return fail(error instanceof Error ? error.message : "Erro ao validar lead"); }
     if (!validatedLead) return fail("lead_id não encontrado nesta organização");
   }
+  // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
+  const areas = await selectCoverage(supabase, params, true);
+  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
+  if (areas.length === 0) {
+    // Same check as verificar_cobertura_regiao: an out-of-area city is never booked nor offered times.
+    const coverage = await verificarCoberturaRegiao({ cidade, estado: params.estado });
+    if (coverage.success && (coverage.data as { vinculo?: string | null } | undefined)?.vinculo === "SEM_COBERTURA") {
+      return { success: false, message: MSG_SEM_COBERTURA,
+        data: { cobertura: "SEM_COBERTURA", vinculo: "SEM_COBERTURA", cidade, mensagem_para_lead: MSG_SEM_COBERTURA },
+        next_action_hint: `${HINT_SEM_COBERTURA}; nunca ofereça horários` };
+    }
+  }
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
   if (holidayRejection) return holidayRejection;
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     ? email.trim() : null;
-
-  // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
-  const areas = await selectCoverage(supabase, params, true);
-  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
 
   const coveredDows = new Set<number>();
   for (const a of (areas ?? [])) {
