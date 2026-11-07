@@ -968,7 +968,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
     : cep ? (postalMatch ? [postalMatch] : []) : allAreas.filter(area => matchesCity(area.city));
   if (areas.length === 0) {
-    const state = normalizeLocation(estado ?? "");
+    const state = normalizeLocation(estado ?? "") || (cityUf(cidade) ?? "");
     const postal = validCep(cep);
     const knownRjCities = "Rio de Janeiro|Niterói|São Gonçalo|Duque de Caxias|Nova Iguaçu|Belford Roxo|São João de Meriti|Mesquita|Nilópolis|Queimados|Itaboraí|Maricá|Magé|Guapimirim|Petrópolis|Teresópolis|Nova Friburgo|Cachoeiras de Macacu|Rio Bonito|Tanguá|Silva Jardim|Casimiro de Abreu|Rio das Ostras|Macaé|Campos dos Goytacazes|São João da Barra|São Francisco de Itabapoana|Quissamã|Carapebus|Conceição de Macabu|Araruama|Iguaba Grande|São Pedro da Aldeia|Arraial do Cabo|Cabo Frio|Armação dos Búzios|Búzios|Saquarema|Angra dos Reis|Paraty|Mangaratiba|Itaguaí|Seropédica|Volta Redonda|Barra Mansa|Resende|Itatiaia|Porto Real|Quatis|Barra do Piraí|Piraí|Pinheiral|Rio Claro|Valença|Vassouras|Miguel Pereira|Paty do Alferes|Paraíba do Sul|Três Rios|Areal|Comendador Levy Gasparian|Sapucaia|Sumidouro|Carmo|Cantagalo|Cordeiro|Duas Barras|Bom Jardim|Santa Maria Madalena|São Sebastião do Alto|Trajano de Moraes|São Fidélis|Itaocara|Aperibé|Santo Antônio de Pádua|Miracema|Laje do Muriaé|Itaperuna|Bom Jesus do Itabapoana|Natividade|Porciúncula|Varre-Sai|Cambuci|Cardoso Moreira|São José de Ubá|São José do Vale do Rio Preto|Engenheiro Paulo de Frontin|Mendes|Paracambi|Japeri|Rio das Flores|Comendador Levy Gasparian";
     const inferredRj = !!postal && postal >= "20000000" && postal <= "28999999" ||
@@ -1013,15 +1013,18 @@ const MSG_PEDIR_LOCAL = "Me passa a cidade e o bairro (ou o CEP) do estabelecime
 // Unambiguous cities outside RJ (capitals and large cities); "Campo Grande"/"Serra" are omitted (also RJ places).
 const KNOWN_OUTSIDE_CITIES = "São Paulo|Belo Horizonte|Vitória|Vila Velha|Cariacica|Guarapari|Curitiba|Florianópolis|Porto Alegre|Salvador|Recife|Fortaleza|Brasília|Goiânia|Cuiabá|Manaus|Belém|São Luís|Teresina|Natal|João Pessoa|Maceió|Aracaju|Palmas|Porto Velho|Rio Branco|Macapá|Boa Vista|Campinas|Santos|Guarulhos|Osasco|Santo André|São Bernardo do Campo|Ribeirão Preto|São José dos Campos|Sorocaba|Juiz de Fora|Uberlândia";
 const UFS = new Set(["ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"]);
-/** True when the city text names a known non-RJ city or ends with a non-RJ UF ("São Paulo/SP", "Pinheiros, São Paulo"). */
-function knownOutsideCity(cidade: unknown): boolean {
-  if (typeof cidade !== "string") return false;
-  const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  const parts = cidade.split(/[,/]|\s-\s|\s–\s/).map(fold).filter(Boolean);
+const foldPlace = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const placeParts = (cidade: unknown) => typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/).map(foldPlace).filter(Boolean) : [];
+/** UF written after the city ("São Paulo/SP", "Cabo Frio - RJ"), or null. */
+function cityUf(cidade: unknown): string | null {
+  const parts = placeParts(cidade);
   const last = parts[parts.length - 1] ?? "";
-  if (parts.length > 1 && UFS.has(last)) return last !== "rj";
-  const outside = new Set(KNOWN_OUTSIDE_CITIES.split("|").map(fold));
-  return parts.some(part => outside.has(part));
+  return parts.length > 1 && UFS.has(last) ? last : null;
+}
+/** True when one part of the city text is a known non-RJ city ("São Paulo", "Pinheiros, São Paulo"). */
+function knownOutsideCity(cidade: unknown): boolean {
+  const outside = new Set(KNOWN_OUTSIDE_CITIES.split("|").map(foldPlace));
+  return placeParts(cidade).some(part => outside.has(part));
 }
 
 const MULTI_REGION_HINT = "Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.";
