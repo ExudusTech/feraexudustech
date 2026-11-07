@@ -18,7 +18,7 @@ function harness(category: string | null = "Diversey", areas = [
     const result = () => {
       if (operation === "read") reads.push({ table, filters });
       else if (!(table === "leads" && value?.contact_email && existingEmail)) writes.push({ table, operation, value });
-      return { error: table === "holidays" && holidayError ? { message: "unavailable" } : null, data: table === "holidays" ? holidays : table === "ekkoa_coverage_areas" ? areas
+      return { error: table === "holidays" && holidayError ? { message: "unavailable" } : null, data: table === "holidays" ? holidays : table === "ekkoa_coverage_areas" ? areas.map((a: any) => ({ city: "Cabo Frio", ...a }))
         : table === "leads" ? { id: "lead", category, client_id: null, pessoa_id: null,
           empresa_nome: "Clínica Longevidade", endereco: "Rua Alex Novelino, 381 — Vila Nova, Cabo Frio/RJ",
           bairro: "Vila Nova", zip_code: "28907350", city: "Cabo Frio", maps_url: "https://maps.google.com/example",
@@ -121,7 +121,13 @@ describe("MCP visit scheduling", () => {
     expect(result.data.janelas).toEqual([{ inicio: "13:30", fim: "16:30" }]);
     expect(result.data.mensagem_para_lead).toContain("das 13h30 às 16h30");
     expect(h.writes).toEqual([]);
-    expect(h.reads.find(r => r.table === "ekkoa_coverage_areas")?.filters).toContainEqual(["city", "Cabo Frio"]);
+  });
+  it("ignores another city's window (city matched in code with aliases)", async () => {
+    const h = harness("Diversey", [{ dia_semana: "2ª feira e 6ª feira", horario_inicio: "13:30:00", horario_fim: "16:30:00" },
+      { city: "Armação dos Búzios", dia_semana: "2ª feira e 6ª feira", horario_inicio: "09:00:00", horario_fim: "12:00:00" } as any]);
+    const result = await h.route({ ...visit, horario: "10:00" });
+    expect(result.success).toBe(false);
+    expect(result.data.janelas).toEqual([{ inicio: "13:30", fim: "16:30" }]);
   });
   it.each(["13:30", "16:30"])("accepts boundary %s", async (horario) => {
     expect((await harness().route({ ...visit, horario })).success).toBe(true);
