@@ -975,19 +975,17 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
       knownRjCities.split("|").some(city => normalizeLocation(city) === normalizeLocation(cidade ?? "")) ||
       allAreas.some(area => matchesCity(area.city));
     const isRj = state ? ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state) : inferredRj;
-    if (!state && !isRj) {
+    const knownOutside = !state && !isRj && knownOutsideCity(cidade);
+    if (!state && !isRj && !knownOutside) {
       const mensagem = "Você pode me confirmar o estado ou o CEP do estabelecimento?";
       return ok({ coberto: false, vinculo: null, precisa_confirmar: true, cidade: cidade ?? null,
         mensagem_para_lead: mensagem }, mensagem, "Pergunte o estado ou CEP antes de definir o vínculo; não registre fora de cobertura ainda");
     }
     const vinculo = isRj ? "MATRIZ" : "SEM_COBERTURA";
-    const mensagem = isRj
-      ? "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento."
-      : "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
+    const mensagem = isRj ? MSG_MATRIZ : MSG_SEM_COBERTURA;
     return ok(
       { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem }, mensagem,
-      isRj ? "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura"
-        : "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente"
+      isRj ? HINT_MATRIZ : HINT_SEM_COBERTURA
     );
   }
 
@@ -1005,6 +1003,25 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
     "Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres."
   );
+}
+
+const MSG_SEM_COBERTURA = "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
+const MSG_MATRIZ = "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento.";
+const HINT_MATRIZ = "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura";
+const HINT_SEM_COBERTURA = "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente";
+const MSG_PEDIR_LOCAL = "Me passa a cidade e o bairro (ou o CEP) do estabelecimento?";
+// Unambiguous cities outside RJ (capitals and large cities); "Campo Grande"/"Serra" are omitted (also RJ places).
+const KNOWN_OUTSIDE_CITIES = "São Paulo|Belo Horizonte|Vitória|Vila Velha|Cariacica|Guarapari|Curitiba|Florianópolis|Porto Alegre|Salvador|Recife|Fortaleza|Brasília|Goiânia|Cuiabá|Manaus|Belém|São Luís|Teresina|Natal|João Pessoa|Maceió|Aracaju|Palmas|Porto Velho|Rio Branco|Macapá|Boa Vista|Campinas|Santos|Guarulhos|Osasco|Santo André|São Bernardo do Campo|Ribeirão Preto|São José dos Campos|Sorocaba|Juiz de Fora|Uberlândia";
+const UFS = new Set(["ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"]);
+/** True when the city text names a known non-RJ city or ends with a non-RJ UF ("São Paulo/SP", "Pinheiros, São Paulo"). */
+function knownOutsideCity(cidade: unknown): boolean {
+  if (typeof cidade !== "string") return false;
+  const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const parts = cidade.split(/[,/]|\s-\s|\s–\s/).map(fold).filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  if (parts.length > 1 && UFS.has(last)) return last !== "rj";
+  const outside = new Set(KNOWN_OUTSIDE_CITIES.split("|").map(fold));
+  return parts.some(part => outside.has(part));
 }
 
 const MULTI_REGION_HINT = "Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.";
