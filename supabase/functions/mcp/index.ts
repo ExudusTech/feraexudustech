@@ -1548,11 +1548,42 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.cidade != null && !cidade) return fail("cidade inválida (até 120 caracteres)");
   if (params.bairro != null && !bairro) return fail("bairro inválido");
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
-  // Generic type only (no proper name): never search Google, ask the lead for the name.
+  if (params.estado != null && !text(params.estado, 60)) return fail("estado inválido");
   const tipoGenerico = params.cep ? null : genericBusinessType(nome, cidade);
-  if (tipoGenerico) return ok({ encontrado: false, precisa_nome: true, candidatos: [],
+  // Coverage before any search: without city/CEP only ask for them, never promise a visit.
+  if (!cidade && !params.cep) {
+    return ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
+      ...(tipoGenerico ? { precisa_nome: true } : {}), mensagem_para_lead: MSG_PEDIR_LOCAL },
+      MSG_PEDIR_LOCAL, "Peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo; não ofereça visita antes de confirmar a cobertura");
+  }
+  const coverage = await verificarCoberturaRegiao({ cidade: cidade ?? undefined, cep: params.cep ?? undefined, estado: text(params.estado, 60) ?? undefined });
+  if (!coverage.success) return coverage;
+  const vinculo = (coverage.data as { vinculo?: string | null } | undefined)?.vinculo ?? null;
+  if (vinculo === "SEM_COBERTURA") {
+    let registro: { registrado: boolean; lead_id?: unknown } = { registrado: false };
+    // Team chats are never turned into leads.
+    if (!(await refuseTeamInClientFlow("registrar_fora_cobertura", params))) {
+      const empresa = params.empresa ?? params.empresa_nome ?? (tipoGenerico ? undefined : nome);
+      const result = await registrarForaCobertura({ ...params, empresa, cidade: cidade ?? `CEP ${validCep(params.cep)}` });
+      const data = result.data as { lead_id?: unknown } | undefined;
+      registro = { registrado: result.success, lead_id: data?.lead_id };
+    }
+    return ok({ cobertura: "SEM_COBERTURA", vinculo, encontrado: false, candidatos: [], ...registro, mensagem_para_lead: MSG_SEM_COBERTURA },
+      MSG_SEM_COBERTURA, "Fora de cobertura já registrado: envie mensagem_para_lead e encerre gentilmente; não ofereça visita nem horários");
+  }
+  if (vinculo === "MATRIZ") {
+    return ok({ cobertura: "MATRIZ", vinculo, encontrado: false, candidatos: [], mensagem_para_lead: MSG_MATRIZ }, MSG_MATRIZ, HINT_MATRIZ);
+  }
+  if (vinculo !== "DISTRIBUIDORA") {
+    const data = coverage.data as { mensagem_para_lead?: string } | undefined;
+    return ok({ cobertura: null, encontrado: false, candidatos: [], precisa_confirmar: true, mensagem_para_lead: data?.mensagem_para_lead ?? MSG_PEDIR_LOCAL },
+      coverage.message, "Confirme o estado ou o CEP e chame localizar_estabelecimento de novo; não ofereça visita ainda");
+  }
+  // Coverage confirmed as DISTRIBUIDORA from here on: visit promises are allowed.
+  // Generic type only (no proper name): never search Google, ask the lead for the name.
+  if (tipoGenerico) return ok({ cobertura: "DISTRIBUIDORA", encontrado: false, precisa_nome: true, candidatos: [],
     mensagem_para_lead: `Qual é o nome ${["pousada", "clínica", "academia", "loja", "empresa", "padaria", "lanchonete", "cafeteria", "farmácia", "escola", "oficina", "pizzaria", "sorveteria", "lavanderia", "barbearia", "igreja"].includes(tipoGenerico) ? "da" : "do"} ${tipoGenerico}? Assim já vejo o melhor dia para a visita.` });
-  const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
+  const fallback = () => ok({ cobertura: "DISTRIBUIDORA", encontrado: false, candidatos: [], precisa_confirmar: true,
     mensagem_para_lead: "Me passa o bairro ou o CEP do estabelecimento? Assim já vejo o melhor dia para o consultor passar aí." });
   // Tool-local name comparison; do not change the shared parameter normalizer.
   const normalizedName = (value: string) => value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
