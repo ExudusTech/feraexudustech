@@ -968,26 +968,24 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
     : cep ? (postalMatch ? [postalMatch] : []) : allAreas.filter(area => matchesCity(area.city));
   if (areas.length === 0) {
-    const state = normalizeLocation(estado ?? "");
+    const state = normalizeLocation(estado ?? "") || (cityUf(cidade) ?? "");
     const postal = validCep(cep);
     const knownRjCities = "Rio de Janeiro|Niterói|São Gonçalo|Duque de Caxias|Nova Iguaçu|Belford Roxo|São João de Meriti|Mesquita|Nilópolis|Queimados|Itaboraí|Maricá|Magé|Guapimirim|Petrópolis|Teresópolis|Nova Friburgo|Cachoeiras de Macacu|Rio Bonito|Tanguá|Silva Jardim|Casimiro de Abreu|Rio das Ostras|Macaé|Campos dos Goytacazes|São João da Barra|São Francisco de Itabapoana|Quissamã|Carapebus|Conceição de Macabu|Araruama|Iguaba Grande|São Pedro da Aldeia|Arraial do Cabo|Cabo Frio|Armação dos Búzios|Búzios|Saquarema|Angra dos Reis|Paraty|Mangaratiba|Itaguaí|Seropédica|Volta Redonda|Barra Mansa|Resende|Itatiaia|Porto Real|Quatis|Barra do Piraí|Piraí|Pinheiral|Rio Claro|Valença|Vassouras|Miguel Pereira|Paty do Alferes|Paraíba do Sul|Três Rios|Areal|Comendador Levy Gasparian|Sapucaia|Sumidouro|Carmo|Cantagalo|Cordeiro|Duas Barras|Bom Jardim|Santa Maria Madalena|São Sebastião do Alto|Trajano de Moraes|São Fidélis|Itaocara|Aperibé|Santo Antônio de Pádua|Miracema|Laje do Muriaé|Itaperuna|Bom Jesus do Itabapoana|Natividade|Porciúncula|Varre-Sai|Cambuci|Cardoso Moreira|São José de Ubá|São José do Vale do Rio Preto|Engenheiro Paulo de Frontin|Mendes|Paracambi|Japeri|Rio das Flores|Comendador Levy Gasparian";
     const inferredRj = !!postal && postal >= "20000000" && postal <= "28999999" ||
       knownRjCities.split("|").some(city => normalizeLocation(city) === normalizeLocation(cidade ?? "")) ||
       allAreas.some(area => matchesCity(area.city));
     const isRj = state ? ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state) : inferredRj;
-    if (!state && !isRj) {
+    const knownOutside = !state && !isRj && knownOutsideCity(cidade);
+    if (!state && !isRj && !knownOutside) {
       const mensagem = "Você pode me confirmar o estado ou o CEP do estabelecimento?";
       return ok({ coberto: false, vinculo: null, precisa_confirmar: true, cidade: cidade ?? null,
         mensagem_para_lead: mensagem }, mensagem, "Pergunte o estado ou CEP antes de definir o vínculo; não registre fora de cobertura ainda");
     }
     const vinculo = isRj ? "MATRIZ" : "SEM_COBERTURA";
-    const mensagem = isRj
-      ? "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento."
-      : "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
+    const mensagem = isRj ? MSG_MATRIZ : MSG_SEM_COBERTURA;
     return ok(
       { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem }, mensagem,
-      isRj ? "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura"
-        : "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente"
+      isRj ? HINT_MATRIZ : HINT_SEM_COBERTURA
     );
   }
 
@@ -1005,6 +1003,28 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
     "Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres."
   );
+}
+
+const MSG_SEM_COBERTURA = "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
+const MSG_MATRIZ = "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento.";
+const HINT_MATRIZ = "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura";
+const HINT_SEM_COBERTURA = "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente";
+const MSG_PEDIR_LOCAL = "Me passa a cidade e o bairro (ou o CEP) do estabelecimento?";
+// Unambiguous cities outside RJ (capitals and large cities); "Campo Grande"/"Serra" are omitted (also RJ places).
+const KNOWN_OUTSIDE_CITIES = "São Paulo|Belo Horizonte|Vitória|Vila Velha|Cariacica|Guarapari|Curitiba|Florianópolis|Porto Alegre|Salvador|Recife|Fortaleza|Brasília|Goiânia|Cuiabá|Manaus|Belém|São Luís|Teresina|Natal|João Pessoa|Maceió|Aracaju|Palmas|Porto Velho|Rio Branco|Macapá|Boa Vista|Campinas|Santos|Guarulhos|Osasco|Santo André|São Bernardo do Campo|Ribeirão Preto|São José dos Campos|Sorocaba|Juiz de Fora|Uberlândia";
+const UFS = new Set(["ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"]);
+const foldPlace = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const placeParts = (cidade: unknown) => typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/).map(foldPlace).filter(Boolean) : [];
+/** UF written after the city ("São Paulo/SP", "Cabo Frio - RJ"), or null. */
+function cityUf(cidade: unknown): string | null {
+  const parts = placeParts(cidade);
+  const last = parts[parts.length - 1] ?? "";
+  return parts.length > 1 && UFS.has(last) ? last : null;
+}
+/** True when one part of the city text is a known non-RJ city ("São Paulo", "Pinheiros, São Paulo"). */
+function knownOutsideCity(cidade: unknown): boolean {
+  const outside = new Set(KNOWN_OUTSIDE_CITIES.split("|").map(foldPlace));
+  return placeParts(cidade).some(part => outside.has(part));
 }
 
 const MULTI_REGION_HINT = "Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.";
@@ -1528,11 +1548,42 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.cidade != null && !cidade) return fail("cidade inválida (até 120 caracteres)");
   if (params.bairro != null && !bairro) return fail("bairro inválido");
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
-  // Generic type only (no proper name): never search Google, ask the lead for the name.
+  if (params.estado != null && !text(params.estado, 60)) return fail("estado inválido");
   const tipoGenerico = params.cep ? null : genericBusinessType(nome, cidade);
-  if (tipoGenerico) return ok({ encontrado: false, precisa_nome: true, candidatos: [],
+  // Coverage before any search: without city/CEP only ask for them, never promise a visit.
+  if (!cidade && !params.cep) {
+    return ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
+      ...(tipoGenerico ? { precisa_nome: true } : {}), mensagem_para_lead: MSG_PEDIR_LOCAL },
+      MSG_PEDIR_LOCAL, "Peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo; não ofereça visita antes de confirmar a cobertura");
+  }
+  const coverage = await verificarCoberturaRegiao({ cidade: cidade ?? undefined, cep: params.cep ?? undefined, estado: text(params.estado, 60) ?? undefined });
+  if (!coverage.success) return coverage;
+  const vinculo = (coverage.data as { vinculo?: string | null } | undefined)?.vinculo ?? null;
+  if (vinculo === "SEM_COBERTURA") {
+    let registro: { registrado: boolean; lead_id?: unknown } = { registrado: false };
+    // Team chats are never turned into leads.
+    if (!(await refuseTeamInClientFlow("registrar_fora_cobertura", params))) {
+      const empresa = params.empresa ?? params.empresa_nome ?? (tipoGenerico ? undefined : nome);
+      const result = await registrarForaCobertura({ ...params, empresa, cidade: cidade ?? `CEP ${validCep(params.cep)}` });
+      const data = result.data as { lead_id?: unknown } | undefined;
+      registro = { registrado: result.success, lead_id: data?.lead_id };
+    }
+    return ok({ cobertura: "SEM_COBERTURA", vinculo, encontrado: false, candidatos: [], ...registro, mensagem_para_lead: MSG_SEM_COBERTURA },
+      MSG_SEM_COBERTURA, "Fora de cobertura já registrado: envie mensagem_para_lead e encerre gentilmente; não ofereça visita nem horários");
+  }
+  if (vinculo === "MATRIZ") {
+    return ok({ cobertura: "MATRIZ", vinculo, encontrado: false, candidatos: [], mensagem_para_lead: MSG_MATRIZ }, MSG_MATRIZ, HINT_MATRIZ);
+  }
+  if (vinculo !== "DISTRIBUIDORA") {
+    const data = coverage.data as { mensagem_para_lead?: string } | undefined;
+    return ok({ cobertura: null, encontrado: false, candidatos: [], precisa_confirmar: true, mensagem_para_lead: data?.mensagem_para_lead ?? MSG_PEDIR_LOCAL },
+      coverage.message, "Confirme o estado ou o CEP e chame localizar_estabelecimento de novo; não ofereça visita ainda");
+  }
+  // Coverage confirmed as DISTRIBUIDORA from here on: visit promises are allowed.
+  // Generic type only (no proper name): never search Google, ask the lead for the name.
+  if (tipoGenerico) return ok({ cobertura: "DISTRIBUIDORA", encontrado: false, precisa_nome: true, candidatos: [],
     mensagem_para_lead: `Qual é o nome ${["pousada", "clínica", "academia", "loja", "empresa", "padaria", "lanchonete", "cafeteria", "farmácia", "escola", "oficina", "pizzaria", "sorveteria", "lavanderia", "barbearia", "igreja"].includes(tipoGenerico) ? "da" : "do"} ${tipoGenerico}? Assim já vejo o melhor dia para a visita.` });
-  const fallback = () => ok({ encontrado: false, candidatos: [], precisa_confirmar: true,
+  const fallback = () => ok({ cobertura: "DISTRIBUIDORA", encontrado: false, candidatos: [], precisa_confirmar: true,
     mensagem_para_lead: "Me passa o bairro ou o CEP do estabelecimento? Assim já vejo o melhor dia para o consultor passar aí." });
   // Tool-local name comparison; do not change the shared parameter normalizer.
   const normalizedName = (value: string) => value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -1571,9 +1622,8 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
           "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
-        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3,
-          ...(!cidade ? { locationBias: { circle: { center: { latitude: -22.88, longitude: -42.02 }, radius: 50000 } } } : {}) }),
-      }, `places:${cidade ? "city" : "lagos-bias"}:${textQuery}`);
+        body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 3 }),
+      }, `places:city:${textQuery}`);
       places = Array.isArray(result.places) ? result.places.slice(0, 3) : [];
     }
     places = places.filter(isPlaceInRj);
@@ -1618,7 +1668,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
     const mensagem = candidatos.length === 1
       ? `Só pra confirmar: é o ${first.nome}${addresses[0] ? ` da ${addresses[0]}` : ""}${first.bairro ? `, no bairro ${first.bairro}` : ""}?`
       : `Encontrei mais de um com esse nome por aqui 😊 Qual é o seu?\n${candidatos.map((candidate, i) => `${i + 1}. ${candidate.nome}${addresses[i] || candidate.bairro ? ` — ${[addresses[i], candidate.bairro].filter(Boolean).join(", ")}` : ""}`).join("\n")}`;
-    return ok({ encontrado: true, candidatos, precisa_confirmar: true, correspondencia_exata: correspondenciaExata, mensagem_para_lead: mensagem });
+    return ok({ cobertura: "DISTRIBUIDORA", encontrado: true, candidatos, precisa_confirmar: true, correspondencia_exata: correspondenciaExata, mensagem_para_lead: mensagem });
   } catch { return fallback(); }
 }
 
@@ -1653,6 +1703,14 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   const areas = await selectCoverage(supabase, selectorParams);
 
   if (!areas || areas.length === 0) {
+    // Same check as verificar_cobertura_regiao: out-of-area cities never receive dates or times.
+    const coverage = !regiao ? await verificarCoberturaRegiao({ cidade, cep, estado: params.estado }) : null;
+    const vinculo = coverage?.success ? (coverage.data as { vinculo?: string | null } | undefined)?.vinculo : null;
+    if (vinculo === "SEM_COBERTURA" || vinculo === "MATRIZ") {
+      const mensagem = vinculo === "MATRIZ" ? MSG_MATRIZ : MSG_SEM_COBERTURA;
+      return ok({ coberto: false, cobertura: vinculo, vinculo, cidade: cidade ?? cep, proximas_datas: [], opcoes_horario: [], mensagem_para_lead: mensagem },
+        mensagem, vinculo === "MATRIZ" ? HINT_MATRIZ : `${HINT_SEM_COBERTURA}; nunca ofereça horários`);
+    }
     return ok(
       { coberto: false, cidade: regiao ?? cidade ?? cep, proximas_datas: [] },
       `${regiao ?? cidade ?? cep} não está coberta`,
@@ -2431,14 +2489,22 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     catch (error) { return fail(error instanceof Error ? error.message : "Erro ao validar lead"); }
     if (!validatedLead) return fail("lead_id não encontrado nesta organização");
   }
+  // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
+  const areas = await selectCoverage(supabase, params, true);
+  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
+  if (areas.length === 0) {
+    // Same check as verificar_cobertura_regiao: an out-of-area city is never booked nor offered times.
+    const coverage = await verificarCoberturaRegiao({ cidade, estado: params.estado });
+    if (coverage.success && (coverage.data as { vinculo?: string | null } | undefined)?.vinculo === "SEM_COBERTURA") {
+      return { success: false, message: MSG_SEM_COBERTURA,
+        data: { cobertura: "SEM_COBERTURA", vinculo: "SEM_COBERTURA", cidade, mensagem_para_lead: MSG_SEM_COBERTURA },
+        next_action_hint: `${HINT_SEM_COBERTURA}; nunca ofereça horários` };
+    }
+  }
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
   if (holidayRejection) return holidayRejection;
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     ? email.trim() : null;
-
-  // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
-  const areas = await selectCoverage(supabase, params, true);
-  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
 
   const coveredDows = new Set<number>();
   for (const a of (areas ?? [])) {
@@ -2974,7 +3040,15 @@ async function registrarForaCobertura(params: Record<string, unknown>): Promise<
     if (error) return fail(dbFail("consultar lead", error));
     if (data) candidates.push(data);
   }
-  const existingId = candidates.find(sameTarget)?.id as string | undefined;
+  // One outside-coverage record per chat: reuse it instead of inserting a duplicate.
+  let chatLeadId: string | undefined;
+  if (chat_id) {
+    const { data, error } = await supabase.from("leads").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("gptmaker_chat_id", chat_id).eq("fora_cobertura", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (error) return fail(dbFail("consultar lead", error));
+    chatLeadId = (data as { id?: string } | null)?.id;
+  }
+  const existingId = (candidates.find(sameTarget)?.id as string | undefined) ?? chatLeadId;
   const values = {
         organization_id:  NITSCLEAN_ORG_ID,
         contact_name:     currentContactName(nome, pessoa?.nome),
@@ -3170,10 +3244,11 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 const TOOLS_MANIFEST_CLIENTE = [
   {
     name: "localizar_estabelecimento",
-    description: "Localiza estabelecimento por nome, com cidade opcional, ou pelo CEP via ViaCEP. Sem cidade, prioriza a Região dos Lagos. Retorna somente a correspondência única de nome ou até três candidatos; sempre confirme com o lead.",
+    description: "Localiza estabelecimento por nome + cidade ou CEP. Antes de buscar, checa a cobertura: SEM_COBERTURA registra fora de cobertura e devolve a mensagem de fora de área; MATRIZ orienta transferir; sem cidade/CEP pede cidade e bairro. Só busca em DISTRIBUIDORA; sempre confirme o candidato com o lead.",
     parameters: { type: "object", required: ["nome"], properties: {
       nome: { type: "string", maxLength: 200 }, cidade: { type: "string", maxLength: 120 },
       bairro: { type: "string", maxLength: 120 }, cep: { type: "string" },
+      estado: { type: "string", maxLength: 60, description: "UF ou nome do estado, se o lead informou" },
     } },
   },
   // ── Block 1: Identification ──────────────────────────────────────────────

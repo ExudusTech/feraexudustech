@@ -11,6 +11,7 @@ const areas = [
   { name: "Saquarema", city: "Saquarema", zip_code_start: "28990-001", zip_code_end: "28999-999", dia_semana: "4ª feira", horario_inicio: "15:00:00", horario_fim: "17:00:00" },
   { name: "Bacaxá (Saquarema)", city: "Bacaxá (Saquarema)", zip_code_start: "28994-001", zip_code_end: "28994-999", dia_semana: "4ª feira", horario_inicio: "15:00:00", horario_fim: "17:00:00" },
   { name: "Sampaio Correia", city: "Sampaio Correia", zip_code_start: "28999-200", zip_code_end: "28999-999", dia_semana: "4ª feira", horario_inicio: "15:00:00", horario_fim: "17:00:00" },
+  { name: "Búzios", city: "Armação dos Búzios", zip_code_start: "28950-000", zip_code_end: "28959-999", dia_semana: "3ª feira", horario_inicio: "14:00:00", horario_fim: "17:00:00" },
 ];
 const place = (cep?: string) => ({ id: "place-1", displayName: { text: "Restaurante Teste" }, formattedAddress: "Rua Teste, 20, Centro, Cabo Frio RJ",
   nationalPhoneNumber: "(22) 1234-5678", googleMapsUri: "https://maps.google.com/?cid=1", location: { latitude: -22.88, longitude: -42.02 },
@@ -132,12 +133,13 @@ describe("MCP establishment location", () => {
     expect(result.data.candidatos).toHaveLength(1);
     expect(result.data.candidatos[0].nome).toBe("Cabo Frio Shopping");
   });
-  it.each([undefined, null])("searches without city using Lagos circle bias (%s)", async cidade => {
+  it.each([undefined, null])("without city or CEP only asks for them, never searches (%s)", async cidade => {
     const h = harness();
     const result = await h.route("localizar_estabelecimento", { nome: "Restaurante Teste", bairro: "Centro", cidade });
-    expect(result.success).toBe(true);
-    expect(result.data.candidatos[0].cidade).toBe("Cabo Frio");
-    expect(JSON.parse(h.requests[0].init.body)).toMatchObject({ textQuery: "Restaurante Teste Centro RJ", locationBias: { circle: { center: { latitude: -22.88, longitude: -42.02 }, radius: 50000 } } });
+    expect(result.data).toMatchObject({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
+      mensagem_para_lead: "Me passa a cidade e o bairro (ou o CEP) do estabelecimento?" });
+    expect(result.data.mensagem_para_lead).not.toContain("consultor");
+    expect(h.requests).toHaveLength(0);
   });
   it("keeps city query unchanged and omits bias", async () => {
     const h = harness(); await h.route("localizar_estabelecimento", input);
@@ -147,7 +149,7 @@ describe("MCP establishment location", () => {
   });
   it.each(["A LOJA Cábo-Frio Shopping!", "Cabo Frio Shopping Centro", "Shopping"])('normalizes or contains the name "%s"', async nome => {
     const malls = ["Cabo Frio Shopping", "Mercado Centro", "Galeria Lagos"].map(name => ({ ...place("28900-100"), displayName: { text: name } }));
-    const result = await harness({ places: malls }).route("localizar_estabelecimento", { nome });
+    const result = await harness({ places: malls }).route("localizar_estabelecimento", { nome, cidade: "Cabo Frio" });
     expect(result.data.correspondencia_exata).toBe(true);
     expect(result.data.candidatos).toHaveLength(1);
   });
