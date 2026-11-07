@@ -116,6 +116,8 @@ describe("booking with \"Búzios\" uses the Búzios area days and hours", () => 
     const r = await h.route("agendar_visita_tecnica", { nome_contato: "PH", cidade: "Búzios", data_visita: "2026-11-09", horario: "10:00" });
     expect(r.data?.janelas).toBeUndefined();
     expect(r.message ?? "").not.toMatch(/não é dia de cobertura|consultor atende/);
+    const insert = h.writes().find(q => q.table === "schedules" && q.operation === "insert");
+    expect(insert?.value).toMatchObject({ scheduled_date: "2026-11-09", start_time: "10:00:00" });
   });
   it("a holiday registered for Armação dos Búzios blocks a booking sent as Búzios", async () => {
     const h = harness([{ date: "2026-11-09", name: "Feriado municipal", city: "Armação dos Búzios", organization_id: null, kind: "municipal" }]);
