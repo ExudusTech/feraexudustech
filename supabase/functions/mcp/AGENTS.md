@@ -18,3 +18,4 @@
 - localizar_estabelecimento treats a name as generic only when nothing remains after removing business types, articles/prepositions/possessives and the city phrase.
 - flora_equipe is a thin dispatcher: it resolves the team user from chat_id first, interprets free fields server-side, then calls the existing TEAM_TOOLS entry and adds mensagem_para_equipe, so individual team tools stay the single source of behavior.
 - localizar_estabelecimento, consultar_rota_consultor and agendar_visita_tecnica reuse verificar_cobertura_regiao before searching or offering times; only DISTRIBUIDORA searches or promises a visit, SEM_COBERTURA registers once per chat_id, so out-of-area leads never reach scheduling.
+- Every city comparison (coverage, routes, bookings, holidays, lead reuse) goes through CITY_ALIASES + cityKeys/sameCity/cityInArea, with areas filtered in code rather than SQL ilike, so aliases like "Búzios" always reach the registered area.

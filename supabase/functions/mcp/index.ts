@@ -352,9 +352,8 @@ function googleClash(slots: { start: number; end: number }[], date: string, star
 }
 
 function holidayForDate(holidays: Holiday[], date: string, city?: string | null): Holiday | undefined {
-  const cityKey = (value: string) => value.trim().toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   return holidays.find(holiday => holiday.date === date &&
-    (holiday.city === null || (typeof city === "string" && cityKey(holiday.city) === cityKey(city))));
+    (holiday.city === null || (typeof city === "string" && sameCity(holiday.city, city))));
 }
 
 async function rejectHolidayVisit(supabase: ReturnType<typeof getClient>, date: string, city?: string): Promise<McpResponse | null> {
@@ -952,11 +951,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   }
   const normalizeLocation = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  const matchesCity = (areaCity: string | null) => {
-    const requested = normalizeLocation(cidade ?? "");
-    const candidate = normalizeLocation(areaCity ?? "");
-    return !!requested && !!candidate && (requested.includes(candidate) || candidate.includes(requested));
-  };
+  const matchesCity = (areaCity: string | null) => cityInArea(cidade, areaCity);
   const { data, error } = await getClient()
     .from("ekkoa_coverage_areas")
     .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
@@ -972,7 +967,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     const postal = validCep(cep);
     const knownRjCities = "Rio de Janeiro|Niterói|São Gonçalo|Duque de Caxias|Nova Iguaçu|Belford Roxo|São João de Meriti|Mesquita|Nilópolis|Queimados|Itaboraí|Maricá|Magé|Guapimirim|Petrópolis|Teresópolis|Nova Friburgo|Cachoeiras de Macacu|Rio Bonito|Tanguá|Silva Jardim|Casimiro de Abreu|Rio das Ostras|Macaé|Campos dos Goytacazes|São João da Barra|São Francisco de Itabapoana|Quissamã|Carapebus|Conceição de Macabu|Araruama|Iguaba Grande|São Pedro da Aldeia|Arraial do Cabo|Cabo Frio|Armação dos Búzios|Búzios|Saquarema|Angra dos Reis|Paraty|Mangaratiba|Itaguaí|Seropédica|Volta Redonda|Barra Mansa|Resende|Itatiaia|Porto Real|Quatis|Barra do Piraí|Piraí|Pinheiral|Rio Claro|Valença|Vassouras|Miguel Pereira|Paty do Alferes|Paraíba do Sul|Três Rios|Areal|Comendador Levy Gasparian|Sapucaia|Sumidouro|Carmo|Cantagalo|Cordeiro|Duas Barras|Bom Jardim|Santa Maria Madalena|São Sebastião do Alto|Trajano de Moraes|São Fidélis|Itaocara|Aperibé|Santo Antônio de Pádua|Miracema|Laje do Muriaé|Itaperuna|Bom Jesus do Itabapoana|Natividade|Porciúncula|Varre-Sai|Cambuci|Cardoso Moreira|São José de Ubá|São José do Vale do Rio Preto|Engenheiro Paulo de Frontin|Mendes|Paracambi|Japeri|Rio das Flores|Comendador Levy Gasparian";
     const inferredRj = !!postal && postal >= "20000000" && postal <= "28999999" ||
-      knownRjCities.split("|").some(city => normalizeLocation(city) === normalizeLocation(cidade ?? "")) ||
+      knownRjCities.split("|").some(city => sameCity(city, cidade)) ||
       allAreas.some(area => matchesCity(area.city));
     const isRj = state ? ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state) : inferredRj;
     const knownOutside = !state && !isRj && knownOutsideCity(cidade);
@@ -1015,6 +1010,36 @@ const KNOWN_OUTSIDE_CITIES = "São Paulo|Belo Horizonte|Vitória|Vila Velha|Cari
 const UFS = new Set(["ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb", "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to"]);
 const foldPlace = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 const placeParts = (cidade: unknown) => typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/).map(foldPlace).filter(Boolean) : [];
+// Single city alias table (folded keys → folded official name). Every coverage, route, booking, holiday
+// and lead-city comparison goes through cityKeys/sameCity/cityInArea so "Búzios" = "Armação dos Búzios".
+const CITY_ALIASES: Record<string, string> = {
+  "buzios": "armacao dos buzios", "armacao de buzios": "armacao dos buzios", "armacao buzios": "armacao dos buzios",
+  "cabo": "cabo frio",
+  "sao pedro": "sao pedro da aldeia", "s pedro da aldeia": "sao pedro da aldeia",
+  "arraial": "arraial do cabo",
+  "iguaba": "iguaba grande",
+  "ostras": "rio das ostras",
+};
+/** Canonical folded city names in a free text ("Búzios/RJ" → ["armacao dos buzios"]); UF parts/suffixes are dropped. */
+function cityKeys(value: unknown): string[] {
+  const keys = placeParts(value).map(part => {
+    const words = part.split(" ");
+    if (words.length > 1 && UFS.has(words[words.length - 1])) words.pop();
+    return words.join(" ");
+  }).filter(part => part && !UFS.has(part)).map(part => CITY_ALIASES[part] ?? part);
+  return [...new Set(keys)];
+}
+/** Same city after alias, accent and case folding. */
+function sameCity(a: unknown, b: unknown): boolean {
+  const other = new Set(cityKeys(b));
+  return cityKeys(a).some(key => other.has(key));
+}
+/** Requested city matches a coverage area city; non-exact also accepts whole-word containment ("Saquarema" ⊂ "Bacaxá (Saquarema)"). */
+function cityInArea(requested: unknown, areaCity: unknown, exact = false): boolean {
+  const area = cityKeys(areaCity);
+  return cityKeys(requested).some(r => area.some(a => r === a ||
+    (!exact && (` ${a} `.includes(` ${r} `) || ` ${r} `.includes(` ${a} `)))));
+}
 /** UF written after the city ("São Paulo/SP", "Cabo Frio - RJ"), or null. */
 function cityUf(cidade: unknown): string | null {
   const parts = placeParts(cidade);
@@ -1089,13 +1114,13 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
     .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end, consultant_user_id")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
   if (region) query = query.eq("name", region);
-  else if (!params.cep && city) query = query.ilike("city", exactCity ? city : `%${city}%`);
   const { data, error } = await query;
   if (error) throw new Error(dbFail("consultar regiões", error));
   if (!region && params.cep) {
     const match = narrowestCoverage(data ?? [], params.cep);
     return match ? [match] : [];
   }
+  if (!region && city) return (data ?? []).filter((area: CoverageRegion) => cityInArea(city, area.city, exactCity));
   return data ?? [];
 }
 
@@ -1146,7 +1171,7 @@ async function currentEstablishment(supabase: ReturnType<typeof getClient>, para
   if (!Array.isArray(candidates)) return current;
   const matches = candidates.filter((c: Record<string, unknown>) =>
     normalizedEstablishment(c.nome) === normalizedEstablishment(company) &&
-    (!params.cidade || normalizedEstablishment(c.cidade) === normalizedEstablishment(params.cidade)) &&
+    (!params.cidade || sameCity(c.cidade, params.cidade)) &&
     (!params.place_id || c.place_id === params.place_id));
   if (matches.length !== 1) return current;
   for (const key of ["endereco", "bairro", "cidade", "cep", "maps_url", "place_id", "regiao", "latitude", "longitude"]) {
@@ -1361,7 +1386,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
   const matches = (lead: any) => lead && !["fechado_ganho", "fechado_perdido"].includes(lead.stage) &&
     (!pessoa || lead.pessoa_id === pessoa.id) &&
     (!company || normalizedEstablishment(lead.empresa_nome ?? lead.company) === normalizedEstablishment(company)) &&
-    (!params.cidade || !lead.city || normalizedEstablishment(lead.city) === normalizedEstablishment(params.cidade)) &&
+    (!params.cidade || !lead.city || sameCity(lead.city, params.cidade)) &&
     (!params.place_id || !lead.place_id || params.place_id === lead.place_id);
   let lead = matches(candidate) ? candidate : null;
   if (!lead && pessoa) {
@@ -2147,7 +2172,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     if (requestedPlaceId) return lead.place_id === requestedPlaceId;
     if (!companyKey || !cityKey || lead.place_id) return false;
     return normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey
-      && normalizedEstablishment(lead.city) === cityKey;
+      && sameCity(lead.city, cidade);
   });
   if (matchingLead && productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(matchingLead.id),
     pessoaId: personResult.pessoa.id, tipo: "resumo", resumo: `Conversa — ${empresaFinal ?? nome}`, params });
@@ -2324,12 +2349,12 @@ async function listarHorariosDisponiveis(params: Record<string, unknown>): Promi
 
   let targetDows: number[] = [];
   if (cidade) {
-    const { data: areas } = await supabase
+    const { data: allAreas } = await supabase
       .from("ekkoa_coverage_areas")
-      .select("dia_semana, horario_inicio, horario_fim")
+      .select("city, dia_semana, horario_inicio, horario_fim")
       .eq("organization_id", NITSCLEAN_ORG_ID)
-      .eq("is_active", true)
-      .ilike("city", `%${cidade}%`);
+      .eq("is_active", true);
+    const areas = (allAreas ?? []).filter((a: { city: string | null }) => cityInArea(cidade, a.city));
 
     if (areas && areas.length > 0) {
       for (const a of areas) {

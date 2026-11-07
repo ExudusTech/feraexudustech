@@ -24,7 +24,7 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
       if (table === "notification_recipients") data = recipients.filter(r => filters.every(([op, key, val]) => op === "contains" ? val.every((v: string) => r[key].includes(v)) : r[key] === val));
       if (table === "holidays") data = [];
       if (table === "profiles") data = options.profiles ?? [];
-      if (table === "ekkoa_coverage_areas") data = [{ dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
+      if (table === "ekkoa_coverage_areas") data = [{ city: "Cabo Frio", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
       if (table === "notification_logs" && operation === "read") data = options.recent ? [{ id: "old" }] : [];
       if (table === "pessoas") data = operation === "read" ? null : { id: "pessoa", nome: value?.nome ?? "Contato", ...value };
       if (table === "leads" && "lead" in options) data = operation === "read" ? options.lead : { id: "new-lead", ...value };
