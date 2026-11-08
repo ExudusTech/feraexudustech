@@ -373,7 +373,9 @@ Deno.serve(async (req) => {
       // Lote 15: commercial occurrences may leave the client with "information pending" until the collection is confirmed.
       let coletaPendente: string[] = [];
       if (exigeColeta((s as any).ocorrencia_tipo) && (s as any).coleta_status !== "confirmada") {
-        coletaPendente = pendenciasColeta((s as any).ocorrencia_tipo, (s as any).coleta_rascunho);
+        const { data: catalogo } = await admin.from("products").select("id, name, is_dispenser, dispenser_family_id, compatible_dispenser_families")
+          .eq("organization_id", s.organization_id).eq("is_active", true).limit(3000);
+        coletaPendente = pendenciasColeta((s as any).ocorrencia_tipo, (s as any).coleta_rascunho, { catalogo: catalogo ?? [] });
         if (!coletaPendente.length) coletaPendente = ["Confirmar o rascunho da coleta"];
         await admin.from("schedules").update({ coleta_status: "pendente", coleta_pendencias: coletaPendente }).eq("id", s.id);
       }
