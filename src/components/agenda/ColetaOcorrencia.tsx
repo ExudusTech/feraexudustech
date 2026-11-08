@@ -11,7 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { enqueue, flushAudio, pending, pickMime } from "@/lib/audio-queue";
 import { visitAction } from "@/lib/visit-exec";
-import { itensDosPontos, PASSO_LABEL, pendenciasColeta, precisaInstalacao, resumoColeta, sugerirProdutos, tipoNotaPadrao, type RascunhoColeta } from "@/lib/coleta";
+import { aparelhosCompativeis, escolherProduto, itensDosPontos, PASSO_LABEL, pendenciasColeta, pontoPedeAparelho, precisaInstalacao, produtosCompativeis, resumoColeta, sugerirProdutos, tipoNotaPadrao, type ProdutoCompat, type RascunhoColeta } from "@/lib/coleta";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props { scheduleId: string; orgId: string; codigo?: string | null; tipo?: string | null; status?: string | null; rascunho?: RascunhoColeta | null; onChange: () => void }
 const MAX_S = 180;
@@ -41,7 +42,7 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
   const [ctx, setCtx] = useState<{ tem_cnpj?: boolean; segmento?: string | null }>({});
   const [produtos, setProdutos] = useState<Prod[]>([]);
   useEffect(() => {
-    (supabase as any).from("products").select("id, name, brand").eq("organization_id", orgId).eq("is_active", true).order("name").limit(2000)
+    (supabase as any).from("products").select("id, name, brand, is_dispenser, dispenser_family_id, compatible_dispenser_families").eq("organization_id", orgId).eq("is_active", true).order("name").limit(2000)
       .then(({ data }: any) => setProdutos(data ?? []));
     coleta({ id: scheduleId, action: "pendencias" }).then((r) => setCtx({ tem_cnpj: r.tem_cnpj, segmento: r.segmento })).catch(() => {});
   }, [orgId, scheduleId]);
@@ -101,9 +102,11 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
   });
 
   if (status === "confirmada") return <p className="text-sm text-success">Coleta {codigo && `#${codigo} `}confirmada.</p>;
-  const pend = draft ? pendenciasColeta(tipo, draft, { cnpj: ctx.tem_cnpj }) : [];
+  const pend = draft ? pendenciasColeta(tipo, draft, { cnpj: ctx.tem_cnpj, catalogo: produtos }) : [];
   const inst = draft ? precisaInstalacao(draft) : null;
   const set = (fn: (d: RascunhoColeta) => void) => setDraft((cur) => { const d = structuredClone(cur ?? {}); fn(d); return d; });
+  const aparelhos = produtos.filter((p) => p.is_dispenser);
+  const noCatalogo = (nome?: string) => !!nome && produtos.some((p) => p.name === nome);
 
   return (
     <section className="space-y-3 rounded-lg border p-3" aria-label="Coleta por áudio">
@@ -151,8 +154,19 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
               <div key={i} className="space-y-2 rounded-md border p-2">
                 <div className="flex gap-1"><Input aria-label="Local" placeholder="Local (ex.: Banheiro feminino)" value={p.local ?? ""} onChange={(e) => set((d) => { d.pontos![i].local = e.target.value; })} />
                   <Button size="icon" variant="ghost" aria-label="Remover ponto" onClick={() => set((d) => { d.pontos!.splice(i, 1); })}><Trash2 className="h-4 w-4" /></Button></div>
-                <ProdutoBusca label="Aparelho" produtos={produtos} value={p.aparelho ?? ""} onChange={(v) => set((d) => { d.pontos![i].aparelho = v; })} />
-                <ProdutoBusca label="Produto / refil" produtos={produtos} value={p.produto ?? ""} onChange={(v) => set((d) => { d.pontos![i].produto = v; })} />
+                <ProdutoBusca label="Produto / refil" produtos={produtos.filter((x) => !x.is_dispenser)} prioridade={p.sem_aparelho ? [] : produtosCompativeis(produtos, p.aparelho)}
+                  value={p.produto ?? ""} onChange={(v) => set((d) => { const pt = { ...d.pontos![i], produto: v }; d.pontos![i] = noCatalogo(v) ? escolherProduto(pt, produtos) : pt; })} />
+                <label className="flex items-center gap-2 text-sm min-h-9">
+                  <Checkbox checked={!!p.sem_aparelho} onCheckedChange={(c) => set((d) => { d.pontos![i].sem_aparelho = c === true; if (c === true) d.pontos![i].aparelho = undefined; })} />
+                  Sem aparelho (ex.: detergente em galão)</label>
+                {!p.sem_aparelho && <>
+                  {(() => { const comp = aparelhosCompativeis(produtos, p.produto); return comp.length > 0 && <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-muted-foreground w-full">Aparelhos compatíveis:</span>
+                    {comp.map((a) => <button type="button" key={a.id} aria-pressed={p.aparelho === a.name}
+                      className={`rounded-full border px-3 py-1 text-xs min-h-8 ${p.aparelho === a.name ? "border-primary bg-primary/15 text-primary" : "hover:bg-accent"}`}
+                      onClick={() => set((d) => { d.pontos![i].aparelho = a.name; })}>{a.name}{a.brand ? ` · ${a.brand}` : ""}</button>)}</div>; })()}
+                  <ProdutoBusca label={pontoPedeAparelho(p, produtos) ? "Aparelho" : "Aparelho (opcional)"} produtos={aparelhos.length ? aparelhos : produtos} value={p.aparelho ?? ""} onChange={(v) => set((d) => { d.pontos![i].aparelho = v; })} />
+                </>}
                 <div className="w-32"><Label className="text-xs">Quantidade</Label><Input inputMode="numeric" value={p.quantidade ?? ""} onChange={(e) => set((d) => { d.pontos![i].quantidade = e.target.value; })} /></div>
               </div>))}
             <Button size="sm" variant="outline" onClick={() => set((d) => { d.pontos = [...(d.pontos ?? []), {}]; })}><Plus className="h-4 w-4" />Ponto</Button>
@@ -212,19 +226,23 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
 }
 
 interface Audio { id: string; tipo: string; criado_em: string; duracao_s: number | null; url: string | null; transcrito: boolean; texto: string | null }
-interface Prod { id: string; name: string; brand: string | null }
+interface Prod extends ProdutoCompat { id: string; name: string; brand: string | null }
 const fmtDur = (s?: number | null) => s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "—";
 
 /** Free text field with catalog suggestions (tolerant to transcription typos); shows the matched product and lets the seller swap it. */
-function ProdutoBusca({ label, produtos, value, onChange }: { label: string; produtos: Prod[]; value: string; onChange: (v: string) => void }) {
+function ProdutoBusca({ label, produtos, value, onChange, prioridade = [] }: { label: string; produtos: Prod[]; value: string; onChange: (v: string) => void; prioridade?: Prod[] }) {
   const [open, setOpen] = useState(false);
   const noCatalogo = produtos.some((p) => p.name === value);
-  const sug = value && !noCatalogo ? sugerirProdutos(produtos, value, 4) : open ? sugerirProdutos(produtos, value, 6) : [];
+  // Compatible products (from the chosen device) come first; any other product can still be typed.
+  const prio = new Set(prioridade.map((p) => p.id));
+  const busca = (n: number) => [...sugerirProdutos(produtos, value, 12)].sort((a, b) => Number(prio.has(b.id)) - Number(prio.has(a.id))).slice(0, n);
+  const sug = value && !noCatalogo ? busca(4) : open ? (value ? busca(6) : prioridade.slice(0, 6)) : [];
   return <div>
     <Label className="text-xs">{label}</Label>
     <Input value={value} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 200)} onChange={(e) => onChange(e.target.value)} placeholder={`${label} (busca no catálogo)`} />
     {noCatalogo && <p className="text-xs text-success mt-0.5">✓ No catálogo</p>}
-    {sug.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{!noCatalogo && value && <span className="text-xs text-muted-foreground w-full">Encontrado no catálogo:</span>}
+    {sug.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{!noCatalogo && value ? <span className="text-xs text-muted-foreground w-full">Encontrado no catálogo:</span>
+      : !value && prioridade.length > 0 ? <span className="text-xs text-muted-foreground w-full">Compatíveis com o aparelho:</span> : null}
       {sug.map((p) => <button type="button" key={p.id} className="rounded-full border px-2 py-0.5 text-xs hover:bg-accent" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(p.name); setOpen(false); }}>
         {p.name}{p.brand ? ` · ${p.brand}` : ""}</button>)}</div>}
   </div>;
