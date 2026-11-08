@@ -11,7 +11,8 @@ export const OCORRENCIA_LABEL: Record<OcorrenciaTipo, string> = {
 export const TIPOS_COM_COLETA: OcorrenciaTipo[] = ["primeira_visita", "venda_direta", "instalacao_teste"];
 export function exigeColeta(tipo?: string | null): boolean { return TIPOS_COM_COLETA.includes(tipo as OcorrenciaTipo); }
 
-export interface PontoColeta { local?: string; aparelho?: string; produto?: string; quantidade?: string }
+/** sem_aparelho: point served without a device (e.g. detergent in a gallon); never pending a device. */
+export interface PontoColeta { local?: string; aparelho?: string; produto?: string; quantidade?: string; sem_aparelho?: boolean }
 export interface OfertaColeta { produto?: string; reacao?: string }
 export interface PassoColeta { tipo?: "proposta" | "teste" | "venda_direta" | "retorno" | "perdido"; data?: string; observacao?: string }
 /** What a test installation / direct sale needs (asked at confirmation, never to close the visit). */
@@ -45,15 +46,59 @@ export function converteLeadNaColeta(r: RascunhoColeta | null | undefined): bool
 export function tipoNotaPadrao(passo: string | null | undefined): string { return passo === "venda_direta" ? "venda" : "remessa_teste"; }
 /** Installation items from the points (device + product + quantity), the editable default. */
 export function itensDosPontos(r: RascunhoColeta | null | undefined): { descricao: string; quantidade: string }[] {
-  return (r?.pontos ?? []).filter((p) => has(p.produto) || has(p.aparelho)).map((p) => ({
-    descricao: `${[p.aparelho, p.produto].filter(has).join(" + ")}${has(p.local) ? ` — ${p.local}` : ""}`, quantidade: (p.quantidade ?? "").trim() || "1" }));
+  const aparelho = (p: PontoColeta) => p.sem_aparelho ? undefined : p.aparelho;
+  return (r?.pontos ?? []).filter((p) => has(p.produto) || has(aparelho(p))).map((p) => ({
+    descricao: `${[aparelho(p), p.produto].filter(has).join(" + ")}${has(p.local) ? ` — ${p.local}` : ""}`, quantidade: (p.quantidade ?? "").trim() || "1" }));
+}
+
+/** Catalog fields for the existing device ↔ refill link (dispenser_family_id on devices, compatible_dispenser_families on refills). */
+export interface ProdutoCompat { id?: string; name?: string | null; brand?: string | null; is_dispenser?: boolean | null;
+  dispenser_family_id?: string | null; compatible_dispenser_families?: string[] | null }
+/** Families the named product/refill fits; null when the name is not a catalog product. */
+export function familiasDoProduto(catalogo: ProdutoCompat[] | undefined, produto: string | null | undefined): string[] | null {
+  if (!catalogo?.length || !has(produto)) return null;
+  const m = matchProduto(catalogo.filter((p) => !p.is_dispenser), produto!);
+  return m ? (m.compatible_dispenser_families ?? []).filter(Boolean) : null;
+}
+/** Devices (is_dispenser) whose family is in the product's compatible families. */
+export function aparelhosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, produto: string | null | undefined): T[] {
+  const fams = familiasDoProduto(catalogo, produto);
+  if (!fams?.length) return [];
+  return (catalogo ?? []).filter((p) => p.is_dispenser && !!p.dispenser_family_id && fams.includes(p.dispenser_family_id));
+}
+/** Products/refills compatible with the named device's family (empty when the device is unknown or has no family). */
+export function produtosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, aparelho: string | null | undefined): T[] {
+  if (!catalogo?.length || !has(aparelho)) return [];
+  const d = matchProduto(catalogo.filter((p) => p.is_dispenser), aparelho!);
+  const fam = d?.dispenser_family_id;
+  return fam ? catalogo.filter((p) => !p.is_dispenser && (p.compatible_dispenser_families ?? []).includes(fam)) : [];
+}
+/** A point asks for a device only when its product fits some device family and "Sem aparelho" is off. */
+export function pontoPedeAparelho(p: PontoColeta, catalogo: ProdutoCompat[] | undefined): boolean {
+  return !p.sem_aparelho && (familiasDoProduto(catalogo, p.produto)?.length ?? 0) > 0;
+}
+/** After a product is chosen: no compatible family → "Sem aparelho" (only when no device was typed); one compatible device → filled in. */
+export function escolherProduto(p: PontoColeta, catalogo: ProdutoCompat[] | undefined): PontoColeta {
+  const fams = familiasDoProduto(catalogo, p.produto);
+  if (fams == null) return p;
+  if (!fams.length) return has(p.aparelho) ? p : { ...p, sem_aparelho: true };
+  const out: PontoColeta = { ...p, sem_aparelho: false };
+  const comp = aparelhosCompativeis(catalogo, p.produto);
+  if (!has(p.aparelho) && comp.length === 1 && comp[0].name) out.aparelho = comp[0].name;
+  return out;
+}
+/** Applied to an AI-extracted draft: keeps the seller's "Sem aparelho" choices and applies the product rule to each point. */
+export function ajustarPontos(r: RascunhoColeta, catalogo: ProdutoCompat[] | undefined, anterior?: RascunhoColeta | null): RascunhoColeta {
+  const key = (p: PontoColeta) => `${foldNome(p.local)}|${foldNome(p.produto)}`;
+  const antes = new Map((anterior?.pontos ?? []).filter((p) => p.sem_aparelho != null).map((p) => [key(p), p.sem_aparelho!]));
+  return { ...r, pontos: (r.pontos ?? []).map((p) => antes.has(key(p)) ? { ...p, sem_aparelho: antes.get(key(p)) } : escolherProduto(p, catalogo)) };
 }
 
 const has = (v?: string | null) => !!(v ?? "").trim();
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
 /** What is still missing in the draft, in the seller's words. Includes commercial feedback (offer without reaction, step without date). */
-export function pendenciasColeta(tipo: string | null | undefined, r: RascunhoColeta | null | undefined, ctx: { cnpj?: boolean } = {}): string[] {
+export function pendenciasColeta(tipo: string | null | undefined, r: RascunhoColeta | null | undefined, ctx: { cnpj?: boolean; catalogo?: ProdutoCompat[] } = {}): string[] {
   const d = r ?? {};
   const out: string[] = [];
   for (const o of d.produtos_oferecidos ?? []) if (has(o.produto) && !has(o.reacao)) out.push(`Você ofereceu ${o.produto!.trim()} — o que o cliente achou?`);
@@ -75,8 +120,8 @@ export function pendenciasColeta(tipo: string | null | undefined, r: RascunhoCol
   pontos.forEach((p, i) => {
     const nome = has(p.local) ? p.local!.trim() : `Ponto ${i + 1}`;
     if (!has(p.local)) out.push(`Ponto ${i + 1}: local`);
-    if (!has(p.aparelho)) out.push(`${nome}: qual aparelho?`);
     if (!has(p.produto)) out.push(`${nome}: qual produto/refil?`);
+    else if (!has(p.aparelho) && pontoPedeAparelho(p, ctx.catalogo)) out.push(`${nome}: qual aparelho?`);
     if (!has(p.quantidade)) out.push(`${nome}: quantidade`);
   });
   if (tipo === "primeira_visita") {
@@ -118,7 +163,8 @@ export function limparRascunho(input: unknown): RascunhoColeta {
   return {
     contato: { nome: s(o.contato?.nome), cargo: s(o.contato?.cargo), telefone: s(o.contato?.telefone, 30), email: s(o.contato?.email, 120) },
     decisor: { nome: s(o.decisor?.nome), cargo: s(o.decisor?.cargo) },
-    pontos: arr(o.pontos, (p) => ({ local: s(p?.local), aparelho: s(p?.aparelho), produto: s(p?.produto), quantidade: s(p?.quantidade == null ? undefined : String(p.quantidade), 20) })),
+    pontos: arr(o.pontos, (p) => ({ local: s(p?.local), aparelho: s(p?.aparelho), produto: s(p?.produto), quantidade: s(p?.quantidade == null ? undefined : String(p.quantidade), 20),
+      ...(typeof p?.sem_aparelho === "boolean" ? { sem_aparelho: p.sem_aparelho } : {}) })),
     fluxo_pessoas: s(o.fluxo_pessoas, 300),
     dores: arr(o.dores, (x) => s(x, 200) ?? "").filter(Boolean),
     produto_atual: s(o.produto_atual), concorrente: s(o.concorrente),

@@ -6,7 +6,7 @@ import { primeiroSlotLivre, pendenciaAgendar, addDias, hhmm } from "../_shared/a
 import { areaDoCliente, parseDiaSemana } from "../_shared/base-instalada.ts";
 import { listEvents } from "../_shared/google-calendar.ts";
 import { stageForCheckout } from "../_shared/visit-exec.ts";
-import { itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, converteLeadNaColeta, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
+import { ajustarPontos, itensDosPontos, limparRascunho, matchProduto, precisaInstalacao, converteLeadNaColeta, tipoNotaPadrao, pendenciasColeta, RASCUNHO_JSON_SCHEMA, resumoColeta, semVazios, type RascunhoColeta } from "../_shared/coleta.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-acting-user" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -121,7 +121,10 @@ Deno.serve(async (req) => {
   if (s.coleta_status === "confirmada" && b.action !== "pendencias") return json({ error: "Coleta já confirmada" }, 409);
   const tipo = s.ocorrencia_tipo as string;
   const temCnpj = () => String(s.clients?.document ?? s.leads?.cnpj ?? "").replace(/\D/g, "").length === 14;
-  const pendDe = (r: RascunhoColeta) => pendenciasColeta(tipo, r, { cnpj: temCnpj() });
+  // Device ↔ refill link from the catalog: decides when a point still needs a device.
+  const { data: catalogo } = await admin.from("products").select("id, name, brand, is_dispenser, dispenser_family_id, compatible_dispenser_families")
+    .eq("organization_id", s.organization_id).eq("is_active", true).limit(3000);
+  const pendDe = (r: RascunhoColeta) => pendenciasColeta(tipo, r, { cnpj: temCnpj(), catalogo: catalogo ?? [] });
   const salvar = async (r: RascunhoColeta, status: string) => {
     const pend = pendDe(r);
     const { error } = await admin.from("schedules").update({ coleta_rascunho: r, coleta_resumo: resumoColeta(s.ocorrencia_codigo, r), coleta_pendencias: pend,
@@ -165,7 +168,7 @@ Deno.serve(async (req) => {
           if (t && t !== "(sem fala)") textos.push(t);
         }
         if (!textos.length) return json({ error: "Grave ao menos um áudio ou escreva um texto antes de concluir" }, 400);
-        const r = await extrair(key, tipo, textos, s.coleta_rascunho ?? null);
+        const r = ajustarPontos(await extrair(key, tipo, textos, s.coleta_rascunho ?? null), catalogo ?? [], s.coleta_rascunho ?? null);
         const pend = await salvar(r, "rascunho");
         return json({ ok: true, rascunho: r, pendencias: pend, resumo: resumoColeta(s.ocorrencia_codigo, r), transcricoes: textos.length });
       }
@@ -179,7 +182,7 @@ Deno.serve(async (req) => {
         let pontos = 0;
         if (!ja) {
           const rows = (r.pontos ?? []).filter((p) => p.local || p.produto).map((p) => ({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.lead_id ?? null,
-            status: "PREVISTO", origem: "coleta", origem_schedule_id: s.id, localizacao_interna: p.local ?? null, aparelho_descricao: p.aparelho ?? null,
+            status: "PREVISTO", origem: "coleta", origem_schedule_id: s.id, localizacao_interna: p.local ?? null, aparelho_descricao: p.sem_aparelho ? null : p.aparelho ?? null,
             quantidade: p.quantidade ?? "1", notes: p.produto ? `Produto previsto: ${p.produto}` : null, created_by: userId }));
           if (rows.length) { const { error } = await admin.from("comodatos").insert(rows); if (error) { console.error("[coleta] pontos", error.code); return json({ error: "Não foi possível salvar os pontos" }, 400); } pontos = rows.length; }
         }
