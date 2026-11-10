@@ -12,6 +12,7 @@ import { useFinancialTransactions, useOperationalExpenses } from "@/hooks/use-fi
 import { useOperations } from "@/hooks/use-operations";
 import { exportToExcel, exportToPDF } from "@/lib/export-utils";
 import { format } from "date-fns";
+import TempoFunilCard from "@/components/relatorios/TempoFunilCard";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -98,6 +99,7 @@ export default function Relatorios() {
 
   return (
     <AppLayout title="Relatórios" subtitle="Análises e exportação de dados">
+      <TempoFunilCard />
       <Tabs defaultValue="clientes" onValueChange={() => { setSearch(""); setStatusFilter("todos"); }}>
         <TabsList className="mb-4">
           <TabsTrigger value="clientes"><Users className="h-4 w-4 mr-1" /> Clientes</TabsTrigger>
