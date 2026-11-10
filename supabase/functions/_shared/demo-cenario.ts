@@ -135,6 +135,52 @@ export const precoDe = (p: ProdutoDemo | null | undefined): number | null => {
   return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null;
 };
 
+// ─── Funnel history for the timing metrics (Relatórios → Tempo do funil, Flora Equipe) ───
+export interface PassoDemo { chave: string; em: string }
+export interface PropostaHistDemo { status: "rascunho" | "enviada" | "aceita" | "rejeitada"; passos: Array<{ status: string; em: string }>; ativado_em?: string }
+export interface HistoricoDemo {
+  leads: Record<string, PassoDemo[]>;
+  propostas: Record<"cliente" | "proposta" | "perdido", PropostaHistDemo>;
+  teste: Record<string, { instalado_em: string; aprovado_em?: string }>;
+  ativacao_cliente: string; teste_cliente_inicio: string;
+}
+const emSP = (iso: string, hora = "10:00") => new Date(`${iso}T${hora}:00-03:00`).toISOString();
+
+/**
+ * Coherent stage/proposal dates spread over the last weeks, tied to the visit plan:
+ * every lead ends in its current stage, steps are strictly increasing and never in the future.
+ */
+export function planejarHistorico(hoje: string, plano: PlanoDatas): HistoricoDemo {
+  const h = (n: number, hora?: string) => emSP(addDias(hoje, n), hora);
+  const pr = plano.cliente_retorno_teste.data, pc = plano.ontem_concluida.data;
+  const r = (n: number, hora?: string) => emSP(addDias(pr, n), hora);
+  const passos = (...xs: Array<[string, string]>) => xs.map(([chave, em]) => ({ chave, em }));
+  return {
+    leads: {
+      cliente: passos(["novo", r(-30, "09:00")], ["qualificado", r(-27)], ["visita_agendada", r(-24)], ["visita_realizada", r(-20, "15:00")], ["teste_amostra", r(-15, "11:00")],
+        ["proposta_enviada", r(1, "15:00")], ["ganho", r(5, "10:00")], ["cliente_ativo", r(5, "10:30")]),
+      andamento: passos(["novo", h(-12)], ["qualificado", h(-9)], ["visita_agendada", h(-6)]),
+      concluida: passos(["novo", emSP(addDias(pc, -14))], ["qualificado", emSP(addDias(pc, -10))], ["visita_agendada", emSP(addDias(pc, -6))], ["visita_realizada", emSP(pc, "18:00")]),
+      nao_realizada: passos(["novo", h(-10)], ["visita_agendada", h(-5)]),
+      hoje_agendada: passos(["novo", h(-8)], ["qualificado", h(-6)], ["visita_agendada", h(-3)]),
+      teste: passos(["novo", h(-25)], ["qualificado", h(-22)], ["visita_agendada", h(-19)], ["visita_realizada", h(-15, "15:00")], ["teste_amostra", h(-4)]),
+      amanha: passos(["novo", h(-6)], ["visita_agendada", h(-2)]),
+      em_teste: passos(["novo", h(-28)], ["qualificado", h(-24)], ["visita_agendada", h(-20)], ["visita_realizada", h(-16, "15:00")], ["teste_amostra", h(-5, "11:00")]),
+      atendimento: passos(["novo", h(-2)]),
+      qualificado: passos(["novo", h(-9)], ["qualificado", h(-4)]),
+      proposta: passos(["novo", h(-21)], ["qualificado", h(-18)], ["visita_agendada", h(-15)], ["visita_realizada", h(-11, "15:00")], ["proposta_enviada", h(-6, "16:00")]),
+      perdido: passos(["novo", h(-30)], ["qualificado", h(-27)], ["visita_agendada", h(-24)], ["visita_realizada", h(-20, "15:00")], ["proposta_enviada", h(-14, "16:00")], ["perdido", h(-7)]),
+    },
+    propostas: {
+      cliente: { status: "aceita", passos: [{ status: "rascunho", em: r(1, "09:00") }, { status: "enviada", em: r(1, "15:00") }, { status: "aceita", em: r(5, "10:00") }], ativado_em: r(7, "10:00") },
+      proposta: { status: "enviada", passos: [{ status: "rascunho", em: h(-7) }, { status: "enviada", em: h(-6, "16:00") }] },
+      perdido: { status: "rejeitada", passos: [{ status: "rascunho", em: h(-15) }, { status: "enviada", em: h(-14, "16:00") }, { status: "rejeitada", em: h(-7) }] },
+    },
+    teste: { cliente: { instalado_em: r(-15, "11:00"), aprovado_em: r(0, "15:00") }, em_teste: { instalado_em: h(-5, "11:00") }, teste: { instalado_em: h(-4) } },
+    ativacao_cliente: r(7, "10:00"), teste_cliente_inicio: addDias(pr, -15),
+  };
+}
+
 /** What the scenario creates (shown on the settings screen and in the reply). */
 export const CENARIO_RESUMO = [
   "12 leads [DEMO] em etapas diferentes do funil (Búzios, Cabo Frio, Rio das Ostras, Saquarema e São Pedro), cada um com contato e telefone fictício",
@@ -145,4 +191,5 @@ export const CENARIO_RESUMO = [
   "2 tarefas de faturamento: emitir Simples Remessa (teste de amanhã) e emitir NF de Comodato (aparelho aprovado no teste)",
   "1 lead com aparelho em teste",
   "1 atendimento aberto aguardando humano",
+  "Histórico do funil nas últimas semanas (mudanças de etapa e de proposta) e mais 2 propostas — 1 enviada e 1 rejeitada — para o “Tempo do funil”",
 ];
