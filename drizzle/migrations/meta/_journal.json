@@ -386,6 +386,13 @@
       "when": 1794331636649,
       "tag": "0054_qr_lotes_campanhas_avaliacoes",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1794337763305,
+      "tag": "0055_notas_fiscais_leitura_por_organizacao",
+      "breakpoints": true
     }
   ]
 }
