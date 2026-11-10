@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { scheduleEvent, scheduleMessage, type ScheduleEvent } from "../_shared/schedule-notify.ts";
+import { demoEnvolvido } from "../_shared/demo-guard.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -35,6 +36,7 @@ Deno.serve(async (req) => {
   const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const org = record.organization_id as string; const ev = event;
   const task = (async () => {
+    if (await demoEnvolvido(admin, [record!.id])) return; // demo scenario: never a real WhatsApp
     const key = body.kind === "schedule" ? "schedule_id" : "maintenance_id";
     const { data: prior } = await admin.from("notification_logs").select("id").eq("organization_id", org).eq("event_type", ev)
       .contains("payload", { [key]: record!.id }).limit(1);
