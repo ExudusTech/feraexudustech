@@ -622,17 +622,18 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
 }
 
 async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
-  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): Promise<void> {
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string, extraRoles?: string[]): Promise<void> {
   // Demo scenario records (Configurações → Dados de demonstração) never trigger real WhatsApp messages.
   const demoIds = [leadId, scheduleId, params.atendimento_id].filter((v): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v));
   if (demoIds.length && typeof (supabase as any).rpc === "function") {
     try { const { data: isDemo } = await (supabase as any).rpc("demo_envolvido", { _ids: demoIds }); if (isDemo === true) return; } catch { /* lookup only */ }
   }
-  const { data: recipients, error } = await supabase.from("notification_recipients")
+  const { data: subscribed, error } = await supabase.from("notification_recipients")
     .select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
     .contains("eventos", [event]);
   if (error) throw new Error("Recipient lookup failed");
-  if (!recipients?.length) return;
+  const recipients: Array<Record<string, any>> = Array.isArray(subscribed) ? [...subscribed] : [];
+  if (!recipients.length && !extraRoles?.length) return;
   // Linked users: always read the current WhatsApp from their profile (inactive users are skipped).
   const linkedIds = recipients.map((r: { user_id?: string | null }) => r.user_id).filter(Boolean);
   if (linkedIds.length) {
@@ -646,6 +647,8 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
       if (p?.name) r.nome = p.name;
     }
   }
+  if (extraRoles?.length) recipients.push(...await roleRecipients(supabase, extraRoles, recipients));
+  if (!recipients.length) return;
   let lead: Record<string, unknown> | null = null;
   if (leadId || params.interaction_id) {
     let query = supabase.from("leads").select("id, empresa_nome, company, contact_name, contact_phone, endereco, bairro, city, regiao, maps_url, category")
@@ -698,10 +701,33 @@ async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, 
   }
 }
 
-function queueTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
-  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): void {
+/** Active org users holding one of the roles (WhatsApp live from profiles.phone), skipping users/numbers already alerted. */
+async function roleRecipients(supabase: ReturnType<typeof getClient>, roles: string[],
+  existing: Array<Record<string, any>>): Promise<Array<Record<string, any>>> {
   try {
-    const task = Promise.resolve().then(() => dispatchTeamNotification(supabase, event, params, leadId, scheduleId, releaseAt))
+    const { data: profiles } = await supabase.from("profiles").select("user_id, name, phone, is_active")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
+    const people = (Array.isArray(profiles) ? profiles : []).filter((p: Record<string, any>) => p.user_id && p.is_active !== false);
+    if (!people.length) return [];
+    const { data: roleRows } = await supabase.from("user_roles").select("user_id, role").in("user_id", people.map((p: Record<string, any>) => p.user_id));
+    const wanted = new Set((Array.isArray(roleRows) ? roleRows : []).filter((r: Record<string, any>) => roles.includes(String(r.role))).map((r: Record<string, any>) => r.user_id));
+    const users = new Set(existing.map((r) => r.user_id).filter(Boolean));
+    const phones = new Set(existing.map((r) => digits(r.whatsapp)).filter(Boolean));
+    const out: Array<Record<string, any>> = [];
+    for (const p of people as Array<Record<string, any>>) {
+      const phone = digits(p.phone);
+      if (!wanted.has(p.user_id) || users.has(p.user_id) || (phone && phones.has(phone))) continue;
+      users.add(p.user_id); if (phone) phones.add(phone);
+      out.push({ id: null, nome: p.name ?? null, whatsapp: phone, user_id: p.user_id });
+    }
+    return out;
+  } catch { console.error("[team_notifications] Role recipient lookup failed"); return []; }
+}
+
+function queueTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
+  params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string, extraRoles?: string[]): void {
+  try {
+    const task = Promise.resolve().then(() => dispatchTeamNotification(supabase, event, params, leadId, scheduleId, releaseAt, extraRoles))
       .catch(() => { console.error("[team_notifications] Background delivery failed"); });
     const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (task: Promise<void>) => void } }).EdgeRuntime;
     runtime?.waitUntil(task);
@@ -984,9 +1010,9 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
         mensagem_para_lead: mensagem }, mensagem, "Pergunte o estado ou CEP antes de definir o vínculo; não registre fora de cobertura ainda");
     }
     const vinculo = isRj ? "MATRIZ" : "SEM_COBERTURA";
-    const mensagem = isRj ? MSG_MATRIZ : MSG_SEM_COBERTURA;
+    const mensagem = isRj ? matrizMessage(cidade) : MSG_SEM_COBERTURA;
     return ok(
-      { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem }, mensagem,
+      { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem, ...(isRj ? { proxima_acao: MATRIZ_ACAO } : {}) }, mensagem,
       isRj ? HINT_MATRIZ : HINT_SEM_COBERTURA
     );
   }
@@ -1008,8 +1034,16 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
 }
 
 const MSG_SEM_COBERTURA = "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
-const MSG_MATRIZ = "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento.";
-const HINT_MATRIZ = "Use solicitar_atendimento_humano com motivo contendo MATRIZ; não use registrar_fora_cobertura";
+const MATRIZ_WHATSAPP = "(21) 99461-1073";
+const MATRIZ_ORIGEM = "Encaminhado à Matriz";
+const MATRIZ_ACAO = "chame transferir_para_humano com motivo MATRIZ";
+/** Lead-facing Matriz message: never promises a Distribuidora visit and never pauses Flora. */
+function matrizMessage(cidade: unknown): string {
+  const raw = typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/)[0].trim() : "";
+  const city = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "Sua região";
+  return `${city} é atendida pela nossa Matriz. Vou passar seu contato para o responsável de lá, que vai te procurar em breve. Se preferir adiantar, o WhatsApp da Matriz é ${MATRIZ_WHATSAPP}.`;
+}
+const HINT_MATRIZ = `Próximo passo: ${MATRIZ_ACAO} (com cidade, empresa, produto_interesse, resumo e chat_id); envie mensagem_para_lead e continue a conversa sem pausar; não use registrar_fora_cobertura`;
 const HINT_SEM_COBERTURA = "Use registrar_fora_cobertura para registrar o interesse e encerrar gentilmente";
 const MSG_PEDIR_LOCAL = "Me passa a cidade e o bairro (ou o CEP) do estabelecimento?";
 // Unambiguous cities outside RJ (capitals and large cities); "Campo Grande"/"Serra" are omitted (also RJ places).
@@ -1604,7 +1638,8 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
       MSG_SEM_COBERTURA, "Fora de cobertura já registrado: envie mensagem_para_lead e encerre gentilmente; não ofereça visita nem horários");
   }
   if (vinculo === "MATRIZ") {
-    return ok({ cobertura: "MATRIZ", vinculo, encontrado: false, candidatos: [], mensagem_para_lead: MSG_MATRIZ }, MSG_MATRIZ, HINT_MATRIZ);
+    const mensagem = matrizMessage(cidade);
+    return ok({ cobertura: "MATRIZ", vinculo, encontrado: false, candidatos: [], proxima_acao: MATRIZ_ACAO, mensagem_para_lead: mensagem }, mensagem, HINT_MATRIZ);
   }
   if (vinculo !== "DISTRIBUIDORA") {
     const data = coverage.data as { mensagem_para_lead?: string } | undefined;
@@ -1739,8 +1774,9 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
     const coverage = !regiao ? await verificarCoberturaRegiao({ cidade, cep, estado: params.estado }) : null;
     const vinculo = coverage?.success ? (coverage.data as { vinculo?: string | null } | undefined)?.vinculo : null;
     if (vinculo === "SEM_COBERTURA" || vinculo === "MATRIZ") {
-      const mensagem = vinculo === "MATRIZ" ? MSG_MATRIZ : MSG_SEM_COBERTURA;
-      return ok({ coberto: false, cobertura: vinculo, vinculo, cidade: cidade ?? cep, proximas_datas: [], opcoes_horario: [], mensagem_para_lead: mensagem },
+      const mensagem = vinculo === "MATRIZ" ? matrizMessage(cidade) : MSG_SEM_COBERTURA;
+      return ok({ coberto: false, cobertura: vinculo, vinculo, cidade: cidade ?? cep, proximas_datas: [], opcoes_horario: [], mensagem_para_lead: mensagem,
+        ...(vinculo === "MATRIZ" ? { proxima_acao: MATRIZ_ACAO } : {}) },
         mensagem, vinculo === "MATRIZ" ? HINT_MATRIZ : `${HINT_SEM_COBERTURA}; nunca ofereça horários`);
     }
     return ok(
@@ -2929,7 +2965,7 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   }
   const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
-  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to";
+  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo";
 
   params = await currentEstablishment(supabase, params);
   const channel = resolveChannelFromChatId(fields.chat_id);
@@ -2951,6 +2987,8 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     await logInteraction(supabase, "solicitar_atendimento_humano", params, res, candidateId);
     return res;
   }
+  // Matriz leads are forwarded, never parked: no paused chat and no Distribuidora atendimento.
+  if (await isMatrizHandoff(supabase, fields, candidate)) return encaminharMatriz(supabase, params, fields, candidate, urgencia);
   const current = await resolveCurrentLead(supabase, params, candidate);
   const { lead, pessoa } = current;
   const leadCriado = current.created;
@@ -3053,6 +3091,85 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
 
   return ok({ solicitado: true, lead_id: leadId, lead_criado: leadCriado, notificado, urgencia,
     atendimento_id: atendimentoId, em_horario: emHorario, retorno_previsto: retornoPrevisto, mensagem_para_lead: mensagem });
+}
+
+const COVERAGE_METHODS = ["verificar_cobertura_regiao", "localizar_estabelecimento", "consultar_rota_consultor"];
+/** MATRIZ when the reason says so, the lead is bound to it, the city resolves to it, or this chat's latest coverage check (24h) said so. */
+async function isMatrizHandoff(supabase: ReturnType<typeof getClient>, fields: Record<string, string | null>,
+  candidate: Record<string, unknown> | null): Promise<boolean> {
+  if (/matriz/i.test(`${fields.motivo ?? ""} ${fields.resumo ?? ""}`)) return true;
+  if (candidate?.vinculo === "MATRIZ") return true;
+  if (fields.cidade) {
+    try {
+      const coverage = await verificarCoberturaRegiao({ cidade: fields.cidade });
+      if ((coverage.data as { vinculo?: unknown } | undefined)?.vinculo === "MATRIZ") return true;
+    } catch { console.error("[solicitar_atendimento_humano] matriz coverage check failed"); }
+  }
+  if (fields.chat_id) {
+    try {
+      const { data } = await supabase.from("mcp_request_log").select("response").in("method", COVERAGE_METHODS).eq("success", true)
+        .contains("params", { chat_id: fields.chat_id }).gte("created_at", new Date(Date.now() - 86_400_000).toISOString())
+        .order("created_at", { ascending: false }).limit(1);
+      const last = Array.isArray(data) ? data[0] : null;
+      if (last && /"(vinculo|cobertura)"\s*:\s*"MATRIZ"/.test(JSON.stringify(last.response ?? null))) return true;
+    } catch { console.error("[solicitar_atendimento_humano] matriz log lookup failed"); }
+  }
+  return false;
+}
+
+/** Forward a Matriz lead: lead with origin "Encaminhado à Matriz", timeline, alert to subscribers + gestores (and "matriz" users). */
+async function encaminharMatriz(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>,
+  fields: Record<string, string | null>, candidate: Record<string, unknown> | null, urgencia: string): Promise<McpResponse> {
+  const current = await resolveCurrentLead(supabase, params, candidate);
+  const { lead, pessoa } = current;
+  params = current.params;
+  const leadId = String(lead.id);
+  const cidade = fields.cidade ?? (typeof lead.city === "string" ? lead.city : null);
+  await supabase.from("leads").update({ origem_especifica: MATRIZ_ORIGEM, vinculo: "MATRIZ", updated_at: new Date().toISOString() })
+    .eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
+  const interesse = productSearchText(params.produto_interesse);
+  queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+    resumo: [MATRIZ_ORIGEM, cidade, interesse ? `Interesse: ${interesse}` : null, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
+
+  const nowDate = new Date();
+  const service = await loadHumanService(supabase, nowDate);
+  const emHorario = estaEmHorario(nowDate, service.config, service.closed, service.city);
+  const proximo = proximoHorarioUtil(nowDate, service.config, service.closed, service.city);
+  const holdAlert = !emHorario && !(urgencia === "alta" && service.urgentBypass);
+  let recent = false;
+  try {
+    const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+      .eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId })
+      .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
+    recent = Array.isArray(data) && data.length > 0;
+  } catch { console.error("[solicitar_atendimento_humano] matriz dedup lookup failed"); }
+  if (!recent && holdAlert) {
+    try {
+      const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+        .eq("status", "QUEUED").eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId }).limit(1);
+      recent = Array.isArray(data) && data.length > 0;
+    } catch { console.error("[solicitar_atendimento_humano] matriz queue lookup failed"); }
+  }
+  const channel = resolveChannelFromChatId(fields.chat_id);
+  const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
+    : (!channel && lead.canal_origem === "WHATSAPP" ? digits(lead.contact_phone) : null);
+  const instagram = (channel?.canal === "INSTAGRAM" || (!channel && lead.canal_origem === "INSTAGRAM"))
+    ? (pessoa?.instagram_handle ?? (typeof lead.instagram_handle === "string" ? lead.instagram_handle : null)) : null;
+  const notificado = !recent;
+  if (notificado) {
+    queueTeamNotification(supabase, "lead_matriz", {
+      ...params, empresa: params.empresa, nome_contato: params.nome_contato, cidade, produto_interesse: interesse,
+      resumo: fields.resumo, motivo: fields.motivo ?? "MATRIZ", urgencia,
+      whatsapp_cliente: whatsapp, instagram_cliente: instagram, titulo: "🏢 Lead encaminhado à Matriz",
+      recebido_fora_em: emHorario ? null : stampSaoPaulo(nowDate, service.config.timezone),
+    }, leadId, undefined, holdAlert ? proximo.at.toISOString() : undefined, ["gestor", "matriz"]);
+  }
+  const mensagem = matrizMessage(cidade);
+  const res = ok({ solicitado: true, encaminhado_matriz: true, pausar_conversa: false, lead_id: leadId, lead_criado: current.created,
+    notificado, em_horario: emHorario, mensagem_para_lead: mensagem }, mensagem,
+    "Envie mensagem_para_lead e continue a conversa normalmente: não pause a Flora nem transfira o chat; a Matriz entra em contato.");
+  await logInteraction(supabase, "solicitar_atendimento_humano", params, res, leadId, channel?.canal, fields.interaction_id ?? undefined);
+  return res;
 }
 
 // ─── Team assistant (read-only): what is pending now for a Fera user ───
@@ -3790,7 +3907,7 @@ async function withTeam(fn: (u: TeamUser, supabase: ReturnType<typeof getClient>
 }
 
 /** Client-flow tools refuse team chats so a team member is never turned into a lead, booking or handoff. */
-const CLIENT_ONLY_TOOLS = new Set(["criar_lead", "agendar_visita", "agendar_visita_tecnica", "agendar_reuniao_sede", "solicitar_atendimento_humano", "registrar_fora_cobertura", "responder_confirmacao_visita"]);
+const CLIENT_ONLY_TOOLS = new Set(["criar_lead", "agendar_visita", "agendar_visita_tecnica", "agendar_reuniao_sede", "solicitar_atendimento_humano", "transferir_para_humano", "registrar_fora_cobertura", "responder_confirmacao_visita"]);
 async function refuseTeamInClientFlow(method: string, params: Record<string, unknown>): Promise<McpResponse | null> {
   if (!CLIENT_ONLY_TOOLS.has(method)) return null;
   const { user } = await resolverEquipe(getClient(), params.chat_id);
@@ -5922,7 +6039,8 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "atribuir_responsavel":         return atribuirResponsavel(params);
     case "adicionar_tag":                return adicionarTag(params);
     // Block 5
-    case "solicitar_atendimento_humano": return solicitarAtendimentoHumano(params);
+    case "solicitar_atendimento_humano":
+    case "transferir_para_humano":       return solicitarAtendimentoHumano(params);
     case "registrar_fora_cobertura":     return registrarForaCobertura(params);
     // QR do aparelho
     case "contexto_qr":                  return contextoQr(params);
