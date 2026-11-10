@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Coverage is checked before any establishment search, route option or booking.
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const FORA = "No momento não atendemos seu estado, mas podemos registrar seu interesse. Obrigado pelo contato!";
-const MATRIZ = "Sua região é atendida pela Matriz da NitsClean. Vou chamar um especialista para continuar seu atendimento.";
+const MATRIZ = (cidade: string) => `${cidade} é atendida pela nossa Matriz. Vou passar seu contato para o responsável de lá, que vai te procurar em breve. Se preferir adiantar, o WhatsApp da Matriz é (21) 99461-1073.`;
 const PROMESSA = /melhor dia|consultor passar|visita/i;
 const CHAT = "3DF9D839DDCF463A3A350ADF91C40B89-5511987654321";
 const areas = [
@@ -115,8 +115,8 @@ describe("covered and Matriz cities", () => {
   it.each(["Niterói", "Petrópolis"])("%s (RJ outside the Lagos) keeps the MATRIZ handoff without search or registration", async cidade => {
     const h = harness();
     const r = await h.route("localizar_estabelecimento", { nome: "Hotel Central", cidade, chat_id: CHAT });
-    expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ });
-    expect(r.next_action_hint).toContain("solicitar_atendimento_humano com motivo contendo MATRIZ");
+    expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ(cidade), proxima_acao: "chame transferir_para_humano com motivo MATRIZ" });
+    expect(r.next_action_hint).toContain("transferir_para_humano com motivo MATRIZ");
     expect(h.requests).toHaveLength(0);
     expect(h.writes()).toHaveLength(0);
     const rota = await h.route("consultar_rota_consultor", { cidade });

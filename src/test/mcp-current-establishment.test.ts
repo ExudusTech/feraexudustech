@@ -41,7 +41,7 @@ function harness(existingB = false, options: { leadProduct?: string; known?: boo
         else { const found = leads.filter(l => filters.every(([k, v]) => k === "organization_id" || l[k] === v)); data = single ? found[0] ?? null : found; }
       }
       if (table === "holidays" || table === "notification_logs") data = [];
-      if (table === "ekkoa_coverage_areas") data = [{ dia_semana: "2ª feira", horario_inicio: "13:30", horario_fim: "16:30", consultant_user_id: "consultant" }];
+      if (table === "ekkoa_coverage_areas") data = [{ city: "Cabo Frio", dia_semana: "2ª feira", horario_inicio: "13:30", horario_fim: "16:30", consultant_user_id: "consultant" }];
       if (table === "schedules") data = { id: "schedule", ...value };
       if (table === "notification_recipients") data = [{ id: "recipient", nome: "Equipe", whatsapp: "5521999999999" }];
       return { data, error: null };

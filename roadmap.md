@@ -107,3 +107,8 @@
 - [x] Testes, publicar funções e app, resumo com parâmetros exatos
 - [ ] Conferir logado: Etiquetas (lotes), Campanhas do QR, card Avaliações do QR e cenário demo recriado (blocked: sem sessão do PH no ambiente)
 - [ ] Testar contexto_qr/registrar_avaliacao_qr num WhatsApp real com etiqueta instalada (blocked: intenções no GPT Maker e aparelho com etiqueta)
+## Flora Matriz + sinônimos (10/11)
+- [x] Transferência MATRIZ sem pausar: lead "Encaminhado à Matriz", aviso gestor/matriz, mensagem com WhatsApp da Matriz
+- [x] verificar_cobertura_regiao MATRIZ orienta transferir_para_humano
+- [x] consultar_produto: cheiro/perfume/cheiroso/odor/fragrância → aromatização Ekkoa
+- [ ] Ajustar a intenção no GPT Maker para não pausar a conversa no caso MATRIZ (blocked: configuração do PH no GPT Maker)
