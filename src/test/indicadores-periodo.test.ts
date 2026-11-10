@@ -197,6 +197,19 @@ describe("recorte e permissões", () => {
     expect(m).toContain("Pendentes agora: 1 (1 com prazo vencido)");
     expect(m).toMatch(/NF de Comodato \(1\): Hotel Sol até 09\/11/);
   });
+  it("accepted proposals count by aceita_em and funnel advance by the stage history, not updated_at", async () => {
+    const t = baseTables();
+    t.proposals.push({ id: "pr3", organization_id: org, status: "aceita", final_value: 700, aceita_em: "2026-10-20T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" });
+    t.lead_stage_history = [
+      { organization_id: org, lead_id: "l1", etapa_anterior_id: "st1", etapa_nova_id: "st2", mudou_em: "2026-11-10T12:30:00Z" },
+      { organization_id: org, lead_id: "l2", etapa_anterior_id: "st2", etapa_nova_id: "st1", mudou_em: "2026-11-10T12:40:00Z" },
+    ];
+    const r = await harness(t).route(PHONES.ph, "indicadores de hoje");
+    expect(r.data.numeros.propostas_aceitas).toBe(1);
+    expect(r.data.mensagem_para_equipe).toContain("1 avançaram no funil");
+    const sem = await harness().route(PHONES.ph, "indicadores de hoje");
+    expect(sem.data.mensagem_para_equipe).toContain("0 avançaram no funil");
+  });
   it("demo records count like any other", async () => {
     const t = baseTables();
     t.schedules.push({ id: "d1", organization_id: org, scheduled_date: "2026-11-10", status: "concluido", resultado: "boa", ocorrencia_tipo: "primeira_visita", assigned_to: "u1", title: "[DEMO] Pousada" });
