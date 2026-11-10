@@ -58,7 +58,7 @@ describe("cenário de demonstração: telefones, CNPJ e produtos", () => {
       { id: "r2", name: "Galão B", price: "25,50", is_dispenser: false, compatible_dispenser_families: [] },
     ];
     const p = escolherPares(cat, 3);
-    expect(p.map((x) => [x.refil.id, x.aparelho?.id ?? null])).toEqual([["r2", null], ["r1", "d1"]].sort((a, b) => (a[0] === "r1" ? -1 : 1) - (b[0] === "r1" ? -1 : 1)));
+    expect(p.map((x) => [x.refil.id, x.aparelho?.id ?? null])).toEqual([["r1", "d1"], ["r2", null]]);
     expect(p.some((x) => x.refil.id === "r0")).toBe(false);
   });
   it("resumo lista o que o cenário cria", () => {
