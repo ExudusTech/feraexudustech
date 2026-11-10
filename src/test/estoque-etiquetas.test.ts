@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acoesEtiqueta, faixaErro, formatEtiqueta, layoutEtiquetas, mensagemEtiqueta, parseEtiqueta, proximoInicio, waLink, waNumero, WHATSAPP_PADRAO } from "../../supabase/functions/_shared/etiquetas";
+import { acoesEtiqueta, faixaErro, formatEtiqueta, layoutEtiquetas, numeroEmLote, parseEtiqueta, proximoInicio, usoDoLote, waLink, waNumero, WHATSAPP_PADRAO } from "../../supabase/functions/_shared/etiquetas";
 import { ajusteErro, contagemBase, deltaAjuste, disponivel, emAlerta, reservasEstoque } from "../../supabase/functions/_shared/estoque";
 import { planoEstoqueDemo } from "../../supabase/functions/_shared/demo-cenario";
 import { DEFAULT_PROPOSTA_CONFIG } from "@/lib/proposta-config";
@@ -25,13 +25,20 @@ describe("QR público → WhatsApp da Flora", () => {
     expect(waNumero("(22) 99266-8769")).toBe("5522992668769");
     expect(WHATSAPP_PADRAO).toBe(DEFAULT_PROPOSTA_CONFIG.whatsapp);
   });
-  it("aparelho ativado: cita o estabelecimento e o número", () => {
-    expect(mensagemEtiqueta({ marca: "NitsClean", numero: 123, local: "Pousada Mar Azul", ativo: true }))
-      .toBe("Olá! Estou no Pousada Mar Azul e vi o aparelho NitsClean nº 000123.");
-  });
-  it("número ainda não ativado: mensagem genérica, sem dados internos", () => {
-    expect(mensagemEtiqueta({ marca: "NitsClean", numero: 123, local: "Pousada Mar Azul", ativo: false })).toBe("Olá! Vi um aparelho NitsClean e quero saber mais.");
+  it("monta o link do WhatsApp com o texto codificado", () => {
     expect(waLink("5522992668769", "Olá!")).toBe("https://wa.me/5522992668769?text=Ol%C3%A1!");
+  });
+});
+
+describe("lotes de etiquetas (o Fera controla a numeração)", () => {
+  it("só aceita número de lote liberado (ou da faixa de demonstração)", () => {
+    const lotes = [{ inicio: 1, fim: 500 }];
+    expect(numeroEmLote(320, lotes)).toBe(true);
+    expect(numeroEmLote(501, lotes)).toBe(false);
+    expect(numeroEmLote(900003, [])).toBe(true);
+  });
+  it("mostra usados × disponíveis por lote", () => {
+    expect(usoDoLote({ inicio: 1, fim: 500 }, [3, 7, 501, 900001])).toEqual({ total: 500, usados: 2, disponiveis: 498 });
   });
 });
 
