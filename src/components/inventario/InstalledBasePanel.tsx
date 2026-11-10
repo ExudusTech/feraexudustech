@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, QrCode, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
+import { formatEtiqueta, parseEtiqueta } from "@/lib/etiquetas";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +52,9 @@ export default function InstalledBasePanel() {
   const [card, setCard] = useState<Card | null>(null);
   const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const navigate = useNavigate();
+  const [busca, setBusca] = useState(""); const [scan, setScan] = useState(false);
+  const abrirNumero = (n: number | null) => { if (n) navigate(`/aparelho/${formatEtiqueta(n)}`); else toast({ title: "Digite o número da etiqueta", variant: "destructive" }); };
 
   const rows = useMemo(() => {
     if (!data) return [];
@@ -73,6 +80,13 @@ export default function InstalledBasePanel() {
 
   return (
     <div className="space-y-4">
+      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); abrirNumero(parseEtiqueta(busca)); }}>
+        <div className="relative flex-1 min-w-[12rem] sm:max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input className="pl-9" inputMode="numeric" placeholder="Buscar aparelho pelo nº da etiqueta" aria-label="Número da etiqueta" value={busca} onChange={(e) => setBusca(e.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+        <Button type="submit" variant="outline" className="min-h-10">Abrir</Button>
+        <Button type="button" variant="outline" className="min-h-10" onClick={() => setScan(true)}><QrCode className="h-4 w-4 mr-2" />Escanear etiqueta</Button>
+      </form>
+      <EtiquetaScanner open={scan} onOpenChange={setScan} onNumero={(n) => { setScan(false); abrirNumero(n); }} />
       <SepararEquipamentos />
       <SepararMaterial />
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
