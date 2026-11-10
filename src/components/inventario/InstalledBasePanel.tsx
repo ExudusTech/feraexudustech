@@ -41,7 +41,7 @@ export default function InstalledBasePanel() {
       const sb = supabase as any;
       const [c, p, o] = await Promise.all([
         sb.from("clients").select("id, name, city, latitude, longitude, status").eq("organization_id", user!.organization_id),
-        sb.from("comodatos").select("id, client_id, product_id, estado_atual, proxima_manutencao, status").eq("organization_id", user!.organization_id),
+        sb.from("comodatos").select("id, client_id, product_id, estado_atual, proxima_manutencao, status, etiqueta_numero").eq("organization_id", user!.organization_id),
         sb.from("maintenance_schedule").select("id, client_id").eq("organization_id", user!.organization_id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
       return { clients: (c.data ?? []) as any[], pontos: ((p.data ?? []) as any[]).filter((x) => (x.status ?? "ATIVO").toUpperCase() === "ATIVO"), ocorrencias: (o.data ?? []) as any[] };
@@ -60,7 +60,7 @@ export default function InstalledBasePanel() {
     if (!data) return [];
     return data.clients.filter((c) => c.status !== "inactive").map((c) => {
       const pts = data.pontos.filter((p) => p.client_id === c.id && (equip === "all" || p.product_id === equip));
-      return { ...c, pontos: pts.length, pior: piorEstado(pts.map((p) => p.estado_atual)),
+      return { ...c, pontos: pts.length, etiquetas: pts.map((p) => p.etiqueta_numero).filter(Boolean).sort((a: number, b: number) => a - b) as number[], pior: piorEstado(pts.map((p) => p.estado_atual)),
         atrasado: pts.some((p) => p.proxima_manutencao && p.proxima_manutencao < today),
         ocorrencias: data.ocorrencias.filter((o) => o.client_id === c.id).length };
     }).filter((r) => (cidade === "all" || r.city === cidade) && (estado === "all" || (estado === "atrasado" ? r.atrasado : r.pior === estado))
@@ -106,7 +106,7 @@ export default function InstalledBasePanel() {
             <SelectItem value="atrasado">Manutenção atrasada</SelectItem></SelectContent></Select>
         <div className="flex-1" />
         <Button variant="outline" onClick={() => exportToExcel(visible.map((r) => ({ Cliente: r.name, Cidade: r.city ?? "", Pontos: r.pontos,
-          Estado: r.pior ? ESTADO_LABEL[r.pior] : "", "Manutenção atrasada": r.atrasado ? "Sim" : "Não", "Itens a levar": r.ocorrencias })), "base-instalada")}>
+          Estado: r.pior ? ESTADO_LABEL[r.pior] : "", Etiquetas: r.etiquetas.map(formatEtiqueta).join(", "), "Manutenção atrasada": r.atrasado ? "Sim" : "Não", "Itens a levar": r.ocorrencias })), "base-instalada")}>
           <Download className="h-4 w-4 mr-2" />Exportar</Button>
         {isManager && <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar clientes</Button>}
       </div>
@@ -128,7 +128,7 @@ export default function InstalledBasePanel() {
             {!visible.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum cliente. A base é montada nas visitas de manutenção.</TableCell></TableRow>}
             {visible.map((r) => (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => setOpen(r)}>
-                <TableCell className="font-medium">{r.name}</TableCell><TableCell>{r.city ?? "—"}</TableCell><TableCell>{r.pontos}</TableCell>
+                <TableCell className="font-medium">{r.name}{r.etiquetas.length > 0 && <span className="block text-xs font-normal text-muted-foreground font-mono">nº {r.etiquetas.slice(0, 6).map(formatEtiqueta).join(", ")}{r.etiquetas.length > 6 ? ` +${r.etiquetas.length - 6}` : ""}</span>}</TableCell><TableCell>{r.city ?? "—"}</TableCell><TableCell>{r.pontos}</TableCell>
                 <TableCell>{r.pior ? <Badge className={ESTADO_CLASS[r.pior]}>{ESTADO_LABEL[r.pior]}</Badge> : "—"}</TableCell>
                 <TableCell className="space-x-1">{r.atrasado && <Badge variant="destructive">Atrasada</Badge>}{r.ocorrencias > 0 && <Badge variant="outline">{r.ocorrencias} a levar</Badge>}</TableCell>
               </TableRow>))}
