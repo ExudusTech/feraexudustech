@@ -5,7 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo } from "../_shared/base-instalada.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
-import { acoesEtiqueta, formatEtiqueta, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
+import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
 import { qtdAparelhos } from "../_shared/estoque.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -284,6 +284,11 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
   const { admin, user, org } = x;
   const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
   const usado = (n: number) => json({ error: `Etiqueta nº ${formatEtiqueta(n)} já pertence a outro aparelho` }, 409);
+  // Fera controls the numbering: a new number must come from a released lot (or the demo range).
+  const foraDoLote = async (n: number) => {
+    const { data } = await admin.from("etiqueta_faixas").select("inicio, fim").eq("organization_id", org).lte("inicio", n).gte("fim", n).limit(1);
+    return numeroEmLote(n, data ?? []) ? null : json({ error: `Etiqueta nº ${formatEtiqueta(n)} não pertence a nenhum lote liberado. Confira o número.` }, 409);
+  };
   const porNumero = async (n: number) => (await admin.from("comodatos").select(ETQ).eq("organization_id", org).eq("etiqueta_numero", n).maybeSingle()).data as any;
   const doLocal = (s: any, c: any) => !!c && (s.client_id ? c.client_id === s.client_id : !c.client_id && c.lead_id === s.lead_id);
   const evento = (s: any, comodatoId: string, texto: string, foto?: string | null) => admin.from("schedule_evidencias").insert({ organization_id: s.organization_id,
@@ -330,6 +335,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       const { s, erro } = await visitaAberta(); if (erro) return erro;
       const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
       if (await porNumero(n)) return usado(n);
+      { const e = await foraDoLote(n); if (e) return e; }
       const p = await pontoDaVisita(s, b.comodato_id);
       if (!p || !["ATIVO", "EM_TESTE"].includes(p.status) || p.etiqueta_numero) return json({ error: "Escolha um aparelho instalado sem número" }, 404);
       const alvo = await dividir(p.id) ?? p.id;
@@ -370,6 +376,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         const e = await salvar(admin.from("comodatos").update({ ...campos, product_id: pid, data_fim: null, retirada_schedule_id: null }).eq("id", c.id)); if (e) return e;
         return json({ ok: true, id: c.id, numero: n });
       }
+      { const e = await foraDoLote(n); if (e) return e; }
       const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: org, ...campos, product_id: pid, quantidade: "1", etiqueta_numero: n, origem: "campo",
         periodicidade_manut: "mensal", created_by: user.id, notes: `Separado para: ${alvo.titulo}`.slice(0, 300) }).select("id").single();
       if (error) return (await salvar(Promise.resolve({ error }), n))!;
@@ -418,6 +425,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         const e = await salvar(admin.from("comodatos").update(campos).eq("id", c.id)); if (e) return e;
         id = c.id;
       } else {
+        { const e = await foraDoLote(n); if (e) return e; }
         const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n, origem: "campo", created_by: user.id })
           .select("id").single();
         if (error) return (await salvar(Promise.resolve({ error }), n))!;
@@ -470,6 +478,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
       const c = await porNumero(n);
       if (c && !(c.status === "ENCERRADO" || (c.status === "SEPARADO" && (doLocal(s, c) || (!c.client_id && !c.lead_id))))) return usado(n);
+      if (!c) { const e = await foraDoLote(n); if (e) return e; }
       const prod = (await x.productOk(uuidOrNull(b.product_id)))?.id ?? c?.product_id ?? velho.product_id;
       // The removed device waits for the return invoice (RETIRADO keeps it out of stock until the signed return arrives).
       const e1 = await salvar(admin.from("comodatos").update({ status: "RETIRADO", data_fim: hoje, retirada_schedule_id: s.id }).eq("id", velho.id)); if (e1) return e1;

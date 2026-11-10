@@ -192,7 +192,7 @@ export const CENARIO_RESUMO = [
   "1 lead com aparelho em teste",
   "1 atendimento aberto aguardando humano",
   "Estoque de 8 aparelhos (alguns abaixo do mínimo), com a reserva da instalação de teste de amanhã e 1 aparelho já separado com etiqueta",
-  "Aparelhos demo com etiqueta numerada da faixa 900001 em diante",
+  "Aparelhos demo com etiqueta numerada da faixa 900001 em diante e 4 avaliações do QR (uma nota baixa)",
   "Histórico do funil nas últimas semanas (mudanças de etapa e de proposta) e mais 2 propostas — 1 enviada e 1 rejeitada — para o “Tempo do funil”",
 ];
 

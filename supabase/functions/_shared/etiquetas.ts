@@ -27,12 +27,6 @@ export function waNumero(whatsapp: string | null | undefined): string | null {
   return d.length >= 12 && d.length <= 13 ? d : null;
 }
 
-/** Ready message for the public QR: with the establishment when the device is active, generic otherwise. */
-export function mensagemEtiqueta(v: { marca: string; numero: number; local?: string | null; ativo: boolean }): string {
-  const marca = (v.marca || "NitsClean").trim();
-  const local = (v.local ?? "").trim();
-  return v.ativo && local ? `Olá! Estou no ${local} e vi o aparelho ${marca} nº ${formatEtiqueta(v.numero)}.` : `Olá! Vi um aparelho ${marca} e quero saber mais.`;
-}
 export function waLink(numero: string, texto: string): string { return `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`; }
 
 export interface FaixaGerada { inicio: number; fim: number }
@@ -81,3 +75,14 @@ export const STATUS_APARELHO_LABEL: Record<string, string> = {
 export const WHATSAPP_PADRAO = "(22) 99266-8769";
 /** Public lookups per IP per hour before the message stops naming the establishment (anti-enumeration). */
 export const LIMITE_CONSULTAS_HORA = 30;
+
+/** A new number is accepted only inside a lot released by Fera (or the demo range). */
+export function numeroEmLote(n: number, lotes: FaixaGerada[]): boolean {
+  return n >= ETIQUETA_DEMO_INICIO || lotes.some((l) => n >= l.inicio && n <= l.fim);
+}
+/** Used × available per lot from the numbers already linked to devices. */
+export function usoDoLote(lote: FaixaGerada, usados: number[]): { total: number; usados: number; disponiveis: number } {
+  const total = lote.fim - lote.inicio + 1;
+  const u = usados.filter((n) => n >= lote.inicio && n <= lote.fim).length;
+  return { total, usados: u, disponiveis: total - u };
+}

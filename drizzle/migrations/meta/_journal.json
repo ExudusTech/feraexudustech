@@ -379,6 +379,13 @@
       "when": 1794330451548,
       "tag": "0053_comodato_separar_unidade",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794331636649,
+      "tag": "0054_qr_lotes_campanhas_avaliacoes",
+      "breakpoints": true
     }
   ]
 }

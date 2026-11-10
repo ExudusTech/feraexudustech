@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import PropostaSettings from "@/components/settings/PropostaSettings";
 import DemoDataSettings from "@/components/settings/DemoDataSettings";
 import EtiquetasSettings from "@/components/settings/EtiquetasSettings";
+import QrCampanhasSettings from "@/components/settings/QrCampanhasSettings";
 import { NITSCLEAN_ORG_ID } from "@/lib/demo-cenario";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeamNotifications from "@/components/settings/TeamNotifications";
@@ -102,11 +103,12 @@ export default function Configuracoes() {
       }
     >
       <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl min-w-0">
-        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger><TabsTrigger value="campo">Visitas em campo</TabsTrigger><TabsTrigger value="proposta">Proposta em PDF</TabsTrigger>{gestorEtiquetas && <TabsTrigger value="etiquetas">Etiquetas</TabsTrigger>}{isSuperAdmin && org?.id === NITSCLEAN_ORG_ID && <TabsTrigger value="demo">Dados de demonstração</TabsTrigger>}</TabsList>
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger><TabsTrigger value="campo">Visitas em campo</TabsTrigger><TabsTrigger value="proposta">Proposta em PDF</TabsTrigger>{gestorEtiquetas && <TabsTrigger value="etiquetas">Etiquetas</TabsTrigger>}{gestorEtiquetas && <TabsTrigger value="campanhas-qr">Campanhas do QR</TabsTrigger>}{isSuperAdmin && org?.id === NITSCLEAN_ORG_ID && <TabsTrigger value="demo">Dados de demonstração</TabsTrigger>}</TabsList>
         {isSuperAdmin && org?.id === NITSCLEAN_ORG_ID && <TabsContent value="demo"><DemoDataSettings /></TabsContent>}
         <TabsContent value="campo"><FieldOpsSettings /></TabsContent>
         <TabsContent value="proposta"><PropostaSettings /></TabsContent>
         {gestorEtiquetas && <TabsContent value="etiquetas"><EtiquetasSettings /></TabsContent>}
+        {gestorEtiquetas && <TabsContent value="campanhas-qr"><QrCampanhasSettings /></TabsContent>}
         <TabsContent value="horario"><HumanHoursSettings /></TabsContent>
         <TabsContent value="etapas"><LeadStagesSettings /></TabsContent>
         <TabsContent value="notificacoes"><TeamNotifications /></TabsContent>

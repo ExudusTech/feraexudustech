@@ -1,7 +1,9 @@
-// Public QR landing (/q/<numero>, not signed in): returns only a wa.me link to the organization's Flora WhatsApp with a ready message.
-// Never returns internal data. The establishment name appears in the message only for an active device and within a per-IP hourly limit.
+// Public QR landing (/q/<numero>, not signed in): returns only a wa.me link to the organization's Flora WhatsApp with the message of the
+// QR campaign in force (Configurações → Campanhas do QR) plus a discreet "ref Q…" code. Never the label number or other internal data.
+// Establishment/segment/product variables are filled only for an active device and within a per-IP hourly limit.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { LIMITE_CONSULTAS_HORA, mensagemEtiqueta, parseEtiqueta, waLink, waNumero, WHATSAPP_PADRAO } from "../_shared/etiquetas.ts";
+import { LIMITE_CONSULTAS_HORA, parseEtiqueta, waLink, waNumero, WHATSAPP_PADRAO } from "../_shared/etiquetas.ts";
+import { qrMensagem, qrRef, qrRenderizar, QR_TEXTO_RESERVA } from "../_shared/qr.ts";
 import { NITSCLEAN_ORG_ID } from "../_shared/demo-cenario.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -29,20 +31,29 @@ Deno.serve(async (req) => {
 
     // Organization: the one whose generated range contains the number (and has the device), else the device's, else the default tenant.
     const { data: faixas } = n ? await admin.from("etiqueta_faixas").select("organization_id").lte("inicio", n).gte("fim", n) : { data: [] };
-    const { data: aparelhos } = n ? await admin.from("comodatos").select("organization_id, status, client_id, lead_id").eq("etiqueta_numero", n).limit(5) : { data: [] };
+    const { data: aparelhos } = n ? await admin.from("comodatos").select("organization_id, status, client_id, lead_id, product_id").eq("etiqueta_numero", n).limit(5) : { data: [] };
     const orgsFaixa = new Set((faixas ?? []).map((f: any) => f.organization_id));
     const ap = (aparelhos ?? []).find((a: any) => orgsFaixa.has(a.organization_id)) ?? ((aparelhos ?? []).length === 1 ? aparelhos![0] : null);
     const org = ap?.organization_id ?? (orgsFaixa.size === 1 ? [...orgsFaixa][0] : NITSCLEAN_ORG_ID);
-    const { data: o } = await admin.from("organizations").select("name, trading_name, proposta_config").eq("id", org).maybeSingle();
+    const { data: o } = await admin.from("organizations").select("proposta_config").eq("id", org).maybeSingle();
     const fone = waNumero((o?.proposta_config as any)?.whatsapp) ?? waNumero(WHATSAPP_PADRAO)!;
     const ativo = !!ap && ["ATIVO", "EM_TESTE"].includes(String(ap.status).toUpperCase()) && !limitado;
-    let local: string | null = null;
-    if (ativo && ap.client_id) local = (await admin.from("clients").select("name").eq("id", ap.client_id).maybeSingle()).data?.name ?? null;
-    else if (ativo && ap.lead_id) { const { data: l } = await admin.from("leads").select("empresa_nome, company").eq("id", ap.lead_id).maybeSingle(); local = l?.empresa_nome ?? l?.company ?? null; }
-    const marca = String(o?.trading_name || o?.name || "NitsClean");
-    return json({ url: waLink(fone, mensagemEtiqueta({ marca, numero: n ?? 0, local, ativo: ativo && !!n })) });
+    const vars: { estabelecimento?: string | null; segmento?: string | null; produto_do_aparelho?: string | null } = {};
+    if (ativo && ap.client_id) {
+      const { data: c } = await admin.from("clients").select("name, ramo_atuacao, levantamento").eq("id", ap.client_id).maybeSingle();
+      vars.estabelecimento = c?.name ?? null; vars.segmento = (c?.levantamento as any)?.segmento ?? c?.ramo_atuacao ?? null;
+    } else if (ativo && ap.lead_id) {
+      const { data: l } = await admin.from("leads").select("empresa_nome, company, category").eq("id", ap.lead_id).maybeSingle();
+      vars.estabelecimento = l?.empresa_nome ?? l?.company ?? null; vars.segmento = l?.category ?? null;
+    }
+    if (ativo && ap.product_id) vars.produto_do_aparelho = (await admin.from("products").select("name").eq("id", ap.product_id).maybeSingle()).data?.name ?? null;
+    const { data: campanhas } = await admin.from("qr_campanhas").select("nome, texto, inicio, fim, dias_semana, hora_inicio, hora_fim, segmentos, prioridade, padrao, ativo")
+      .eq("organization_id", org).eq("ativo", true).limit(100);
+    const agora = new Date();
+    const texto = n ? qrMensagem(campanhas ?? [], agora, vars, qrRef(n)).texto : qrRenderizar(QR_TEXTO_RESERVA, {}, agora);
+    return json({ url: waLink(fone, texto) });
   } catch {
     console.error("[etiqueta-publica] erro");
-    return json({ url: waLink(waNumero(WHATSAPP_PADRAO)!, mensagemEtiqueta({ marca: "NitsClean", numero: 0, ativo: false })) });
+    return json({ url: waLink(waNumero(WHATSAPP_PADRAO)!, qrRenderizar(QR_TEXTO_RESERVA, {}, new Date())) });
   }
 });
