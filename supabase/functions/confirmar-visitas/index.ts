@@ -6,6 +6,7 @@ import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { areaDoCliente, manutencaoDoDiaMessage, parseDiaSemana, proximasDatas } from "../_shared/base-instalada.ts";
 import { geocodePending } from "../_shared/geocode.ts";
 import { FERA_URL, resumoNotasAmanha, tarefaMessage } from "../_shared/prontidao.ts";
+import { idsDemo, semDemo } from "../_shared/demo-guard.ts";
 
 /** Phones (digits, with and without 55) of active team users: confirmations never go to a team chat. */
 async function teamPhones(admin: any): Promise<Set<string>> {
@@ -42,8 +43,10 @@ Deno.serve(async () => {
     .select("id, organization_id, lead_id, title, scheduled_date, start_time, status, assigned_to, created_at, confirmacao_tentativas, confirmacao_ultimo_erro, confirmacao_status, plano_manutencao_id, confirmacao_d1_enviada_em, confirmacao_dia_enviada_em, sem_confirmacao_alertado_em, atraso_alertado_em, clients(name), leads(empresa_nome, company, gptmaker_chat_id, pessoa_id)")
     .in("status", ["agendado", "confirmado"]).in("scheduled_date", [today, tomorrow]).limit(500);
   const team = await teamPhones(admin);
+  // Demo scenario records are visible in the app but never produce client confirmations or team WhatsApp messages.
+  const demo = await idsDemo(admin);
   const orgCache = new Map<string, { open: boolean; d1: string; horas: number; atraso: number }>();
-  for (const s of rows ?? []) {
+  for (const s of semDemo(rows, demo)) {
     try {
       const org = s.organization_id as string;
       if (!orgCache.has(org)) {
@@ -104,7 +107,7 @@ Deno.serve(async () => {
   try {
     const { data: abertas } = await admin.from("schedules").select("id, organization_id, title, assigned_to, checkin_em, clients(name), leads(empresa_nome, company)")
       .eq("status", "em_atendimento").not("checkin_em", "is", null).limit(500);
-    for (const s of abertas ?? []) {
+    for (const s of semDemo(abertas, demo)) {
       const horas = horasAberta(s.checkin_em, now);
       if (horas === null) continue;
       const { data: who } = s.assigned_to ? await admin.from("profiles").select("name").eq("user_id", s.assigned_to).maybeSingle() : { data: null };
@@ -168,7 +171,7 @@ Deno.serve(async () => {
       const { data: hoje } = await admin.from("schedules").select("organization_id, assigned_to, start_time, client_id, clients(name)").eq("scheduled_date", today)
         .eq("schedule_type", "manutencao").in("status", ["agendado", "confirmado"]).not("assigned_to", "is", null).order("start_time").limit(1000);
       const byUser = new Map<string, any[]>();
-      for (const s of hoje ?? []) { const k = `${s.organization_id}|${s.assigned_to}`; byUser.set(k, [...(byUser.get(k) ?? []), s]); }
+      for (const s of semDemo(hoje, demo, ["client_id"])) { const k = `${s.organization_id}|${s.assigned_to}`; byUser.set(k, [...(byUser.get(k) ?? []), s]); }
       for (const [k, list] of byUser) {
         const [orgId, uid] = k.split("|");
         const { data: oc } = await admin.from("maintenance_schedule").select("item_descricao, quantidade, clients(name)").eq("organization_id", orgId).eq("tipo_os", "substituicao")
@@ -186,7 +189,7 @@ Deno.serve(async () => {
   try {
     const { data: novas } = await admin.from("tarefas_faturamento").select("id, numero, organization_id, schedule_id, empresa_nome, tipo_nota, data_visita, itens")
       .eq("status", "aberta").is("notificada_em", null).limit(100);
-    for (const t of novas ?? []) {
+    for (const t of semDemo(novas, demo)) {
       const { data: claimed } = await admin.from("tarefas_faturamento").update({ notificada_em: now.toISOString() }).eq("id", t.id).is("notificada_em", null).select("id").maybeSingle();
       if (claimed) await teamAlert(admin, t.organization_id, "tarefa_nota_criada", tarefaMessage("nova", t), { tarefa_id: t.id, tarefa_numero: t.numero, schedule_id: t.schedule_id });
     }
@@ -196,7 +199,7 @@ Deno.serve(async () => {
       const { data: pend } = await admin.from("schedules").select("id, organization_id, title, start_time, tipo_nota, prontidao, ocorrencia_codigo, clients(name), leads(empresa_nome, company)")
         .eq("scheduled_date", tomorrow).in("status", ["agendado", "confirmado"]).eq("exige_nota", true).neq("nota_status", "anexada").order("start_time").limit(500);
       const byOrg = new Map<string, any[]>();
-      for (const s of pend ?? []) byOrg.set(s.organization_id, [...(byOrg.get(s.organization_id) ?? []), s]);
+      for (const s of semDemo(pend, demo)) byOrg.set(s.organization_id, [...(byOrg.get(s.organization_id) ?? []), s]);
       for (const [orgId, list] of byOrg) {
         const ops = list.map((s: any) => ({ id: s.id, codigo: s.ocorrencia_codigo, hora: String(s.start_time ?? "").slice(0, 5),
           cliente: s.clients?.name || s.leads?.empresa_nome || s.leads?.company || s.title || "", tipo_nota: s.tipo_nota }));
