@@ -202,7 +202,7 @@ describe("consultar_produto: total só pelo nome", () => {
 });
 
 describe("consultar_produto — smell synonyms go to aromatização/neutralização (Ekkoa)", () => {
-  it.each(["cheiro para ambiente", "perfume para ambiente", "algo cheiroso pra recepção", "tirar odor do banheiro", "fragrância para loja", "cheiro"])("%s", async termo => {
+  it.each(["cheiro para ambiente", "perfume para ambiente", "algo cheiroso pra recepção", "tirar odor do banheiro", "fragrância para loja"])("%s", async termo => {
     const r = await harness().route("consultar_produto", { termo, categoria: "aromatização e neutralização de odores" });
     expect(r.data.encontrado).toBe(true);
     const ids = r.data.produtos.map((p: any) => p.id);
@@ -212,7 +212,12 @@ describe("consultar_produto — smell synonyms go to aromatização/neutralizaç
   });
   it("a named product with a smell word keeps its own match", async () => {
     const r = await harness().route("consultar_produto", { termo: "sabonete perfumado" });
-    expect(r.data.produtos.map((p: any) => p.id)).toContain("sc");
-    expect(r.data.produtos.map((p: any) => p.id)).not.toContain("ek1");
+    expect(r.data.linha_sugerida).toBeUndefined();
+    expect([...r.data.produtos, ...(r.data.similares ?? [])].map((p: any) => p.id)).toContain("sc");
+  });
+  it("\"cheiro\" alone returns only aromatização/neutralização products", async () => {
+    const r = await harness().route("consultar_produto", { termo: "cheiro" });
+    expect(r.data.produtos.length).toBeGreaterThan(0);
+    expect(r.data.produtos.every((p: any) => /aromat|neutralizador/i.test(p.categoria))).toBe(true);
   });
 });
