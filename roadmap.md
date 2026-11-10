@@ -1,4 +1,6 @@
 # Tasks
+- [x] Indicadores por período (flora_equipe acao=indicadores): período livre + anterior, recorte vendedor/cidade/tipo, permissões por papel, texto curto com links, boletim PNG 1080×1350 (resvg + Montserrat) com fallback; testes; mcp publicado.
+- [ ] Ver o boletim chegar num WhatsApp real (blocked: depende de um pedido real da equipe pela Flora).
 - [x] Demo: registro técnico demo_registros + funções demo_conjunto/demo_envolvido/demo_contagem/apagar_cenario_demo (migração 0047) e plano de datas/telefones/CNPJ em supabase/functions/_shared/demo-cenario.ts.
 - [x] Demo: função demo-cenario (contar/criar/apagar, só super_admin NitsClean); ensaio no banco (desfeito) validou conversão, 2 tarefas, contagem, guarda e limpeza total.
 - [x] Demo: guarda anti-notificação em todos os envios de WhatsApp.
