@@ -71,8 +71,7 @@ function ftOrdenarHistorico(historico: FtMudanca[]): Map<string, FtMudanca[]> {
  * Time spent in each open stage: the interval from entering a stage to the next change.
  * An interval counts in the window when it ends inside it; leads still sitting in a stage count as "parados".
  */
-export function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela?: FtJanela, agoraIso?: string): FtEtapaTempo[] {
-  const agora = agoraIso ?? new Date().toISOString();
+export function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela?: FtJanela): FtEtapaTempo[] {
   const abertas = etapas.filter((e) => (e.tipo ?? "aberta") === "aberta");
   const dur = new Map<string, number[]>(); const parados = new Map<string, number>(); const est = new Map<string, number>();
   for (const lista of ftOrdenarHistorico(historico).values()) {
@@ -80,7 +79,7 @@ export function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela
       if (!h.etapa_nova_id) return;
       const prox = lista[i + 1];
       if (!prox) { parados.set(h.etapa_nova_id, (parados.get(h.etapa_nova_id) ?? 0) + 1); return; }
-      if (!ftNaJanela(prox.mudou_em, janela) || (janela?.fim && ftMs(prox.mudou_em)! > ftMs(agora)!)) return;
+      if (!ftNaJanela(prox.mudou_em, janela)) return;
       const d = diasEntre(h.mudou_em, prox.mudou_em); if (d == null) return;
       (dur.get(h.etapa_nova_id) ?? dur.set(h.etapa_nova_id, []).get(h.etapa_nova_id)!).push(d);
       if (h.estimado || prox.estimado) est.set(h.etapa_nova_id, (est.get(h.etapa_nova_id) ?? 0) + 1);
@@ -165,7 +164,7 @@ export function ciclosPorRecorte(leads: FtLead[], historico: FtMudanca[], propos
 export function rankingDecisao(grupos: FtGrupo[], minimo = 1): { rapidos: FtGrupo[]; lentos: FtGrupo[] } {
   const ok = grupos.filter((g) => g.n >= minimo && g.mediana != null);
   const rapidos = [...ok].sort((a, b) => a.mediana! - b.mediana! || b.n - a.n).slice(0, 3);
-  const lentos = [...ok].sort((a, b) => b.mediana! - a.mediana! || b.n - a.n).filter((g) => !rapidos.slice(0, 1).includes(g) || ok.length === 1).slice(0, 3);
+  const lentos = [...ok].sort((a, b) => b.mediana! - a.mediana! || b.n - a.n).slice(0, 3);
   return { rapidos, lentos };
 }
 // END funil-tempos
