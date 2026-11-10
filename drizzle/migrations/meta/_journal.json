@@ -365,6 +365,13 @@
       "when": 1794315927166,
       "tag": "0051_deprecar_marca_estimado",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1794330328189,
+      "tag": "0052_estoque_e_etiquetas_qr",
+      "breakpoints": true
     }
   ]
 }
