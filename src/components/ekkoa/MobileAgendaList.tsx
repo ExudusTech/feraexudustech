@@ -62,7 +62,7 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
                 <span className="text-2xl font-bold text-primary">{noDateFilter && <span className="text-base mr-2">{format(parseISO(s.scheduled_date), "dd/MM")}</span>}{s.start_time?.slice(0, 5) || "--:--"}</span>
                 <div className="flex gap-1 flex-wrap justify-end">
                   <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
-                  {s.source === "flora" && <Badge variant="outline">Flora</Badge>}
+                  {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                   {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
                   <OcorrenciaTag s={s as any} />
                   {s.status !== "agendado" && <Badge variant={s.status === "nao_realizado" ? "destructive" : "default"}>{STATUS_LABEL[s.status] ?? s.status}</Badge>}

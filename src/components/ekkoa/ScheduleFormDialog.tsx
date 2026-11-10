@@ -194,6 +194,7 @@ export default function ScheduleFormDialog({ open, onOpenChange, schedule, defau
           <div className="flex flex-wrap items-center gap-2">
             <DialogTitle>{isEdit ? "Editar Agendamento" : "Novo Agendamento"}</DialogTitle>
             {schedule?.source === "flora" && <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" /> Agendado pela Flora</Badge>}
+            {schedule?.source === "flora_relatada" && <Badge variant="secondary" className="gap-1"><Sparkles className="h-3 w-3" /> Relatada pela Flora (sem check-in)</Badge>}
           </div>
         </DialogHeader>
         {isEdit && (
