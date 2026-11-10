@@ -9,6 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // The mcp harness transpiles the whole Flora function per test; under a full parallel run that alone can pass 5 s.
+    testTimeout: 20_000,
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
