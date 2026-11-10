@@ -227,8 +227,9 @@ describe("boletim em imagem", () => {
     writeFileSync("/tmp/boletim-teste.png", png);
     // Text really drawn with the embedded font: petrol pixels in the period line, not just shapes.
     const img = new Resvg(svg, { font: { fontBuffers: fontesBoletim(), defaultFontFamily: "Montserrat", loadSystemFonts: false } }).render();
+    const px = img.pixels, w = img.width;
     let petroleo = 0;
-    for (let y = 180; y < 225; y++) for (let x = 60; x < 700; x++) { const i = (y * img.width + x) * 4; if (img.pixels[i] < 40 && img.pixels[i + 1] > 60 && img.pixels[i + 1] < 110 && img.pixels[i + 2] > 70 && img.pixels[i + 2] < 120) petroleo++; }
+    for (let y = 180; y < 225; y++) for (let x = 60; x < 700; x++) { const i = (y * w + x) * 4; if (px[i] < 40 && px[i + 1] > 60 && px[i + 1] < 110 && px[i + 2] > 70 && px[i + 2] < 120) petroleo++; }
     expect(petroleo).toBeGreaterThan(2000);
   });
   it("without the renderer, falls back to the simple chart", async () => {
