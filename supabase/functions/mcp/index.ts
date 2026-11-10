@@ -4631,6 +4631,8 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   if (validDate(params.data)) p.data = params.data;
   if (params.confirmar === true) p.confirmar = true;
   if (typeof params.codigo_confirmacao === "string") p.codigo_confirmacao = params.codigo_confirmacao;
+  // Unscheduled visit (anexar_coleta / registrar_nota): establishment and city may also come as top-level fields.
+  for (const k of ["empresa", "cidade"]) if (typeof params[k] === "string" && (params[k] as string).trim() && p[k] === undefined) p[k] = (params[k] as string).trim();
   if (acao === "consultar" && !p.termo && typeof params.texto === "string") p.termo = params.texto.trim();
   if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && !params.texto.includes(":")) p.consultor = params.texto.trim();
   if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
@@ -4663,7 +4665,9 @@ const CHAT = { chat_id: { type: "string", description: "chat_id da conversa atua
 const TEAM_MANIFEST = [
   { name: "flora_equipe", description: "EQUIPE (use esta): ferramenta única da equipe. Identifica o usuário pelo telefone do chat_id no servidor e roteia pela acao. Sempre envie data.mensagem_para_equipe literalmente.", parameters: { type: "object", required: ["chat_id", "acao"], properties: { ...CHAT,
     acao: { type: "string", enum: Object.keys(FLORA_EQUIPE_ACOES) }, codigo: { type: "string", description: "#OC-…, #V-…, #T-… ou #A-…" }, texto: { type: "string", description: "Fala/transcrição ou campos livres (ex.: 'empresa: X; cidade: Y; contato: Z')" },
-    data: { type: "string", description: "AAAA-MM-DD" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, dados: { type: "object", description: "Opcional: campos livres (nome, cidade, endereco, contato, telefone, tipo, horario, latitude, longitude...)" } } } },
+    data: { type: "string", description: "AAAA-MM-DD" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" },
+    empresa: { type: "string", description: "anexar_coleta/registrar_nota sem visita aberta: nome do estabelecimento visitado" },
+    cidade: { type: "string", description: "anexar_coleta/registrar_nota sem visita aberta: cidade do estabelecimento" }, dados: { type: "object", description: "Opcional: campos livres (nome, cidade, endereco, contato, telefone, tipo, horario, latitude, longitude...)" } } } },
   { name: "identificar_usuario", description: "EQUIPE: identifica o usuário do Fera pelo telefone do chat (nome, papéis, últimos avisos com código). Telefone desconhecido = não autorizado.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT } } },
   { name: "minha_agenda", description: "EQUIPE: visitas do dia do próprio usuário (status, prontidão, código e link).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string", description: "AAAA-MM-DD (padrão hoje)" } } } },
   { name: "agenda_equipe", description: "EQUIPE (só gestor/admin): visitas do dia de toda a equipe agrupadas por consultor.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string" }, consultor: { type: "string", description: "Opcional: parte do nome" } } } },
