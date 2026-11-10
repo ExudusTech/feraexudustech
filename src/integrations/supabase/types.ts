@@ -3830,6 +3830,44 @@ export type Database = {
           },
         ]
       }
+      demo_registros: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          registro_id: string | null
+          storage_bucket: string | null
+          storage_path: string | null
+          tabela: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          registro_id?: string | null
+          storage_bucket?: string | null
+          storage_path?: string | null
+          tabela: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          registro_id?: string | null
+          storage_bucket?: string | null
+          storage_path?: string | null
+          tabela?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demo_registros_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           created_at: string
@@ -8040,6 +8078,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apagar_cenario_demo: { Args: { _org: string }; Returns: Json }
       apply_flora_default_owner: {
         Args: { _org: string; _owner: string }
         Returns: Json
@@ -8066,6 +8105,9 @@ export type Database = {
         }
         Returns: Json
       }
+      demo_conjunto: { Args: { _org?: string }; Returns: Json }
+      demo_contagem: { Args: { _org: string }; Returns: Json }
+      demo_envolvido: { Args: { _ids: string[] }; Returns: boolean }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
