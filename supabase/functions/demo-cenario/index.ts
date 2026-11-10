@@ -129,7 +129,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
 
   // Leads: cities follow the visit plan (route day of that city); the rest rotate over the covered cities.
   const outras = [...CIDADES].reverse();
-  const leads: Record<string, { id: string; cidade: string; pessoa: string; nome: string; lat: number; lng: number; cep: string; endereco: string; dono: string }> = {};
+  const leads: Record<string, { empresa: string; id: string; cidade: string; pessoa: string; nome: string; lat: number; lng: number; cep: string; endereco: string; dono: string }> = {};
   let k = 0;
   for (const [i, l] of LEADS.entries()) {
     const visita: VisitaPlano | null = l.plano ? (plano as any)[l.plano] : l.key === "cliente" ? plano.cliente_atrasada : null;
@@ -139,20 +139,20 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
     const lat = base.lat + 0.0021 * (i % 4), lng = base.lng - 0.0017 * (i % 3);
     const nome = demoNome(l.empresa);
     const endereco = `Rua Demonstração, ${100 + i * 10} — ${base.bairro}`;
-    const pessoa = await ins("pessoas", { organization_id: org, nome: `${l.contato} (demo)`, whatsapp: fones[i], telefone: fones[i] }, "criar contato");
+    const pessoa = await ins("pessoas", { organization_id: org, nome: demoNome(l.contato), whatsapp: fones[i], telefone: fones[i] }, "criar contato");
     const id = await ins("leads", { organization_id: org, title: nome, empresa_nome: nome, company: nome, category: l.categoria, city: cidade, bairro: base.bairro,
       endereco, zip_code: base.cep, latitude: lat, longitude: lng, regiao: area?.name ?? null, vinculo: "DISTRIBUIDORA", pessoa_id: pessoa, cargo_contato: l.cargo,
-      contact_name: `${l.contato} (demo)`, contact_phone: fones[i], stage_id: etapaId(l.etapa === "cliente_ativo" ? "teste_amostra" : l.etapa), source: "demo",
+      contact_name: demoNome(l.contato), contact_phone: fones[i], stage_id: etapaId(l.etapa === "cliente_ativo" ? "teste_amostra" : l.etapa), source: "demo",
       created_by: dono(l.dono), assigned_to: dono(l.dono), description: "Registro de demonstração — pode ser apagado em Configurações → Dados de demonstração.",
-      ...(l.cnpj ? { cnpj: cnpjDemo(l.cnpj), razao_social: `${l.empresa} Ltda (demo)` } : {}), ...(l.etapa === "perdido" ? { stage: "fechado_perdido" } : {}) }, "criar lead");
-    leads[l.key] = { id, cidade, pessoa, nome, lat, lng, cep: base.cep, endereco: `${endereco}, ${cidade}`, dono: dono(l.dono) };
+      ...(l.cnpj ? { cnpj: cnpjDemo(l.cnpj), razao_social: demoNome(`${l.empresa} Ltda`) } : {}), ...(l.etapa === "perdido" ? { stage: "fechado_perdido" } : {}) }, "criar lead");
+    leads[l.key] = { empresa: l.empresa, id, cidade, pessoa, nome, lat, lng, cep: base.cep, endereco: `${endereco}, ${cidade}`, dono: dono(l.dono) };
     await admin.from("lead_timeline").insert({ organization_id: org, lead_id: id, pessoa_id: pessoa, tipo: "criar_lead", origem: "fera", resumo: "Lead de demonstração criado" });
   }
 
   const visita = async (key: string, p: VisitaPlano, extra: Record<string, unknown>) => {
     const L = leads[key];
     const tipo = (extra.schedule_type as string) ?? "visita_comercial";
-    return await ins("schedules", { organization_id: org, lead_id: L.id, title: `${tipo === "visita_comercial" ? "Visita comercial" : "Instalação de teste"} — ${L.nome}`,
+    return await ins("schedules", { organization_id: org, lead_id: L.id, title: demoNome(`${tipo === "visita_comercial" ? "Visita comercial" : "Visita técnica"} — ${L.empresa}`),
       scheduled_date: p.data, start_time: p.hora, end_time: maisHora(p.hora, 60), duracao_min: 60, assigned_to: L.dono, created_by: phId,
       schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO", source: "manual", location: L.endereco, zip_code: L.cep, latitude: L.lat, longitude: L.lng,
       confirmacao_status: "confirmado", ...extra }, "criar visita");
@@ -170,7 +170,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const sConcluida = await visita("concluida", pc, { status: "em_atendimento", checkin_em: isoSP(pc.data, maisHora(pc.hora, 5)), ocorrencia_tipo: "primeira_visita" });
   await checkin(sConcluida, "concluida", isoSP(pc.data, maisHora(pc.hora, 5)));
   const rascunhoOk: RascunhoColeta = {
-    contato: { nome: "Carla Souza (demo)", cargo: "Governanta" }, decisor: { nome: "Sr. Augusto (demo)", cargo: "Proprietário" },
+    contato: { nome: demoNome("Carla Souza"), cargo: "Governanta" }, decisor: { nome: demoNome("Sr. Augusto"), cargo: "Proprietário" },
     pontos: pontosDe(Math.min(3, pares.length)), fluxo_pessoas: "Cerca de 120 hóspedes por dia na alta temporada",
     dores: ["Falta de papel nos banheiros nos fins de semana"], produto_atual: "Papel e sabonete comprados no varejo",
     produtos_oferecidos: [{ produto: pares[0].refil.name, reacao: "Gostou e pediu proposta" }],
@@ -188,7 +188,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
       quantidade: p.quantidade, notes: `Produto previsto: ${p.produto}`, created_by: leads.concluida.dono, cidade: leads.concluida.cidade }, "criar ponto previsto"));
   }
   const propostaId = await ins("proposals", { organization_id: org, lead_id: leads.concluida.id, origem_schedule_id: sConcluida, created_by: leads.concluida.dono,
-    assigned_to: leads.concluida.dono, title: `Proposta — ${leads.concluida.nome}`, status: "rascunho", description: `Gerada da coleta #${sc?.ocorrencia_codigo ?? ""}`,
+    assigned_to: leads.concluida.dono, title: demoNome(`Proposta — ${leads.concluida.empresa}`), status: "rascunho", description: `Gerada da coleta #${sc?.ocorrencia_codigo ?? ""}`,
     valid_until: addDias(hoje, 15), forma_pagamento: "Boleto 28 dias", prazo_entrega: "Até 7 dias úteis após o aceite", periodicidade_manutencao: "mensal", total_value: 0, final_value: 0 }, "criar proposta");
   let total = 0;
   const itensProp = pontosIds.map((cid, i) => {
@@ -217,7 +217,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const quando = new Date(Math.min(Date.now() - 20 * 60_000, Date.parse(isoSP(pa.data, maisHora(pa.hora, 5))) || Date.now())).toISOString();
   const sAndamento = await visita("andamento", pa, { status: "em_atendimento", checkin_em: quando, ocorrencia_tipo: "primeira_visita", coleta_status: "coletando" });
   await checkin(sAndamento, "andamento", quando);
-  const rascunhoPend: RascunhoColeta = { contato: { nome: "Jorge Martins (demo)" }, fluxo_pessoas: "Cerca de 200 refeições por dia",
+  const rascunhoPend: RascunhoColeta = { contato: { nome: demoNome("Jorge Martins") }, fluxo_pessoas: "Cerca de 200 refeições por dia",
     pontos: [{ local: "Banheiros", produto: pares[0].refil.name, quantidade: "3" }, { local: "Cozinha" }] };
   const { data: sa } = await admin.from("schedules").select("ocorrencia_codigo").eq("id", sAndamento).single();
   await ins("schedule_evidencias", { organization_id: org, schedule_id: sAndamento, tipo: "texto", origem: "app", autor_id: leads.andamento.dono, itens: [],
@@ -233,7 +233,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
     ...(par.aparelho ? [{ product_id: par.aparelho.id, descricao: par.aparelho.name, quantidade: "2" }] : []),
     { product_id: par.refil.id, descricao: par.refil.name, quantidade: "2" }]);
   await visita("teste", plano.amanha_teste, { status: "agendado", schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: "instalacao_teste",
-    tipo_nota: "remessa_teste", itens: itensTeste, title: `Instalação de teste — ${leads.teste.nome}` });
+    tipo_nota: "remessa_teste", itens: itensTeste, title: demoNome(`Instalação de teste — ${leads.teste.empresa}`) });
   await visita("amanha", plano.amanha_comercial, { status: "agendado", ocorrencia_tipo: "primeira_visita" });
 
   // Lead with a device in test.
@@ -244,7 +244,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   // Client: old test return (approved) → conversion by the real function → loan invoice task for the device kept installed; 2 active devices; overdue maintenance.
   const pr = plano.cliente_retorno_teste;
   const sRetorno = await visita("cliente", pr, { status: "em_atendimento", checkin_em: isoSP(pr.data, maisHora(pr.hora, 5)), schedule_subtype: "DIAGNOSTICO",
-    title: `Retorno do teste — ${leads.cliente.nome}`, ocorrencia_tipo: "primeira_visita" });
+    title: demoNome(`Retorno do teste — ${leads.cliente.empresa}`), ocorrencia_tipo: "primeira_visita" });
   await ins("schedule_proximo_passo", { organization_id: org, schedule_id: sRetorno, tipo: "proposta", descricao: "Teste aprovado: seguir para proposta", autor_id: leads.cliente.dono }, "registrar próximo passo", false);
   const { error: re } = await admin.from("schedules").update({ status: "concluido", checkout_em: isoSP(pr.data, maisHora(pr.hora, 40)), resultado: "boa", duracao_min: 35,
     resumo_execucao: "Retorno do teste: aprovado, aparelho fica instalado." }).eq("id", sRetorno);
@@ -264,7 +264,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
       ultima_manutencao: addDias(atrasada.data, -30), proxima_manutencao: atrasada.data, periodicidade_manut: "mensal", cidade: leads.cliente.cidade, created_by: leads.cliente.dono,
       notes: "Aparelho em comodato (demonstração)" }, "criar aparelho ativo");
   }
-  await ins("schedules", { organization_id: org, client_id: clientId, title: `Manutenção — ${leads.cliente.nome}`, scheduled_date: atrasada.data, start_time: atrasada.hora,
+  await ins("schedules", { organization_id: org, client_id: clientId, title: demoNome(`Manutenção — ${leads.cliente.empresa}`), scheduled_date: atrasada.data, start_time: atrasada.hora,
     end_time: maisHora(atrasada.hora, 60), duracao_min: 60, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", source: "manual",
     assigned_to: leads.cliente.dono, created_by: phId, location: leads.cliente.endereco, latitude: leads.cliente.lat, longitude: leads.cliente.lng, zip_code: leads.cliente.cep,
     confirmacao_status: "nao_aplicavel" }, "criar manutenção atrasada");
@@ -272,7 +272,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   // Open atendimento waiting for a human (no chat linked: nothing can reach WhatsApp).
   const abertoEm = new Date(Date.now() - 25 * 60_000).toISOString();
   await ins("atendimentos", { organization_id: org, lead_id: leads.atendimento.id, pessoa_id: leads.atendimento.pessoa, empresa: leads.atendimento.nome,
-    contato_nome: "Fernanda Costa (demo)", canal: "WHATSAPP", whatsapp: fones[8], tipo: "transferencia", motivo: "Quer orçamento de papel toalha e sabonete para 3 andares",
+    contato_nome: demoNome("Fernanda Costa"), canal: "WHATSAPP", whatsapp: fones[8], tipo: "transferencia", motivo: "Quer orçamento de papel toalha e sabonete para 3 andares",
     resumo: "Cliente pediu para falar com um consultor (demonstração).", urgencia: "media", status: "aberto", aberto_em: abertoEm, relogio_inicia_em: abertoEm, alerta_nivel: "verde" }, "criar atendimento");
   await admin.from("leads").update({ precisa_humano: true }).eq("id", leads.atendimento.id);
 
