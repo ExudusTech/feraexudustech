@@ -46,8 +46,8 @@ function baseTables(): Record<string, any[]> {
     clients: [{ id: "c1", organization_id: org, city: "Cabo Frio" }],
     lead_stages: [{ id: "st1", organization_id: org, ordem: 10, tipo: "aberta", chave: "novo" }, { id: "st2", organization_id: org, ordem: 20, tipo: "aberta", chave: "qualificado" }],
     proposals: [
-      { id: "pr1", organization_id: org, status: "aceita", final_value: 1000, updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" },
-      { id: "pr2", organization_id: org, status: "enviada", final_value: 500, pdf_gerado_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u2", created_by: "u2", lead_id: "l2" },
+      { id: "pr1", organization_id: org, status: "aceita", final_value: 1000, enviada_em: "2026-11-05T13:00:00Z", aceita_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" },
+      { id: "pr2", organization_id: org, status: "enviada", final_value: 500, pdf_gerado_em: "2026-11-10T13:00:00Z", enviada_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u2", created_by: "u2", lead_id: "l2" },
     ],
     tarefas_faturamento: [
       { id: "t1", organization_id: org, acao: "emitir", status: "concluida", concluida_em: "2026-11-10T12:00:00Z", updated_at: "2026-11-10T12:00:00Z", schedule_id: "s1", empresa_nome: "Pousada Sol" },
