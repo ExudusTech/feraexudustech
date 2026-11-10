@@ -7,6 +7,7 @@ import {
 } from "../_shared/visit-exec.ts";
 import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
+import { qtdAparelhos } from "../_shared/estoque.ts";
 import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
 import { checkinBloqueadoPorNota, FERA_URL, prontidaoLabel } from "../_shared/prontidao.ts";
@@ -54,7 +55,7 @@ async function fecharSubstituicao(admin: any, s: any, resultado: "nao_trocou" | 
   const now = new Date();
   await admin.from("schedules").update({ substituicao_resultado: resultado }).eq("id", s.id);
   const { data: emit } = await admin.from("tarefas_faturamento").select("*").eq("schedule_id", s.id).eq("acao", "emitir").maybeSingle();
-  const { data: oss } = await admin.from("maintenance_schedule").select("id, inventory_item_id").eq("organization_id", s.organization_id).eq("tipo_os", "substituicao")
+  const { data: oss } = await admin.from("maintenance_schedule").select("id, inventory_item_id, item_product_id, quantidade, comodato_id").eq("organization_id", s.organization_id).eq("tipo_os", "substituicao")
     .in("status", ["agendada", "em_andamento"]).or(`schedule_id.eq.${s.id}${s.client_id ? `,client_id.eq.${s.client_id}` : ""}`).limit(5);
   const os = (oss ?? [])[0] ?? null;
   const base = emit ? { organization_id: s.organization_id, schedule_id: s.id, client_id: emit.client_id, lead_id: emit.lead_id, tipo_operacao: "substituicao",
@@ -74,6 +75,13 @@ async function fecharSubstituicao(admin: any, s: any, resultado: "nao_trocou" | 
     return { resultado, cancelar_nota: !!base };
   }
   // Used: the removed device needs a return invoice signed by the client on the next route visit.
+  // Stock: the new device leaves now. A scanned replacement already moved it (old device RETIRADO, new one installed).
+  if (os?.item_product_id) {
+    const { count } = await admin.from("comodatos").select("id", { count: "exact", head: true }).eq("organization_id", s.organization_id).eq("retirada_schedule_id", s.id);
+    const { data: pr } = await admin.from("products").select("is_dispenser").eq("id", os.item_product_id).maybeSingle();
+    if (!count && pr?.is_dispenser) await admin.rpc("mov_estoque", { _org: s.organization_id, _product: os.item_product_id, _delta: -qtdAparelhos(os.quantidade), _tipo: "instalacao",
+      _motivo: "Substituição: aparelho novo instalado", _comodato: os.comodato_id ?? null, _schedule: s.id, _origem: null });
+  }
   let tarefaId: string | null = null;
   if (base) {
     const { data: t } = await admin.from("tarefas_faturamento").upsert({ ...base, acao: "devolucao", tipo_nota: "retorno",
@@ -239,9 +247,17 @@ Deno.serve(async (req) => {
       await admin.from("schedule_evidencias").insert({ organization_id: s.organization_id, schedule_id: s.id, foto_path: path, observacoes: "Nota de devolução assinada", itens: [], autor_id: user.id });
       if (t?.schedule_id) await admin.from("schedules").update({ devolucao_assinada_em: now, devolucao_assinatura_path: path }).eq("id", t.schedule_id);
       if (t?.ordem_servico_id) {
-        const { data: os } = await admin.from("maintenance_schedule").select("id, inventory_item_id").eq("id", t.ordem_servico_id).maybeSingle();
+        const { data: os } = await admin.from("maintenance_schedule").select("id, inventory_item_id, item_product_id, quantidade, comodato_id").eq("id", t.ordem_servico_id).maybeSingle();
         await admin.from("maintenance_schedule").update({ status: "concluida", completed_date: now.slice(0, 10), notes: `Devolução assinada (nota ${t.numero_nota ?? "-"})` }).eq("id", t.ordem_servico_id);
         if (os?.inventory_item_id) await admin.from("inventory_items").update({ status: "disponivel", em_comodato: false, client_id: null }).eq("id", os.inventory_item_id).eq("organization_id", s.organization_id);
+        // Stock: the removed device comes back now. Scanned replacement → its RETIRADO row closes (trigger returns it); otherwise one unit of the item.
+        const { data: ret } = t.schedule_id ? await admin.from("comodatos").select("id").eq("organization_id", s.organization_id).eq("status", "RETIRADO").eq("retirada_schedule_id", t.schedule_id) : { data: [] };
+        if (ret?.length) await admin.from("comodatos").update({ status: "ENCERRADO" }).in("id", ret.map((r: any) => r.id));
+        else if (os?.item_product_id) {
+          const { data: pr } = await admin.from("products").select("is_dispenser").eq("id", os.item_product_id).maybeSingle();
+          if (pr?.is_dispenser) await admin.rpc("mov_estoque", { _org: s.organization_id, _product: os.item_product_id, _delta: qtdAparelhos(os.quantidade), _tipo: "retirada",
+            _motivo: "Substituição: aparelho retirado voltou (devolução assinada)", _comodato: os.comodato_id ?? null, _schedule: t.schedule_id ?? null, _origem: null });
+        }
       }
       await timeline("visita", `Nota de devolução assinada coletada por ${consultor}; OS de substituição encerrada`);
       return json({ ok: true });
