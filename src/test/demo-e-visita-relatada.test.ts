@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
-import { cnpjDemo, planejarDatas, telefonesDemo, escolherPares, CENARIO_RESUMO } from "@/lib/demo-cenario";
+import { cnpjDemo, planejarDatas, planejarHistorico, telefonesDemo, escolherPares, CENARIO_RESUMO } from "@/lib/demo-cenario";
 import { idsDoPayload, semDemo } from "../../supabase/functions/_shared/demo-guard";
 
 // Route days as registered for NitsClean (Búzios/Cabo Frio Mon+Fri, Rio das Ostras Tue+Thu, Saquarema/São Pedro Wed).
@@ -34,6 +34,36 @@ describe("cenário de demonstração: datas nos dias de rota", () => {
     expect(p.cliente_atrasada).toMatchObject({ data: "2026-11-06", cidade: "Armação dos Búzios" });
     expect(new Date(`${p.cliente_retorno_teste.data}T12:00:00Z`).getUTCDay()).toBeOneOf([1, 5]);
     expect(p.cliente_retorno_teste.data < "2026-10-27").toBe(true);
+  });
+});
+
+describe("cenário de demonstração: histórico do funil", () => {
+  const hoje = "2026-11-09", agora = Date.parse("2026-11-09T21:00:00Z");
+  const h = planejarHistorico(hoje, planejarDatas(hoje, AREAS)!);
+  // Current stage of each demo lead (LEADS in demo-cenario/index.ts): history must end there.
+  const FINAL: Record<string, string> = { cliente: "cliente_ativo", andamento: "visita_agendada", concluida: "visita_realizada", nao_realizada: "visita_agendada",
+    hoje_agendada: "visita_agendada", teste: "teste_amostra", amanha: "visita_agendada", em_teste: "teste_amostra", atendimento: "novo", qualificado: "qualificado",
+    proposta: "proposta_enviada", perdido: "perdido" };
+  it("every lead ends in its current stage, strictly increasing, spread over the last weeks, never in the future", () => {
+    expect(Object.keys(h.leads).sort()).toEqual(Object.keys(FINAL).sort());
+    for (const [k, passos] of Object.entries(h.leads)) {
+      expect(passos[passos.length - 1].chave, k).toBe(FINAL[k]);
+      const t = passos.map((p) => Date.parse(p.em));
+      for (let i = 1; i < t.length; i++) expect(t[i], `${k} ${i}`).toBeGreaterThan(t[i - 1]);
+      expect(t[t.length - 1], k).toBeLessThanOrEqual(agora);
+      expect(t[0], k).toBeGreaterThan(agora - 9 * 7 * 86_400_000);
+    }
+    const inicios = new Set(Object.values(h.leads).map((p) => p[0].em.slice(0, 10)));
+    expect(inicios.size).toBeGreaterThan(8);
+  });
+  it("proposals: sent → accepted → activation in order; rejected one too", () => {
+    const c = h.propostas.cliente;
+    expect(c.passos.map((p) => p.status)).toEqual(["rascunho", "enviada", "aceita"]);
+    expect(Date.parse(c.ativado_em!)).toBeGreaterThan(Date.parse(c.passos[2].em));
+    expect(Date.parse(c.ativado_em!)).toBeLessThanOrEqual(agora);
+    expect(h.propostas.perdido.passos.at(-1)!.status).toBe("rejeitada");
+    expect(h.propostas.proposta.status).toBe("enviada");
+    expect(Date.parse(h.teste.cliente.aprovado_em!)).toBeGreaterThan(Date.parse(h.teste.cliente.instalado_em));
   });
 });
 
