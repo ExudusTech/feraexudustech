@@ -621,6 +621,11 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
 
 async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
   params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): Promise<void> {
+  // Demo scenario records (Configurações → Dados de demonstração) never trigger real WhatsApp messages.
+  const demoIds = [leadId, scheduleId, params.atendimento_id].filter((v): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v));
+  if (demoIds.length && typeof (supabase as any).rpc === "function") {
+    try { const { data: isDemo } = await (supabase as any).rpc("demo_envolvido", { _ids: demoIds }); if (isDemo === true) return; } catch { /* lookup only */ }
+  }
   const { data: recipients, error } = await supabase.from("notification_recipients")
     .select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
     .contains("eventos", [event]);
