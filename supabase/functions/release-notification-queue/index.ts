@@ -2,6 +2,7 @@
 // waiting-time reminders for open atendimentos. Only acts on rows already due, so repeated calls are harmless.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { estaEmHorario, gravidade, minutosUteis, normalizeHumanHours, type ClosedDay } from "../_shared/business-hours.ts";
+import { idsDemo, idsDoPayload } from "../_shared/demo-guard.ts";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const FERA_URL = "https://fera.exudustech.com.br";
@@ -47,12 +48,17 @@ async function releaseQueue(admin: Admin): Promise<number> {
     .eq("status", "QUEUED").lte("release_at", nowIso).order("release_at").limit(50);
   let released = 0;
   const timelineDone = new Set<string>();
+  const demo = due?.length ? await idsDemo(admin) : new Set<string>();
   for (const row of due ?? []) {
     // Claim the row first so overlapping runs never send twice.
     const { data: claimed } = await admin.from("notification_logs").update({ status: "SENDING" })
       .eq("id", row.id).eq("status", "QUEUED").select("id").maybeSingle();
     if (!claimed) continue;
     const payload = (row.payload ?? {}) as Record<string, unknown>;
+    if (idsDoPayload(payload).some((id) => demo.has(id))) {
+      await admin.from("notification_logs").update({ status: "SKIPPED", error_message: "DEMO" }).eq("id", row.id);
+      continue;
+    }
     const result = await send(row.destination as string | null, String(payload.message ?? ""));
     await admin.from("notification_logs").update({ status: result.status, error_message: result.error, sent_at: new Date().toISOString() }).eq("id", row.id);
     released++;
@@ -81,7 +87,9 @@ async function severityReminders(admin: Admin): Promise<number> {
   let sent = 0;
   const cache = new Map<string, Awaited<ReturnType<typeof orgService>>>();
   const now = new Date();
+  const demo = open?.length ? await idsDemo(admin) : new Set<string>();
   for (const at of open ?? []) {
+    if (demo.has(at.id as string) || (at.lead_id && demo.has(at.lead_id as string))) continue; // demo atendimento: no reminders
     const org = at.organization_id as string;
     if (!cache.has(org)) cache.set(org, await orgService(admin, org));
     const svc = cache.get(org)!;

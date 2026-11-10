@@ -11,6 +11,8 @@ import { Separator } from "@/components/ui/separator";
 import { Building2, Palette, Globe, Save } from "lucide-react";
 import { useState, useEffect } from "react";
 import PropostaSettings from "@/components/settings/PropostaSettings";
+import DemoDataSettings from "@/components/settings/DemoDataSettings";
+import { NITSCLEAN_ORG_ID } from "@/lib/demo-cenario";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeamNotifications from "@/components/settings/TeamNotifications";
 import FloraDefaultOwner from "@/components/settings/FloraDefaultOwner";
@@ -27,7 +29,7 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 export default function Configuracoes() {
-  const { isAdmin, role } = usePermissions();
+  const { isAdmin, role, isSuperAdmin } = usePermissions();
   const { data: org, isLoading } = useOrganization();
   const updateOrg = useUpdateOrganization();
 
@@ -97,7 +99,8 @@ export default function Configuracoes() {
       }
     >
       <Tabs defaultValue={role === "gestor" ? "notificacoes" : "empresa"} className="max-w-4xl min-w-0">
-        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger><TabsTrigger value="campo">Visitas em campo</TabsTrigger><TabsTrigger value="proposta">Proposta em PDF</TabsTrigger></TabsList>
+        <TabsList className="h-auto flex flex-wrap justify-start"><TabsTrigger value="empresa">Empresa</TabsTrigger><TabsTrigger value="notificacoes">Notificações da equipe</TabsTrigger><TabsTrigger value="flora">Leads da Flora</TabsTrigger><TabsTrigger value="horario">Horário de atendimento</TabsTrigger><TabsTrigger value="etapas">Etapas do lead</TabsTrigger><TabsTrigger value="campo">Visitas em campo</TabsTrigger><TabsTrigger value="proposta">Proposta em PDF</TabsTrigger>{isSuperAdmin && org?.id === NITSCLEAN_ORG_ID && <TabsTrigger value="demo">Dados de demonstração</TabsTrigger>}</TabsList>
+        {isSuperAdmin && org?.id === NITSCLEAN_ORG_ID && <TabsContent value="demo"><DemoDataSettings /></TabsContent>}
         <TabsContent value="campo"><FieldOpsSettings /></TabsContent>
         <TabsContent value="proposta"><PropostaSettings /></TabsContent>
         <TabsContent value="horario"><HumanHoursSettings /></TabsContent>

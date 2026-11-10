@@ -621,6 +621,11 @@ function notificationText(event: TeamEvent, params: Record<string, unknown>, lea
 
 async function dispatchTeamNotification(supabase: ReturnType<typeof getClient>, event: TeamEvent,
   params: Record<string, unknown>, leadId?: string, scheduleId?: string, releaseAt?: string): Promise<void> {
+  // Demo scenario records (Configurações → Dados de demonstração) never trigger real WhatsApp messages.
+  const demoIds = [leadId, scheduleId, params.atendimento_id].filter((v): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v));
+  if (demoIds.length && typeof (supabase as any).rpc === "function") {
+    try { const { data: isDemo } = await (supabase as any).rpc("demo_envolvido", { _ids: demoIds }); if (isDemo === true) return; } catch { /* lookup only */ }
+  }
   const { data: recipients, error } = await supabase.from("notification_recipients")
     .select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
     .contains("eventos", [event]);
@@ -4036,7 +4041,7 @@ async function registrarNotaVisita(params: Record<string, unknown>): Promise<Mcp
     const texto = productSearchText(params.texto).replace(/\s+/g, " ").trim().slice(0, 1000);
     if (texto.length < 3) return fail("Envie o texto da nota (transcrição do áudio)");
     const s = await visitaEmAndamento(supabase, u);
-    if (!s) return fail("Você não tem visita em andamento para anotar.", "Abra o Fera em Hoje e inicie a visita");
+    if (!s) return visitaRelatada(u, supabase, params, texto, "nota");
     const proximo = productSearchText(params.proximo_passo).slice(0, 200) || null;
     const payload = `${texto}|${proximo ?? ""}`;
     if (params.confirmar !== true) {
@@ -4162,12 +4167,129 @@ async function chamarColeta(userId: string, id: string, action: string, extra: R
   } catch { return { status: 502, body: { error: "Não foi possível processar a coleta agora" } }; }
 }
 
+// ─── Visit not scheduled: the seller reports it on WhatsApp (anexar_coleta / registrar_nota without an open visit) ───
+const MSG_SEM_VISITA = "Não achei visita sua aberta.";
+/** Covered city named inside free text ("visitei o Bar do Zé em Búzios"), using the area cities + aliases. */
+function cidadeNoTexto(texto: string, areas: Array<{ city?: string | null }>): string | null {
+  const t = ` ${foldPlace(texto)} `;
+  const cand = new Set<string>();
+  for (const a of areas) for (const k of cityKeys(a.city)) cand.add(k);
+  for (const [alias] of Object.entries(CITY_ALIASES)) if (alias.length >= 5) cand.add(alias);
+  return [...cand].sort((a, b) => b.length - a.length).find((c) => t.includes(` ${c} `)) ?? null;
+}
+/** Same company already in the Fera: client by name+city, else an open (not converted, not lost) lead by name+city. */
+async function empresaExistente(supabase: ReturnType<typeof getClient>, empresa: string, cidade: string) {
+  const alvo = normalizedEstablishment(empresa);
+  const { data: cl } = await supabase.from("clients").select("id, name, company, city, address, zip_code, latitude, longitude").eq("organization_id", NITSCLEAN_ORG_ID).limit(2000);
+  const cliente = (Array.isArray(cl) ? cl : []).find((c: any) => [c.name, c.company].some((n) => normalizedEstablishment(n) === alvo) && sameCity(c.city, cidade));
+  if (cliente) return { tipo: "cliente" as const, row: cliente as any };
+  const { data: ls } = await supabase.from("leads").select("id, empresa_nome, company, title, city, client_id, stage, endereco, zip_code, latitude, longitude, pessoa_id, stage_id").eq("organization_id", NITSCLEAN_ORG_ID).limit(3000);
+  const lead = (Array.isArray(ls) ? ls : []).find((l: any) => [l.empresa_nome, l.company, l.title].some((n) => normalizedEstablishment(n) === alvo)
+    && sameCity(l.city, cidade) && !l.client_id && !["fechado_perdido", "fechado_ganho"].includes(l.stage));
+  return lead ? { tipo: "lead" as const, row: lead as any } : null;
+}
+
+/** No open visit: offer to register it (codigo_confirmacao); with confirmar=true + code, create/reuse the lead and a done 1st commercial visit. */
+async function visitaRelatada(u: TeamUser, supabase: ReturnType<typeof getClient>, params: Record<string, unknown>, texto: string, modo: "coleta" | "nota"): Promise<McpResponse> {
+  const empresa = (productSearchText(params.empresa) ?? "").replace(/\s+/g, " ").trim().slice(0, 150);
+  const { data: areasRaw } = await supabase.from("ekkoa_coverage_areas").select("name, city").eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
+  const areas = (Array.isArray(areasRaw) ? areasRaw : []) as Array<{ name: string; city: string | null }>;
+  const cidadeDita = (productSearchText(params.cidade) ?? "").trim().slice(0, 120) || cidadeNoTexto(texto, areas) || "";
+  const pedir = (msg: string, faltam: string[]) => ({ success: false, message: msg, data: { sem_visita_aberta: true, faltam, mensagem_para_equipe: msg } });
+  if (!empresa) return pedir(`${MSG_SEM_VISITA} Para eu registrar a visita, me diga o nome do estabelecimento e a cidade.`, cidadeDita ? ["empresa"] : ["empresa", "cidade"]);
+  if (!cidadeDita) return pedir(`${MSG_SEM_VISITA} Em qual cidade fica ${empresa}?`, ["cidade"]);
+  // Same coverage rule as the client flow: only DISTRIBUIDORA cities get a visit.
+  const cob = await verificarCoberturaRegiao({ cidade: cidadeDita });
+  const cd: any = cob.data ?? {};
+  if (!cob.success || cd.vinculo !== "DISTRIBUIDORA") {
+    const msg = cd.precisa_confirmar ? `${MSG_SEM_VISITA} Não reconheci a cidade "${cidadeDita}". Qual a cidade (ou o CEP) de ${empresa}?`
+      : `${MSG_SEM_VISITA} ${cidadeDita} fica fora da área atendida pela NitsClean${cd.vinculo === "MATRIZ" ? " (atendida pela Matriz)" : ""}, então não registrei a visita.`;
+    return { success: false, message: msg, data: { sem_visita_aberta: true, vinculo: cd.vinculo ?? null, mensagem_para_equipe: msg } };
+  }
+  const cobs: any[] = Array.isArray(cd.cobertura) ? cd.cobertura : [];
+  const area = cobs.find((c) => cityInArea(cidadeDita, c.cidade, true)) ?? cobs[0] ?? null;
+  const cidade = area?.cidade ?? cidadeDita;
+  const assinatura = `relatar|${modo}|${normalizedEstablishment(empresa)}|${normalizedEstablishment(cidade)}|${texto}`;
+  if (params.confirmar !== true) {
+    const exp = Date.now() + 15 * 60_000;
+    const codigo = await noteCode(u.user_id, "relatar", assinatura, exp);
+    const existente = await empresaExistente(supabase, empresa, cidade);
+    const msg = `${MSG_SEM_VISITA} Quer que eu registre a visita a ${empresa} agora?`;
+    return ok({ sem_visita_aberta: true, registrar_visita: true, precisa_confirmacao: true, codigo_confirmacao: codigo, empresa, cidade,
+      cadastro_existente: existente?.tipo ?? null, mensagem_para_usuario: msg, mensagem_para_equipe: msg }, msg,
+      "Só registre depois do 'sim': chame de novo a mesma acao com confirmar=true, o MESMO texto, empresa e cidade e o codigo_confirmacao");
+  }
+  const code = String(params.codigo_confirmacao ?? "");
+  const exp = parseInt(code.split(".")[0] ?? "", 36);
+  if (!Number.isFinite(exp) || exp < Date.now() || code !== await noteCode(u.user_id, "relatar", assinatura, exp)) {
+    return fail("Confirmação expirada ou dados diferentes: pergunte de novo se registro a visita");
+  }
+  const existente = await empresaExistente(supabase, empresa, cidade);
+  let leadId: string | null = existente?.tipo === "lead" ? existente.row.id : null;
+  const clientId: string | null = existente?.tipo === "cliente" ? existente.row.id : null;
+  let pessoaId: string | null = existente?.tipo === "lead" ? existente.row.pessoa_id ?? null : null;
+  const { data: etapa } = await supabase.from("lead_stages").select("id").eq("organization_id", NITSCLEAN_ORG_ID).eq("chave", "visita_realizada").maybeSingle();
+  if (!existente) {
+    const contato = productSearchText(params.contato_nome);
+    const tel = digits(params.contato_telefone);
+    if (contato) {
+      const { data: p } = await supabase.from("pessoas").insert({ organization_id: NITSCLEAN_ORG_ID, nome: contato, whatsapp: tel && tel.length >= 10 ? tel : null }).select("id").single();
+      pessoaId = (p as any)?.id ?? null;
+    }
+    const { data: lead, error } = await supabase.from("leads").insert({ organization_id: NITSCLEAN_ORG_ID, title: empresa, empresa_nome: empresa, company: empresa, city: cidade,
+      regiao: area?.regiao ?? null, vinculo: "DISTRIBUIDORA", pessoa_id: pessoaId, contact_name: contato || null, contact_phone: tel, source: "flora_equipe",
+      stage_id: (etapa as any)?.id ?? null, created_by: u.user_id, assigned_to: u.user_id }).select("id").single();
+    if (error) return fail(dbFail("criar lead da visita relatada", error));
+    leadId = (lead as any).id;
+  } else if (leadId && (etapa as any)?.id) {
+    // Novo / Qualificado / Visita agendada move forward to "Visita realizada"; later stages stay.
+    const { data: atual } = await supabase.from("lead_stages").select("chave").eq("id", existente.row.stage_id ?? "").maybeSingle();
+    if (!atual || ["novo", "qualificado", "visita_agendada"].includes((atual as any).chave)) {
+      await supabase.from("leads").update({ stage_id: (etapa as any).id }).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
+    }
+  }
+  const row: any = existente?.row ?? {};
+  const hora = new Date().toLocaleTimeString("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" });
+  const stamp = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const { data: created, error: se } = await supabase.from("schedules").insert({ organization_id: NITSCLEAN_ORG_ID, title: `Visita comercial — ${row.name || row.empresa_nome || empresa}`,
+    schedule_type: "visita_comercial", schedule_subtype: "PROSPECCAO", ocorrencia_tipo: "primeira_visita", scheduled_date: spToday(), start_time: hora, end_time: hora,
+    status: "concluido", lead_id: clientId ? null : leadId, client_id: clientId, assigned_to: u.user_id, created_by: u.user_id, source: "flora_relatada",
+    confirmacao_status: "nao_aplicavel", location: [row.address ?? row.endereco, cidade].filter(Boolean).join(", ") || cidade, zip_code: row.zip_code ?? null,
+    latitude: row.latitude ?? null, longitude: row.longitude ?? null, coleta_status: "coletando",
+    resumo_execucao: "Visita relatada pela Flora (sem check-in GPS)", notes: modo === "nota" ? `[WhatsApp ${stamp}] ${texto}`.slice(0, 4000) : null })
+    .select("id, ocorrencia_codigo").single();
+  if (se) return fail(dbFail("registrar visita relatada", se));
+  const id = (created as any).id as string;
+  const { data: sc } = await supabase.from("schedules").select("ocorrencia_codigo").eq("id", id).maybeSingle();
+  const oc = (sc as any)?.ocorrencia_codigo ?? (created as any).ocorrencia_codigo ?? null;
+  const { error: ee } = await supabase.from("schedule_evidencias").insert({ organization_id: NITSCLEAN_ORG_ID, schedule_id: id, tipo: "texto", origem: "flora",
+    observacoes: texto, transcricao: texto, autor_id: u.user_id, itens: [] });
+  if (ee) return fail(dbFail("anexar texto à visita relatada", ee));
+  if (leadId) {
+    const bg = supabase.from("lead_timeline").insert({ organization_id: NITSCLEAN_ORG_ID, lead_id: leadId, pessoa_id: pessoaId, tipo: "visita", origem: "fera",
+      resumo: `Visita relatada pela Flora (sem check-in): ${texto}`.slice(0, 500), referencia_id: id });
+    (globalThis as any).EdgeRuntime?.waitUntil?.(Promise.resolve(bg).then(() => undefined, () => undefined));
+  }
+  // What is still missing: the collection draft from the text (same rules as the app).
+  const r = await chamarColeta(u.user_id, id, "concluir");
+  const pendencias: string[] = r.status === 200 ? r.body.pendencias ?? [] : [];
+  const ocTxt = oc ? `#${oc}` : visitCode(id);
+  const msg = `Registrei a visita a ${row.name || row.empresa_nome || empresa} como ${ocTxt} (relatada pela Flora, sem check-in).`
+    + (r.status !== 200 ? " Não consegui gerar o rascunho agora: peça a lista do que falta daqui a pouco."
+      : pendencias.length ? `\nFalta:\n- ${pendencias.slice(0, 12).join("\n- ")}` : " Nada pendente: posso confirmar a coleta.");
+  return ok({ registrada: true, ocorrencia: ocTxt, schedule_id: id, empresa: row.name || row.empresa_nome || empresa, cidade, lead_id: leadId, client_id: clientId,
+    lead_criado: !existente, origem: "relatada_flora", sem_checkin: true, resumo: r.body?.resumo ?? null, pendencias,
+    link: feraLink(`/agenda?agendamento=${id}`), mensagem_para_equipe: msg.length > 1200 ? `${msg.slice(0, 1197)}...` : msg }, msg,
+    pendencias.length ? "Pergunte ao vendedor cada pendência e anexe as respostas com anexar_coleta (codigo = a ocorrência)" : "Chame confirmar_coleta para confirmar");
+}
+
 async function anexarColetaOcorrencia(params: Record<string, unknown>): Promise<McpResponse> {
   return withTeam(async (u, supabase) => {
     const texto = productSearchText(params.texto).replace(/\s+/g, " ").trim().slice(0, 4000);
     if (texto.length < 3) return fail("Envie o texto ou a transcrição do áudio");
     const s = await ocorrenciaDoUsuario(supabase, u, params.codigo);
-    if (!s) return fail("Não achei ocorrência aberta sua.", "Peça o código #OC-… ou inicie o atendimento no Fera");
+    if (!s && params.codigo) return fail("Não achei ocorrência aberta sua com esse código.", "Confira o código #OC-…");
+    if (!s) return visitaRelatada(u, supabase, params, texto, "coleta");
     if (s.coleta_status === "confirmada") return fail(`A coleta da #${s.ocorrencia_codigo} já foi confirmada`);
     if (!(s.status === "em_atendimento" || s.status === "concluido")) return fail("Inicie o atendimento no Fera antes de anexar");
     const { error } = await supabase.from("schedule_evidencias").insert({ organization_id: NITSCLEAN_ORG_ID, schedule_id: s.id, tipo: "texto", origem: "flora",
@@ -4509,6 +4631,8 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   if (validDate(params.data)) p.data = params.data;
   if (params.confirmar === true) p.confirmar = true;
   if (typeof params.codigo_confirmacao === "string") p.codigo_confirmacao = params.codigo_confirmacao;
+  // Unscheduled visit (anexar_coleta / registrar_nota): establishment and city may also come as top-level fields.
+  for (const k of ["empresa", "cidade"]) if (typeof params[k] === "string" && (params[k] as string).trim() && p[k] === undefined) p[k] = (params[k] as string).trim();
   if (acao === "consultar" && !p.termo && typeof params.texto === "string") p.termo = params.texto.trim();
   if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && !params.texto.includes(":")) p.consultor = params.texto.trim();
   if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
@@ -4541,7 +4665,9 @@ const CHAT = { chat_id: { type: "string", description: "chat_id da conversa atua
 const TEAM_MANIFEST = [
   { name: "flora_equipe", description: "EQUIPE (use esta): ferramenta única da equipe. Identifica o usuário pelo telefone do chat_id no servidor e roteia pela acao. Sempre envie data.mensagem_para_equipe literalmente.", parameters: { type: "object", required: ["chat_id", "acao"], properties: { ...CHAT,
     acao: { type: "string", enum: Object.keys(FLORA_EQUIPE_ACOES) }, codigo: { type: "string", description: "#OC-…, #V-…, #T-… ou #A-…" }, texto: { type: "string", description: "Fala/transcrição ou campos livres (ex.: 'empresa: X; cidade: Y; contato: Z')" },
-    data: { type: "string", description: "AAAA-MM-DD" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, dados: { type: "object", description: "Opcional: campos livres (nome, cidade, endereco, contato, telefone, tipo, horario, latitude, longitude...)" } } } },
+    data: { type: "string", description: "AAAA-MM-DD" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" },
+    empresa: { type: "string", description: "anexar_coleta/registrar_nota sem visita aberta: nome do estabelecimento visitado" },
+    cidade: { type: "string", description: "anexar_coleta/registrar_nota sem visita aberta: cidade do estabelecimento" }, dados: { type: "object", description: "Opcional: campos livres (nome, cidade, endereco, contato, telefone, tipo, horario, latitude, longitude...)" } } } },
   { name: "identificar_usuario", description: "EQUIPE: identifica o usuário do Fera pelo telefone do chat (nome, papéis, últimos avisos com código). Telefone desconhecido = não autorizado.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT } } },
   { name: "minha_agenda", description: "EQUIPE: visitas do dia do próprio usuário (status, prontidão, código e link).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string", description: "AAAA-MM-DD (padrão hoje)" } } } },
   { name: "agenda_equipe", description: "EQUIPE (só gestor/admin): visitas do dia de toda a equipe agrupadas por consultor.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, data: { type: "string" }, consultor: { type: "string", description: "Opcional: parte do nome" } } } },
@@ -4550,11 +4676,11 @@ const TEAM_MANIFEST = [
   { name: "criar_lead_equipe", description: "EQUIPE: cria lead (empresa + cidade + 1 contato) em nome do usuário.", parameters: { type: "object", required: ["chat_id", "empresa", "cidade", "contato_nome"], properties: { ...CHAT, empresa: { type: "string" }, cidade: { type: "string" }, endereco: { type: "string" }, cnpj: { type: "string" }, contato_nome: { type: "string" }, contato_telefone: { type: "string" }, cargo: { type: "string" } } } },
   { name: "agendar_visita_equipe", description: "EQUIPE: agenda visita com as mesmas validações do Fera (cliente obrigatório fora da comercial, CNPJ quando há nota, conflito, feriado, agenda Google). Vendedor só visita comercial.", parameters: { type: "object", required: ["chat_id", "tipo", "data", "horario"], properties: { ...CHAT, tipo: { type: "string", enum: TEAM_TYPES }, data: { type: "string" }, horario: { type: "string", description: "HH:MM" }, client_id: { type: "string" }, lead_id: { type: "string" }, operacao_material: { type: "string", enum: ["instalacao_teste", "instalacao_definitiva", "entrega", "substituicao", "manutencao_reposicao"] }, itens: { type: "array", items: { type: "object", properties: { descricao: { type: "string" }, quantidade: { type: "string" } } } }, consultor_id: { type: "string", description: "Só gestor" }, observacao: { type: "string" } } } },
   { name: "registrar_localizacao_checkin", description: "EQUIPE: plano B quando o GPS do app falha — grava a localização enviada no WhatsApp no check-in da visita em andamento do próprio usuário.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" } } } },
-  { name: "registrar_nota_visita", description: "EQUIPE: nota da visita em andamento a partir da transcrição do áudio. 1ª chamada devolve resumo + codigo_confirmacao (NÃO grava); só depois do 'sim' chame com confirmar=true e o mesmo texto.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, proximo_passo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" } } } },
+  { name: "registrar_nota_visita", description: "EQUIPE: nota da visita em andamento a partir da transcrição do áudio. 1ª chamada devolve resumo + codigo_confirmacao (NÃO grava); só depois do 'sim' chame com confirmar=true e o mesmo texto.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, proximo_passo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, empresa: { type: "string", description: "Sem visita aberta: estabelecimento visitado" }, cidade: { type: "string", description: "Sem visita aberta: cidade" } } } },
   { name: "assumir_atendimento", description: "EQUIPE: assume um atendimento (código #A-…).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
   { name: "resolver_atendimento", description: "EQUIPE: resolve um atendimento com resolução e resultado.", parameters: { type: "object", required: ["chat_id", "codigo", "resolucao", "resultado"], properties: { ...CHAT, codigo: { type: "string" }, resolucao: { type: "string" }, resultado: { type: "string", enum: RESULTADOS_ATENDIMENTO } } } },
   { name: "contexto_aviso", description: "EQUIPE: quando o usuário responde a um aviso automático, resolve o código (#V-…, #T-…, #A-…) enviado a ele e devolve a visita/tarefa e ações possíveis.", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
-  { name: "anexar_coleta_ocorrencia", description: "EQUIPE: anexa texto/transcrição de áudio do vendedor à ocorrência aberta dele (ou pelo código #OC-…). Não confirma nada.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, codigo: { type: "string", description: "Opcional: #OC-000123" } } } },
+  { name: "anexar_coleta_ocorrencia", description: "EQUIPE: anexa texto/transcrição de áudio do vendedor à ocorrência aberta dele (ou pelo código #OC-…). Sem visita aberta: oferece registrar a visita (codigo_confirmacao) e, com confirmar=true, cria a 1ª visita comercial relatada pela Flora.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, codigo: { type: "string", description: "Opcional: #OC-000123" }, empresa: { type: "string", description: "Sem visita aberta: estabelecimento visitado" }, cidade: { type: "string", description: "Sem visita aberta: cidade" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" } } } },
   { name: "pendencias_ocorrencia", description: "EQUIPE: o que ainda falta na coleta da ocorrência (inclui 'você ofereceu X — o que o cliente achou?' e próximos passos sem data).", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, codigo: { type: "string" } } } },
   { name: "confirmar_coleta_ocorrencia", description: "EQUIPE: 1ª chamada transcreve/gera o rascunho e devolve resumo + pendências + codigo_confirmacao (NÃO grava); depois do 'sim', chame com confirmar=true e o código: cria pontos previstos, histórico do lead e próximos agendamentos.", parameters: { type: "object", required: ["chat_id"], properties: { ...CHAT, codigo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" } } } },
   { name: "marcar_material_separado", description: "EQUIPE: marca o material da visita (#V-…) como separado (responsável, operacional ou gestor).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },

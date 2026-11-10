@@ -1,6 +1,7 @@
 // Actions on an atendimento from the Fera: assumir, resolver, encerrar, devolver (to Flora), enviar (message), historico.
 // The atendimento is always read with the caller's own access rules first, so nobody acts on records they cannot see.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { demoEnvolvido } from "../_shared/demo-guard.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -64,7 +65,10 @@ Deno.serve(async (req) => {
     if (error) console.error("[atendimento-acoes] timeline", error.code);
   };
   const open = at.status === "aberto" || at.status === "em_atendimento";
-  const chat = typeof at.chat_id === "string" && at.chat_id ? encodeURIComponent(at.chat_id) : null;
+  // Demo scenario: the atendimento works in the Fera, but nothing ever reaches GPT Maker/WhatsApp.
+  const demo = await demoEnvolvido(admin, [at.id, at.lead_id]);
+  if (demo && body.action === "enviar") return json({ error: "Atendimento de demonstração: nenhuma mensagem é enviada ao WhatsApp" }, 400);
+  const chat = !demo && typeof at.chat_id === "string" && at.chat_id ? encodeURIComponent(at.chat_id) : null;
 
   switch (body.action) {
     case "historico": {

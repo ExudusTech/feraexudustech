@@ -1,5 +1,6 @@
 // Sends (or queues outside human hours) a team WhatsApp alert to the organization's subscribers of an event.
 import { normalizeHumanHours, estaEmHorario, proximoHorarioUtil, type ClosedDay } from "./business-hours.ts";
+import { demoEnvolvido, idsDoPayload } from "./demo-guard.ts";
 
 // deno-lint-ignore no-explicit-any
 type Admin = any;
@@ -46,6 +47,8 @@ export function withAlertCode(message: string, codigo: string | null): string {
 
 export async function teamAlert(admin: Admin, orgId: string, event: string, message: string, payload: Record<string, unknown>,
   opts: { immediate?: boolean; dedupeKey?: string; extraUserIds?: string[] } = {}): Promise<void> {
+  // Demo scenario records never trigger real WhatsApp messages.
+  if (await demoEnvolvido(admin, idsDoPayload(payload))) return;
   if (typeof payload.schedule_id === "string" && !payload.ocorrencia_codigo && !payload.tarefa_numero && !payload.atendimento_id) {
     try {
       const { data } = await admin.from("schedules").select("ocorrencia_codigo").eq("id", payload.schedule_id).maybeSingle();

@@ -1,10 +1,12 @@
 # Tasks
 - [x] Demo: registro técnico demo_registros + funções demo_conjunto/demo_envolvido/demo_contagem/apagar_cenario_demo (migração 0047) e plano de datas/telefones/CNPJ em supabase/functions/_shared/demo-cenario.ts.
-- [ ] Demo: função demo-cenario (contar/criar/apagar, só super_admin NitsClean) criando o cenário pelas tabelas reais e removendo arquivos do storage.
-- [ ] Demo: guarda anti-notificação (teamAlert, notify-schedule, confirmar-visitas, release-notification-queue, atendimento-acoes, mcp dispatchTeamNotification) via demo_envolvido.
-- [ ] Demo: aba Configurações → "Dados de demonstração" (contagem, criar, apagar com confirmação; mobile).
-- [ ] Flora Equipe: anexar_coleta/registrar_nota sem visita aberta → oferecer registrar visita (codigo_confirmacao), criar lead/ocorrência 1ª visita relatada pela Flora, anexar texto e devolver pendências.
-- [ ] Testes (planejador demo, guarda, mcp visita não agendada), deploy das funções e AGENTS.md.
+- [x] Demo: função demo-cenario (contar/criar/apagar, só super_admin NitsClean); ensaio no banco (desfeito) validou conversão, 2 tarefas, contagem, guarda e limpeza total.
+- [x] Demo: guarda anti-notificação em todos os envios de WhatsApp.
+- [x] Demo: aba Configurações → "Dados de demonstração".
+- [ ] Criar o cenário pelo botão e conferir nas telas (blocked: sem sessão do PH no ambiente; precisa do clique do PH).
+- [x] Flora Equipe: visita não agendada (anexar_coleta/registrar_nota) com confirmação; mcp publicado.
+- [ ] Testar visita relatada numa conversa real (blocked: precisa do GPT Maker ajustado e de um WhatsApp da equipe).
+- [x] Testes 616/616, deploy das funções e AGENTS.md.
 - [x] Corrigir localização no check-in: erros distintos, captura 20s/45s, posição recente até 60s em memória, diagnóstico validado/gravado; 452 testes + 3 Deno, build OK; fluxo móvel autenticado como Marcos com GPS/gravação simulados, sem alterar visita real.
 - [ ] Validar localização no app instalado em Android/Chrome e iPhone/Safari (blocked: aparelhos físicos indisponíveis no ambiente).
 - [x] Lote 8 Fase A: horário humano configurável, utilitário de horário útil, fila de avisos fora do horário (checagem a cada 5 min), mensagens mcp; 10 testes de horário + 7 de mcp.
