@@ -10,13 +10,13 @@ export async function gerarPdfEtiquetas(o: { inicio: number; fim: number; largur
   const pad = Math.max(1.5, o.altura * 0.07);
   const qr = o.altura - 2 * pad;
   const marcaCorte = (pagina: number) => {
-    doc.setDrawColor(0); doc.setLineWidth(0.2);
+    doc.setDrawColor("#000000"); doc.setLineWidth(0.2);
     const x1 = x0 + colunas * o.largura, y1 = y0 + linhas * o.altura;
     for (let i = 0; i <= colunas; i++) { const x = x0 + i * o.largura; doc.line(x, y0 - 6, x, y0 - 2); doc.line(x, y1 + 2, x, y1 + 6); }
     for (let j = 0; j <= linhas; j++) { const y = y0 + j * o.altura; doc.line(x0 - 6, y, x0 - 2, y); doc.line(x1 + 2, y, x1 + 6, y); }
-    doc.setFontSize(6); doc.setTextColor(120);
+    doc.setFontSize(6); doc.setTextColor("#787878");
     doc.text(`Etiquetas ${formatEtiqueta(o.inicio)}–${formatEtiqueta(o.fim)} · ${o.largura}×${o.altura} mm · folha ${pagina}`, x0, y1 + 9);
-    doc.setTextColor(0);
+    doc.setTextColor("#000000");
   };
   for (let k = 0; k < total; k++) {
     const pos = k % porPagina;
@@ -26,7 +26,7 @@ export async function gerarPdfEtiquetas(o: { inicio: number; fim: number; largur
     // QR (merged horizontal runs of dark modules).
     const m = QRCode.create(etiquetaUrl(n), { errorCorrectionLevel: "M" }).modules;
     const ms = qr / (m.size + 2);
-    doc.setFillColor(0);
+    doc.setFillColor("#000000");
     for (let r = 0; r < m.size; r++) {
       let c = 0;
       while (c < m.size) {
