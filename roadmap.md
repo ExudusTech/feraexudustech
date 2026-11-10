@@ -1,4 +1,6 @@
 # Tasks
+- [x] Histórico do funil e das propostas (triggers, marcos, backfill estimado), métricas puras + card "Tempo do funil" em Relatórios, perguntas de tempo na Flora Equipe, histórico no cenário demo; 664 testes; funções publicadas.
+- [ ] Conferir o card "Tempo do funil" logado e com o cenário demo recriado (blocked: sem sessão do PH no ambiente; precisa do clique do PH).
 - [x] Indicadores por período (flora_equipe acao=indicadores): período livre + anterior, recorte vendedor/cidade/tipo, permissões por papel, texto curto com links, boletim PNG 1080×1350 (resvg + Montserrat) com fallback; testes; mcp publicado.
 - [ ] Ver o boletim chegar num WhatsApp real (blocked: depende de um pedido real da equipe pela Flora).
 - [x] Demo: registro técnico demo_registros + funções demo_conjunto/demo_envolvido/demo_contagem/apagar_cenario_demo (migração 0047) e plano de datas/telefones/CNPJ em supabase/functions/_shared/demo-cenario.ts.
