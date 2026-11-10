@@ -143,7 +143,7 @@ describe("Flora: contexto_qr", () => {
     const h = harness();
     const r = await h.call("contexto_qr", { chat_id: chat(ESTRANHO), ref: `ref ${qrRef(123)}` });
     expect(r.data).toMatchObject({ tipo: "PUBLICO", estabelecimento: "Pousada Mar Azul", segmento: "Hotel/Pousada", ponto: "Banheiro feminino", produto: "Dispenser Sabonete", origem_lead: "QR no cliente Pousada Mar Azul" });
-    expect(JSON.stringify(r.data)).not.toMatch(/000123|cli|c1|u9|Renata/);
+    expect(JSON.stringify(r.data)).not.toMatch(/000123|"cli"|"c1"|u9|Renata/);
     expect(r.data).not.toHaveProperty("sugestoes_complemento");
   });
   it("CLIENTE: contato da empresa dona do aparelho recebe complementos que ainda não tem", async () => {
