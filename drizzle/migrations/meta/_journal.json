@@ -337,6 +337,13 @@
       "when": 1794270416167,
       "tag": "0047_dados_demonstracao",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794273091656,
+      "tag": "0048_dados_demonstracao_ajustes",
+      "breakpoints": true
     }
   ]
 }
