@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from "react-router-dom";
+import { formatEtiqueta } from "@/lib/etiquetas";
 import { useAuth } from "@/hooks/use-auth";
 import { useProducts } from "@/hooks/use-products";
 import { useOrganizationUsers } from "@/hooks/use-users";
@@ -31,7 +33,7 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
     queryKey: ["client-base", client?.id], enabled: !!client?.id && open,
     queryFn: async () => {
       const [pts, plano] = await Promise.all([
-        (supabase as any).from("comodatos").select("id, localizacao_interna, product_id, refil_product_id, quantidade, estado_atual, status, ultima_manutencao, proxima_manutencao").eq("client_id", client!.id).order("created_at"),
+        (supabase as any).from("comodatos").select("id, localizacao_interna, product_id, refil_product_id, quantidade, estado_atual, status, ultima_manutencao, proxima_manutencao, etiqueta_numero").eq("client_id", client!.id).order("created_at"),
         (supabase as any).from("planos_manutencao").select("*").eq("client_id", client!.id).eq("ativo", true).maybeSingle(),
       ]);
       const ids = ((pts.data ?? []) as any[]).map((p) => p.id);
@@ -77,7 +79,7 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
             {!data?.pontos.length && <p className="text-sm text-muted-foreground">Nenhum ponto ainda. Eles são cadastrados pelo consultor na visita.</p>}
             {data?.pontos.map((p) => (
               <div key={p.id} className="rounded-md border p-2 text-sm flex items-start gap-2">
-                <div className="flex-1"><strong>{p.localizacao_interna || "Ponto"}</strong> — {name(p.product_id) ?? "Dispenser"}{name(p.refil_product_id) && ` + ${name(p.refil_product_id)}`} ({p.quantidade}x)
+                <div className="flex-1">{p.etiqueta_numero && <Link to={`/aparelho/${formatEtiqueta(p.etiqueta_numero)}`} className="mr-1 rounded bg-muted px-1 font-mono text-xs underline">nº {formatEtiqueta(p.etiqueta_numero)}</Link>}<strong>{p.localizacao_interna || "Ponto"}</strong> — {name(p.product_id) ?? "Dispenser"}{name(p.refil_product_id) && ` + ${name(p.refil_product_id)}`} ({p.quantidade}x)
                   <span className="block text-xs text-muted-foreground">Última manutenção: {p.ultima_manutencao?.split("-").reverse().join("/") ?? "—"} · Próxima: {p.proxima_manutencao?.split("-").reverse().join("/") ?? "—"}</span></div>
                 {p.estado_atual && <Badge className={ESTADO_CLASS[p.estado_atual]}>{ESTADO_LABEL[p.estado_atual]}</Badge>}
                 {(p.status ?? "ATIVO").toUpperCase() !== "ATIVO" && <Badge variant="outline">{p.status}</Badge>}

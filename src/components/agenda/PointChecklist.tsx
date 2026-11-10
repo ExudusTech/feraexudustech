@@ -16,6 +16,8 @@ import { refisCompativeis } from "@/lib/base-instalada";
 import { baseAction, ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL, MANUTENCOES, pontosPendentes, uploadVisitPhoto } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 import { clearDraft, useDraftState } from "@/lib/visit-draft";
+import { formatEtiqueta } from "@/lib/etiquetas";
+import EtiquetaNaVisita from "@/components/etiquetas/EtiquetaNaVisita";
 
 interface Props { scheduleId: string; orgId: string; clientId?: string | null; leadId?: string | null; onPendingChange?: (pending: number, total: number) => void }
 
@@ -38,7 +40,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
     queryKey: ["checklist", scheduleId],
     queryFn: async () => {
       const [pts, avs, ocs] = await Promise.all([
-        (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id").eq(clientId ? "client_id" : "lead_id", clientId ?? leadId).order("created_at"),
+        (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id, etiqueta_numero").eq(clientId ? "client_id" : "lead_id", clientId ?? leadId).order("created_at"),
         (supabase as any).from("schedule_evidencias").select("comodato_id, estado, itens, precisa_substituir").eq("schedule_id", scheduleId).not("estado", "is", null),
         (supabase as any).from("maintenance_schedule").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId ?? "00000000-0000-0000-0000-000000000000").eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
@@ -88,16 +90,18 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
         <h3 className="font-semibold text-sm">Pontos do cliente</h3>
         <Badge variant={pend ? "outline" : "default"}>{pontos.length - pend}/{pontos.length} avaliados</Badge>
       </div>
+      <EtiquetaNaVisita scheduleId={scheduleId} orgId={orgId} clientId={clientId} leadId={leadId} onChanged={() => { refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); }}
+        onAvaliar={(id) => { startEval(id); setTimeout(() => document.getElementById(`ponto-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
       {!pontos.length && <p className="text-xs text-muted-foreground">Nenhum ponto cadastrado. Adicione os pontos instalados neste cliente.</p>}
       {pontos.map((p) => {
         const av = data?.avaliacoes.find((a) => a.comodato_id === p.id);
         const ocs = (data?.ocorrencias ?? []).filter((o) => o.comodato_id === p.id);
         return (
-          <div key={p.id} className="rounded-md border p-2 space-y-2">
+          <div key={p.id} id={`ponto-${p.id}`} className="rounded-md border p-2 space-y-2 scroll-mt-4">
             <div className="flex items-center gap-2">
             <button type="button" className="flex-1 min-w-0 text-left flex items-center gap-2 min-h-11" onClick={() => open === p.id ? setOpen(null) : startEval(p.id)}>
               {imageOf(p.product_id) && <img src={imageOf(p.product_id)!} alt="" className="h-10 w-10 rounded object-cover" loading="lazy" />}
-              <span className="flex-1 text-sm"><strong>{p.localizacao_interna || "Ponto"}</strong> — {nameOf(p.product_id) ?? "Dispenser"}{nameOf(p.refil_product_id) && ` + ${nameOf(p.refil_product_id)}`}{p.quantidade && p.quantidade !== "1" && ` (${p.quantidade}x)`}</span>
+              <span className="flex-1 text-sm">{p.etiqueta_numero && <span className="mr-1 rounded bg-muted px-1 font-mono text-xs">nº {formatEtiqueta(p.etiqueta_numero)}</span>}<strong>{p.localizacao_interna || "Ponto"}</strong> — {nameOf(p.product_id) ?? "Dispenser"}{nameOf(p.refil_product_id) && ` + ${nameOf(p.refil_product_id)}`}{p.quantidade && p.quantidade !== "1" && ` (${p.quantidade}x)`}</span>
               {av && <Badge className={ESTADO_CLASS[av.estado]}>{ESTADO_LABEL[av.estado]}</Badge>}
             </button>
             {!av && <Button type="button" size="sm" variant="outline" className="min-h-11 shrink-0" disabled={busy} aria-label={`OK: ${p.localizacao_interna || "ponto"}`}

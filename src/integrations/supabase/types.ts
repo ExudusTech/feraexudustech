@@ -3671,6 +3671,7 @@ export type Database = {
           endereco_instalacao: string | null
           estado: string | null
           estado_atual: string | null
+          etiqueta_numero: number | null
           fabricante: string | null
           foto_path: string | null
           id: string
@@ -3681,6 +3682,7 @@ export type Database = {
           marcos_estimados: boolean
           notes: string | null
           numero_contrato: string | null
+          ocorrencia_schedule_id: string | null
           organization_id: string
           origem: string
           origem_schedule_id: string | null
@@ -3689,6 +3691,8 @@ export type Database = {
           proxima_manutencao: string | null
           quantidade: string
           refil_product_id: string | null
+          reserva_os_id: string | null
+          retirada_schedule_id: string | null
           status: string
           ultima_avaliacao_em: string | null
           ultima_manutencao: string | null
@@ -3711,6 +3715,7 @@ export type Database = {
           endereco_instalacao?: string | null
           estado?: string | null
           estado_atual?: string | null
+          etiqueta_numero?: number | null
           fabricante?: string | null
           foto_path?: string | null
           id?: string
@@ -3721,6 +3726,7 @@ export type Database = {
           marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
+          ocorrencia_schedule_id?: string | null
           organization_id: string
           origem?: string
           origem_schedule_id?: string | null
@@ -3729,6 +3735,8 @@ export type Database = {
           proxima_manutencao?: string | null
           quantidade?: string
           refil_product_id?: string | null
+          reserva_os_id?: string | null
+          retirada_schedule_id?: string | null
           status?: string
           ultima_avaliacao_em?: string | null
           ultima_manutencao?: string | null
@@ -3751,6 +3759,7 @@ export type Database = {
           endereco_instalacao?: string | null
           estado?: string | null
           estado_atual?: string | null
+          etiqueta_numero?: number | null
           fabricante?: string | null
           foto_path?: string | null
           id?: string
@@ -3761,6 +3770,7 @@ export type Database = {
           marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
+          ocorrencia_schedule_id?: string | null
           organization_id?: string
           origem?: string
           origem_schedule_id?: string | null
@@ -3769,6 +3779,8 @@ export type Database = {
           proxima_manutencao?: string | null
           quantidade?: string
           refil_product_id?: string | null
+          reserva_os_id?: string | null
+          retirada_schedule_id?: string | null
           status?: string
           ultima_avaliacao_em?: string | null
           ultima_manutencao?: string | null
@@ -3813,6 +3825,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "comodatos_ocorrencia_schedule_id_fkey"
+            columns: ["ocorrencia_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "comodatos_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
@@ -3840,11 +3859,26 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "comodatos_reserva_os_id_fkey"
+            columns: ["reserva_os_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_schedule"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodatos_retirada_schedule_id_fkey"
+            columns: ["retirada_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
         ]
       }
       demo_registros: {
         Row: {
           created_at: string
+          dados: Json | null
           id: string
           organization_id: string
           registro_id: string | null
@@ -3854,6 +3888,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          dados?: Json | null
           id?: string
           organization_id: string
           registro_id?: string | null
@@ -3863,6 +3898,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          dados?: Json | null
           id?: string
           organization_id?: string
           registro_id?: string | null
@@ -4823,6 +4859,68 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      etiqueta_acessos: {
+        Row: {
+          created_at: string
+          id: string
+          ip_hash: string
+          numero: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_hash: string
+          numero?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_hash?: string
+          numero?: number | null
+        }
+        Relationships: []
+      }
+      etiqueta_faixas: {
+        Row: {
+          altura_mm: number
+          created_at: string
+          fim: number
+          gerado_por: string | null
+          id: string
+          inicio: number
+          largura_mm: number
+          organization_id: string
+        }
+        Insert: {
+          altura_mm?: number
+          created_at?: string
+          fim: number
+          gerado_por?: string | null
+          id?: string
+          inicio: number
+          largura_mm?: number
+          organization_id: string
+        }
+        Update: {
+          altura_mm?: number
+          created_at?: string
+          fim?: number
+          gerado_por?: string | null
+          id?: string
+          inicio?: number
+          largura_mm?: number
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "etiqueta_faixas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -7986,6 +8084,83 @@ export type Database = {
           },
         ]
       }
+      stock_movements: {
+        Row: {
+          autor_id: string | null
+          comodato_id: string | null
+          created_at: string
+          id: string
+          motivo: string | null
+          organization_id: string
+          origem: string
+          product_id: string
+          quantidade: number
+          saldo_antes: number
+          saldo_depois: number
+          schedule_id: string | null
+          tipo: string
+        }
+        Insert: {
+          autor_id?: string | null
+          comodato_id?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          organization_id: string
+          origem?: string
+          product_id: string
+          quantidade: number
+          saldo_antes: number
+          saldo_depois: number
+          schedule_id?: string | null
+          tipo: string
+        }
+        Update: {
+          autor_id?: string | null
+          comodato_id?: string | null
+          created_at?: string
+          id?: string
+          motivo?: string | null
+          organization_id?: string
+          origem?: string
+          product_id?: string
+          quantidade?: number
+          saldo_antes?: number
+          saldo_depois?: number
+          schedule_id?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_movements_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_movements_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       super_admins: {
         Row: {
           created_at: string
@@ -8236,7 +8411,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ajustar_estoque: {
+        Args: {
+          _motivo: string
+          _product: string
+          _quantidade: number
+          _tipo: string
+        }
+        Returns: Json
+      }
       apagar_cenario_demo: { Args: { _org: string }; Returns: Json }
+      apagar_cenario_demo_base: { Args: { _org: string }; Returns: Json }
       apply_flora_default_owner: {
         Args: { _org: string; _owner: string }
         Returns: Json
@@ -8255,6 +8440,10 @@ export type Database = {
         Returns: boolean
       }
       cnpj_valido: { Args: { _cnpj: string }; Returns: boolean }
+      comodato_separar_unidade: {
+        Args: { _id: string; _org: string }
+        Returns: string
+      }
       converter_lead_em_cliente: {
         Args: {
           _cliente_existente?: string
@@ -8265,6 +8454,10 @@ export type Database = {
       }
       demo_conjunto: { Args: { _org?: string }; Returns: Json }
       demo_contagem: { Args: { _org: string }; Returns: Json }
+      demo_definir_estoque: {
+        Args: { _min: number; _org: string; _product: string; _stock: number }
+        Returns: undefined
+      }
       demo_envolvido: { Args: { _ids: string[] }; Returns: boolean }
       get_user_organization_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
@@ -8287,9 +8480,32 @@ export type Database = {
         Args: { _chave: string; _tipo: string }
         Returns: Database["public"]["Enums"]["lead_stage"]
       }
+      mov_estoque: {
+        Args: {
+          _comodato: string
+          _delta: number
+          _motivo: string
+          _org: string
+          _origem: string
+          _product: string
+          _schedule: string
+          _tipo: string
+        }
+        Returns: Json
+      }
       ocorrencia_tipo_padrao: {
         Args: { _op: string; _sub: string; _type: string }
         Returns: string
+      }
+      qtd_aparelhos: { Args: { _q: string }; Returns: number }
+      registrar_faixa_etiquetas: {
+        Args: {
+          _altura: number
+          _fim: number
+          _inicio: number
+          _largura: number
+        }
+        Returns: Json
       }
     }
     Enums: {

@@ -7,6 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { baseAction } from "@/lib/base-instalada";
 import { toast } from "@/hooks/use-toast";
+import { useProducts } from "@/hooks/use-products";
+import { qtdAparelhos } from "@/lib/estoque";
+import SepararEtiqueta from "@/components/etiquetas/SepararEtiqueta";
 
 /** Inventory view of open replacement work orders: "separar equipamento X para cliente Y". The work order is the reservation. */
 export default function SepararEquipamentos() {
@@ -15,12 +18,16 @@ export default function SepararEquipamentos() {
   const { data = [] } = useQuery({
     queryKey: ["ocorrencias", "inventario", user?.organization_id], enabled: !!user?.organization_id,
     queryFn: async () => {
-      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, aprovacao_status, clients(name), comodatos(localizacao_interna)")
+      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, item_product_id, quantidade, urgente, status, aprovacao_status, clients(name), comodatos!maintenance_schedule_comodato_id_fkey(localizacao_interna)")
         .eq("organization_id", user!.organization_id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]).order("created_at");
-      return (data ?? []) as any[];
+      const list = (data ?? []) as any[];
+      const { data: sep } = list.length ? await (supabase as any).from("comodatos").select("id, etiqueta_numero, product_id, reserva_os_id").eq("status", "SEPARADO").in("reserva_os_id", list.map((o) => o.id)) : { data: [] };
+      return list.map((o) => ({ ...o, separados: ((sep ?? []) as any[]).filter((c) => c.reserva_os_id === o.id) }));
     },
   });
+  const { data: products = [] } = useProducts();
   if (!data.length) return null;
+  const ehAparelho = (id?: string | null) => !!id && products.some((p) => p.id === id && p.is_dispenser);
   const marcar = async (id: string, status: string) => {
     try { await baseAction({ action: "ocorrencia_status", id, status }); qc.invalidateQueries({ queryKey: ["ocorrencias"] }); }
     catch (e) { toast({ title: "Atenção", description: e instanceof Error ? e.message : "Erro", variant: "destructive" }); }
@@ -34,6 +41,8 @@ export default function SepararEquipamentos() {
             <span className="flex-1 min-w-[12rem]">Separar <strong>{o.quantidade}x {o.item_descricao}</strong> para <strong>{o.clients?.name ?? "cliente"}</strong>
               {o.comodatos?.localizacao_interna && <span className="text-muted-foreground"> · {o.comodatos.localizacao_interna}</span>}</span>
             {o.urgente && <Badge variant="destructive">Urgente</Badge>}
+            {ehAparelho(o.item_product_id) && <SepararEtiqueta osId={o.id} itens={[{ product_id: o.item_product_id, descricao: o.item_descricao, quantidade: qtdAparelhos(o.quantidade) }]}
+              separados={o.separados} onDone={() => { qc.invalidateQueries({ queryKey: ["ocorrencias"] }); qc.invalidateQueries({ queryKey: ["estoque"] }); }} />}
             {o.status === "em_andamento" ? <Badge>Separado</Badge>
               : <Button size="sm" variant="outline" className="min-h-9" onClick={() => marcar(o.id, "separada")}>Marcar separado</Button>}
           </div>))}

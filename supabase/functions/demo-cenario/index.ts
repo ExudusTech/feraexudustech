@@ -2,9 +2,10 @@
 // Records are written through the real tables (triggers number occurrences, create billing tasks, contacts and conversions);
 // every created id is registered in demo_registros, and apagar_cenario_demo removes exactly that set and its children.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, NITSCLEAN_ORG_ID, planejarDatas, planejarHistorico, precoDe, telefonesDemo,
+import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, NITSCLEAN_ORG_ID, planejarDatas, planejarHistorico, planoEstoqueDemo, precoDe, telefonesDemo,
   type AreaDemo, type ParDemo, type ProdutoDemo, type VisitaPlano } from "../_shared/demo-cenario.ts";
 import { pendenciasColeta, resumoColeta, type RascunhoColeta } from "../_shared/coleta.ts";
+import { ETIQUETA_DEMO_INICIO } from "../_shared/etiquetas.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -119,10 +120,24 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const plano = planejarDatas(hoje, areas, bloqueado);
   if (!plano) throw new Falha("calcular dias de rota");
 
-  const { data: catalogo } = await admin.from("products").select("id, name, price, brand, is_dispenser, dispenser_family_id, compatible_dispenser_families, is_active")
+  const { data: catalogo } = await admin.from("products").select("id, name, price, brand, is_dispenser, dispenser_family_id, compatible_dispenser_families, is_active, stock, min_stock")
     .eq("organization_id", org).eq("is_active", true).limit(3000);
   const pares: ParDemo[] = escolherPares((catalogo ?? []) as ProdutoDemo[], 4);
   if (pares.length < 2) throw new Falha("escolher produtos do catálogo");
+
+  // Stock: snapshot the minimum of the dispensers the scenario touches (Apagar reverts the demo stock deltas and these minimums).
+  const estoque = planoEstoqueDemo([...pares.map((p) => p.aparelho?.id).filter((x): x is string => !!x),
+    ...((catalogo ?? []) as any[]).filter((p) => p.is_dispenser).map((p) => p.id as string)]);
+  for (const e of estoque) {
+    const atual = ((catalogo ?? []) as any[]).find((p) => p.id === e.product_id);
+    const { error } = await admin.from("demo_registros").insert({ organization_id: org, tabela: "products_estoque", registro_id: e.product_id, dados: { stock: atual?.stock ?? 0, min_stock: atual?.min_stock ?? 0 } });
+    if (error) throw new Falha("marcar estoque", error.code);
+  }
+  // Labels of demo devices come from the demo range (900001+), after any number already taken there.
+  const { data: maxEtq } = await admin.from("comodatos").select("etiqueta_numero").eq("organization_id", org).gte("etiqueta_numero", ETIQUETA_DEMO_INICIO)
+    .order("etiqueta_numero", { ascending: false }).limit(1).maybeSingle();
+  let proxEtq = Math.max(ETIQUETA_DEMO_INICIO, (maxEtq?.etiqueta_numero ?? 0) + 1);
+  const etiqueta = () => proxEtq++;
 
   const { data: etapas } = await admin.from("lead_stages").select("id, chave").eq("organization_id", org);
   const etapaId = (chave: string) => (etapas ?? []).find((e: any) => e.chave === chave)?.id ?? null;
@@ -232,13 +247,16 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const itensTeste = pares.slice(0, 2).flatMap((par) => [
     ...(par.aparelho ? [{ product_id: par.aparelho.id, descricao: par.aparelho.name, quantidade: "2" }] : []),
     { product_id: par.refil.id, descricao: par.refil.name, quantidade: "2" }]);
-  await visita("teste", plano.amanha_teste, { status: "agendado", schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: "instalacao_teste",
+  const sTeste = await visita("teste", plano.amanha_teste, { status: "agendado", schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", operacao_material: "instalacao_teste",
     tipo_nota: "remessa_teste", itens: itensTeste, title: demoNome(`Instalação de teste — ${leads.teste.empresa}`) });
   await visita("amanha", plano.amanha_comercial, { status: "agendado", ocorrencia_tipo: "primeira_visita" });
+  // One of tomorrow's reserved devices already separated with its label ("aparelho nº X separado").
+  if (pares[0].aparelho) await ins("comodatos", { organization_id: org, lead_id: leads.teste.id, status: "SEPARADO", origem: "campo", product_id: pares[0].aparelho.id,
+    quantidade: "1", etiqueta_numero: etiqueta(), ocorrencia_schedule_id: sTeste, periodicidade_manut: "mensal", created_by: phId, notes: "Separado para a instalação de teste (demonstração)" }, "separar aparelho");
 
   // Lead with a device in test.
   await ins("comodatos", { organization_id: org, lead_id: leads.em_teste.id, status: "EM_TESTE", origem: "campo", localizacao_interna: "Banheiro dos clientes",
-    product_id: pares[0].aparelho?.id ?? null, aparelho_descricao: pares[0].aparelho?.name ?? "Dispenser", refil_product_id: pares[0].refil.id, quantidade: "1",
+    product_id: pares[0].aparelho?.id ?? null, aparelho_descricao: pares[0].aparelho?.name ?? "Dispenser", refil_product_id: pares[0].refil.id, quantidade: "1", etiqueta_numero: etiqueta(),
     data_inicio: addDias(hoje, -5), cidade: leads.em_teste.cidade, created_by: leads.em_teste.dono, notes: "Aparelho em teste (demonstração)" }, "criar aparelho em teste");
 
   // Client: old test return (approved) → conversion by the real function → loan invoice task for the device kept installed; 2 active devices; overdue maintenance.
@@ -251,7 +269,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   if (re) throw new Falha("concluir retorno do teste", re.code);
   await ins("comodatos", { organization_id: org, lead_id: leads.cliente.id, status: "EM_TESTE", origem: "campo", localizacao_interna: "Recepção",
     product_id: pares[1].aparelho?.id ?? pares[0].aparelho?.id ?? null, aparelho_descricao: pares[1].aparelho?.name ?? pares[0].aparelho?.name ?? "Dispenser",
-    refil_product_id: pares[1].refil.id, quantidade: "1", data_inicio: addDias(pr.data, -15), cidade: leads.cliente.cidade, created_by: leads.cliente.dono, notes: "Teste aprovado (demonstração)" }, "criar aparelho do teste aprovado");
+    refil_product_id: pares[1].refil.id, quantidade: "1", etiqueta_numero: etiqueta(), data_inicio: addDias(pr.data, -15), cidade: leads.cliente.cidade, created_by: leads.cliente.dono, notes: "Teste aprovado (demonstração)" }, "criar aparelho do teste aprovado");
   const { data: conv, error: cvErr } = await caller.rpc("converter_lead_em_cliente", { _lead: leads.cliente.id, _cliente_existente: null, _ignorar_duplicados: true });
   if (cvErr || (conv as any)?.status !== "convertido") throw new Falha("converter lead em cliente", cvErr?.code);
   const clientId = (conv as any).client_id as string;
@@ -260,7 +278,7 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const atrasada = plano.cliente_atrasada;
   for (const [i, par] of pares.slice(0, 2).entries()) {
     await ins("comodatos", { organization_id: org, client_id: clientId, lead_id: leads.cliente.id, status: "ATIVO", origem: "campo", localizacao_interna: ["Banheiro social", "Cozinha"][i],
-      product_id: par.aparelho?.id ?? null, aparelho_descricao: par.aparelho?.name ?? "Dispenser", refil_product_id: par.refil.id, quantidade: "2", data_inicio: addDias(pr.data, 7),
+      product_id: par.aparelho?.id ?? null, aparelho_descricao: par.aparelho?.name ?? "Dispenser", refil_product_id: par.refil.id, quantidade: "1", etiqueta_numero: etiqueta(), data_inicio: addDias(pr.data, 7),
       proxima_manutencao: atrasada.data, periodicidade_manut: "mensal", cidade: leads.cliente.cidade, created_by: leads.cliente.dono,
       notes: "Aparelho em comodato (demonstração)" }, "criar aparelho ativo");
   }
@@ -329,6 +347,12 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   await admin.from("comodatos").update({ ativado_em: hist.teste.cliente.instalado_em }).eq("organization_id", org).eq("lead_id", leads.cliente.id).eq("status", "EM_TESTE");
   await admin.from("comodatos").update({ ativado_em: hist.teste.em_teste.instalado_em }).eq("organization_id", org).eq("lead_id", leads.em_teste.id).eq("status", "EM_TESTE");
   await admin.from("clients").update({ ativado_em: hist.ativacao_cliente }).eq("id", clientId);
+
+  // Final demo balances (after the demo devices left stock); recorded as demo movements and reverted by Apagar.
+  for (const e of estoque) {
+    const { error } = await admin.rpc("demo_definir_estoque", { _org: org, _product: e.product_id, _stock: e.stock, _min: e.min_stock });
+    if (error) throw new Falha("definir estoque", error.code);
+  }
 
   return {
     leads: LEADS.length, cliente: leads.cliente.nome,

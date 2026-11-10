@@ -15,7 +15,7 @@ export default function LevarProximaVisita() {
   const { data = [] } = useQuery({
     queryKey: ["ocorrencias", "minhas", user?.id], enabled: !!user?.id,
     queryFn: async () => {
-      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, client_id, clients(name), comodatos(localizacao_interna)")
+      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, client_id, clients(name), comodatos!maintenance_schedule_comodato_id_fkey(localizacao_interna)")
         .eq("assigned_to", user!.id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]).order("created_at");
       return (data ?? []) as any[];
     },

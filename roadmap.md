@@ -93,3 +93,9 @@
 - [ ] Regra geral: material que sai exige nota anexada
 - [x] Lotes 13/14 correções 05/11
 - [x] Lote 15 ocorrências e coleta por áudio
+## Inventário + Etiqueta QR (10/11)
+- [x] Filtros por cima do mapa (z-index Leaflet)
+- [x] Inventário: stock_movements, Ajustar estoque, aba Estoque por família (reservados/disponível/teste/instalados/refis), base↔estoque por trigger, demo de estoque + desfazer
+- [x] Etiqueta QR: número no comodato (único/org), leitor, /q/<numero>, PDF de etiquetas, busca/número na Base instalada, separação, ações na ocorrência, demo 900001+, testes, funções publicadas
+- [ ] Conferir logado: aba Estoque, tela do aparelho, escanear na visita e recriar o cenário demo (blocked: sem sessão do PH no ambiente)
+- [ ] Escanear uma etiqueta impressa com a câmera do celular (blocked: aparelho físico)

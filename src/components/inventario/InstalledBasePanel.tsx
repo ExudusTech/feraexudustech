@@ -2,7 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, QrCode, Search } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
+import { formatEtiqueta, parseEtiqueta } from "@/lib/etiquetas";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +41,7 @@ export default function InstalledBasePanel() {
       const sb = supabase as any;
       const [c, p, o] = await Promise.all([
         sb.from("clients").select("id, name, city, latitude, longitude, status").eq("organization_id", user!.organization_id),
-        sb.from("comodatos").select("id, client_id, product_id, estado_atual, proxima_manutencao, status").eq("organization_id", user!.organization_id),
+        sb.from("comodatos").select("id, client_id, product_id, estado_atual, proxima_manutencao, status, etiqueta_numero").eq("organization_id", user!.organization_id),
         sb.from("maintenance_schedule").select("id, client_id").eq("organization_id", user!.organization_id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
       ]);
       return { clients: (c.data ?? []) as any[], pontos: ((p.data ?? []) as any[]).filter((x) => (x.status ?? "ATIVO").toUpperCase() === "ATIVO"), ocorrencias: (o.data ?? []) as any[] };
@@ -48,12 +52,15 @@ export default function InstalledBasePanel() {
   const [card, setCard] = useState<Card | null>(null);
   const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const navigate = useNavigate();
+  const [busca, setBusca] = useState(""); const [scan, setScan] = useState(false);
+  const abrirNumero = (n: number | null) => { if (n) navigate(`/aparelho/${formatEtiqueta(n)}`); else toast({ title: "Digite o número da etiqueta", variant: "destructive" }); };
 
   const rows = useMemo(() => {
     if (!data) return [];
     return data.clients.filter((c) => c.status !== "inactive").map((c) => {
       const pts = data.pontos.filter((p) => p.client_id === c.id && (equip === "all" || p.product_id === equip));
-      return { ...c, pontos: pts.length, pior: piorEstado(pts.map((p) => p.estado_atual)),
+      return { ...c, pontos: pts.length, etiquetas: pts.map((p) => p.etiqueta_numero).filter(Boolean).sort((a: number, b: number) => a - b) as number[], pior: piorEstado(pts.map((p) => p.estado_atual)),
         atrasado: pts.some((p) => p.proxima_manutencao && p.proxima_manutencao < today),
         ocorrencias: data.ocorrencias.filter((o) => o.client_id === c.id).length };
     }).filter((r) => (cidade === "all" || r.city === cidade) && (estado === "all" || (estado === "atrasado" ? r.atrasado : r.pior === estado))
@@ -73,6 +80,13 @@ export default function InstalledBasePanel() {
 
   return (
     <div className="space-y-4">
+      <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); abrirNumero(parseEtiqueta(busca)); }}>
+        <div className="relative flex-1 min-w-[12rem] sm:max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input className="pl-9" inputMode="numeric" placeholder="Buscar aparelho pelo nº da etiqueta" aria-label="Número da etiqueta" value={busca} onChange={(e) => setBusca(e.target.value.replace(/\D/g, "").slice(0, 6))} /></div>
+        <Button type="submit" variant="outline" className="min-h-10">Abrir</Button>
+        <Button type="button" variant="outline" className="min-h-10" onClick={() => setScan(true)}><QrCode className="h-4 w-4 mr-2" />Escanear etiqueta</Button>
+      </form>
+      <EtiquetaScanner open={scan} onOpenChange={setScan} onNumero={(n) => { setScan(false); abrirNumero(n); }} />
       <SepararEquipamentos />
       <SepararMaterial />
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -92,7 +106,7 @@ export default function InstalledBasePanel() {
             <SelectItem value="atrasado">Manutenção atrasada</SelectItem></SelectContent></Select>
         <div className="flex-1" />
         <Button variant="outline" onClick={() => exportToExcel(visible.map((r) => ({ Cliente: r.name, Cidade: r.city ?? "", Pontos: r.pontos,
-          Estado: r.pior ? ESTADO_LABEL[r.pior] : "", "Manutenção atrasada": r.atrasado ? "Sim" : "Não", "Itens a levar": r.ocorrencias })), "base-instalada")}>
+          Estado: r.pior ? ESTADO_LABEL[r.pior] : "", Etiquetas: r.etiquetas.map(formatEtiqueta).join(", "), "Manutenção atrasada": r.atrasado ? "Sim" : "Não", "Itens a levar": r.ocorrencias })), "base-instalada")}>
           <Download className="h-4 w-4 mr-2" />Exportar</Button>
         {isManager && <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar clientes</Button>}
       </div>
@@ -107,16 +121,16 @@ export default function InstalledBasePanel() {
         </MapContainer>
       </div>
       {visible.length > located.length && <p className="text-xs text-muted-foreground">{visible.length - located.length} cliente(s) ainda sem localização: ela é gravada no primeiro check-in.</p>}
-      <div className="rounded-lg border">
-        <Table>
+      <div className="rounded-lg md:border">
+        <Table className="table-cards">
           <TableHeader><TableRow><TableHead>Cliente</TableHead><TableHead>Cidade</TableHead><TableHead>Pontos</TableHead><TableHead>Estado</TableHead><TableHead>Situação</TableHead></TableRow></TableHeader>
           <TableBody>
             {!visible.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum cliente. A base é montada nas visitas de manutenção.</TableCell></TableRow>}
             {visible.map((r) => (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => setOpen(r)}>
-                <TableCell className="font-medium">{r.name}</TableCell><TableCell>{r.city ?? "—"}</TableCell><TableCell>{r.pontos}</TableCell>
-                <TableCell>{r.pior ? <Badge className={ESTADO_CLASS[r.pior]}>{ESTADO_LABEL[r.pior]}</Badge> : "—"}</TableCell>
-                <TableCell className="space-x-1">{r.atrasado && <Badge variant="destructive">Atrasada</Badge>}{r.ocorrencias > 0 && <Badge variant="outline">{r.ocorrencias} a levar</Badge>}</TableCell>
+                <TableCell className="font-medium">{r.name}{r.etiquetas.length > 0 && <span className="block text-xs font-normal text-muted-foreground font-mono">nº {r.etiquetas.slice(0, 6).map(formatEtiqueta).join(", ")}{r.etiquetas.length > 6 ? ` +${r.etiquetas.length - 6}` : ""}</span>}</TableCell><TableCell data-label="Cidade">{r.city ?? "—"}</TableCell><TableCell data-label="Pontos">{r.pontos}</TableCell>
+                <TableCell data-label="Estado">{r.pior ? <Badge className={ESTADO_CLASS[r.pior]}>{ESTADO_LABEL[r.pior]}</Badge> : "—"}</TableCell>
+                <TableCell data-card="body" className="space-x-1">{r.atrasado && <Badge variant="destructive">Atrasada</Badge>}{r.ocorrencias > 0 && <Badge variant="outline">{r.ocorrencias} a levar</Badge>}</TableCell>
               </TableRow>))}
           </TableBody>
         </Table>
