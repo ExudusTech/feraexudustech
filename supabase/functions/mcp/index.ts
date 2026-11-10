@@ -4610,7 +4610,7 @@ function comprovacaoCheckin(s: any, c: any): "no_local" | "fora" | "sem_checkin"
   const p = Number(c.precisao_m), dist = c.distancia_m;
   return Number.isFinite(p) && p <= 40 && dist !== null && dist !== undefined && !c.fora_do_raio && !c.destino_sem_coordenadas ? "no_local" : "fora";
 }
-interface DadosInd { schedules: any[]; checkins: Map<string, any>; leads: any[]; stages: any[]; proposals: any[]; comodatos: any[]; tarefas: any[]; abertas: any[]; atend: any[]; aprovados: any[] }
+interface DadosInd { schedules: any[]; checkins: Map<string, any>; leads: any[]; stages: any[]; proposals: any[]; comodatos: any[]; tarefas: any[]; abertas: any[]; atend: any[]; aprovados: any[]; historico?: any[] }
 interface PorVendedor { ops: number; concluidas: number; nao: number; noLocal: number; executadas: number }
 interface Metricas {
   ops: number; porTipo: Record<string, number>; devidas: number; concluidas: number; resultados: Record<string, number>; naoRealizadas: number; motivos: Record<string, number>;
@@ -4654,17 +4654,27 @@ function metricas(d: DadosInd, f: Faixa, hoje: string): Metricas {
   for (const l of d.leads) {
     if (naFaixa(dataSp(l.created_at), f)) { m.leadsNovos++; inc(m.porCanal, CANAL_TXT[l.canal_origem] ?? (l.created_by_flora ? "Flora" : "Fera")); }
     if (naFaixa(dataSp(l.converted_at), f)) m.viraramCliente++;
-    const st: any = ordem.get(l.stage_id);
-    if (st && st.tipo !== "perdido" && Number(st.ordem) > ordemNovo && naFaixa(dataSp(l.updated_at), f)) m.avancaram++;
   }
+  // Funnel advance from the stage history (mudou_em): leads that moved forward to a later, non-lost stage in the period.
+  const avancou = new Set<string>();
+  for (const h of d.historico ?? []) {
+    if (!h.etapa_anterior_id || !naFaixa(dataSp(h.mudou_em), f)) continue;
+    const de: any = ordem.get(h.etapa_anterior_id), para: any = ordem.get(h.etapa_nova_id);
+    if (de && para && para.tipo !== "perdido" && Number(para.ordem) > Number(de.ordem) && Number(para.ordem) > ordemNovo) avancou.add(h.lead_id);
+  }
+  m.avancaram = avancou.size;
+  // Proposal milestones (enviada_em / aceita_em), set by the database the first time the status reaches them.
   for (const p of d.proposals) {
     const valor = Number(p.final_value ?? p.total_value ?? 0) || 0;
-    if (["enviada", "aceita", "recusada"].includes(p.status) && naFaixa(dataSp(p.pdf_gerado_em ?? p.updated_at), f)) { m.propEnviadas++; m.propEnviadasValor += valor; }
-    if (p.status === "aceita" && naFaixa(dataSp(p.updated_at), f)) { m.propAceitas++; m.propAceitasValor += valor; }
+    if (naFaixa(dataSp(p.enviada_em ?? (["enviada", "aceita", "rejeitada", "recusada"].includes(p.status) ? p.pdf_gerado_em : null)), f)) { m.propEnviadas++; m.propEnviadasValor += valor; }
+    if (naFaixa(dataSp(p.aceita_em), f)) { m.propAceitas++; m.propAceitasValor += valor; }
   }
-  for (const a of d.aprovados) if (naFaixa(dataSp(a.created_at), f)) m.testesAprovados++;
+  const aprovados = new Set<string>();
+  for (const l of d.leads) if (naFaixa(dataSp(l.teste_aprovado_em), f)) aprovados.add(l.id);
+  for (const a of d.aprovados) if (!d.leads.some((l) => l.id === a.lead_id && l.teste_aprovado_em) && naFaixa(dataSp(a.created_at), f)) aprovados.add(a.lead_id ?? a.created_at);
+  m.testesAprovados = aprovados.size;
   for (const c of d.comodatos) {
-    if (["ATIVO", "EM_TESTE"].includes(c.status) && naFaixa(c.data_inicio, f)) m.ativados++;
+    if (["ATIVO", "EM_TESTE"].includes(c.status) && naFaixa(c.ativado_em ? dataSp(c.ativado_em) : c.data_inicio, f)) m.ativados++;
     if (c.status === "ENCERRADO" && naFaixa(c.data_fim, f)) m.retirados++;
   }
   for (const t of d.tarefas) {
@@ -4697,21 +4707,22 @@ async function carregarIndicadores(supabase: ReturnType<typeof getClient>, org: 
   let qs = supabase.from("schedules").select("id, scheduled_date, status, resultado, nao_realizado_motivo, coleta_status, ocorrencia_tipo, schedule_type, operacao_material, assigned_to, source, lead_id, client_id, ocorrencia_codigo, title")
     .eq("organization_id", org).gte("scheduled_date", janela.inicio).lte("scheduled_date", janela.fim).neq("status", "cancelado");
   if (uid) qs = qs.eq("assigned_to", uid);
-  let ql = supabase.from("leads").select("id, created_at, updated_at, converted_at, canal_origem, created_by_flora, assigned_to, city, stage_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  let ql = supabase.from("leads").select("id, created_at, updated_at, converted_at, canal_origem, created_by_flora, assigned_to, city, stage_id, teste_aprovado_em").eq("organization_id", org).gte("updated_at", desdeTs);
   if (uid) ql = ql.eq("assigned_to", uid);
-  let qp = supabase.from("proposals").select("id, status, final_value, total_value, created_at, updated_at, pdf_gerado_em, assigned_to, created_by, lead_id, client_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  let qp = supabase.from("proposals").select("id, status, final_value, total_value, created_at, updated_at, pdf_gerado_em, enviada_em, aceita_em, rejeitada_em, assigned_to, created_by, lead_id, client_id").eq("organization_id", org).gte("updated_at", desdeTs);
   if (uid) qp = qp.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);
-  let qc = supabase.from("comodatos").select("id, status, data_inicio, data_fim, created_by, lead_id, client_id, cidade").eq("organization_id", org).or(`data_inicio.gte.${janela.inicio},data_fim.gte.${janela.inicio}`);
+  let qc = supabase.from("comodatos").select("id, status, data_inicio, data_fim, ativado_em, created_by, lead_id, client_id, cidade").eq("organization_id", org).or(`data_inicio.gte.${janela.inicio},data_fim.gte.${janela.inicio},ativado_em.gte.${desdeTs}`);
   if (uid) qc = qc.eq("created_by", uid);
   const qt = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, concluida_em, created_at, updated_at, prazo, empresa_nome, schedule_id").eq("organization_id", org).gte("updated_at", desdeTs);
   const qa = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, prazo, empresa_nome, schedule_id, created_at").eq("organization_id", org).eq("status", "aberta").order("prazo");
   const qat = supabase.from("atendimentos").select("id, aberto_em, relogio_inicia_em, assumido_em, assumido_por, responsavel_id, status, lead_id").eq("organization_id", org).gte("aberto_em", desdeTs).lt("aberto_em", ateTs);
   const qtl = supabase.from("lead_timeline").select("lead_id, created_at, resumo").eq("organization_id", org).eq("tipo", "visita").ilike("resumo", "Resultado do teste: Aprovado%").gte("created_at", desdeTs);
   const qst = supabase.from("lead_stages").select("id, ordem, tipo, chave").eq("organization_id", org);
-  const [s, l, p, c, t, a, at, tl, st] = await Promise.all([qs.limit(5000), ql.limit(5000), qp.limit(2000), qc.limit(3000), qt.limit(3000), qa.limit(500), qat.limit(3000), qtl.limit(1000), qst]);
+  const qh = supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em").eq("organization_id", org).gte("mudou_em", desdeTs).lt("mudou_em", ateTs);
+  const [s, l, p, c, t, a, at, tl, st, hs] = await Promise.all([qs.limit(5000), ql.limit(5000), qp.limit(2000), qc.limit(3000), qt.limit(3000), qa.limit(500), qat.limit(3000), qtl.limit(1000), qst, qh.limit(10000)]);
   for (const [nome, r] of [["schedules", s], ["leads", l], ["proposals", p], ["comodatos", c], ["tarefas", t], ["atendimentos", at]] as const) if ((r as any)?.error) dbFail(`indicadores ${nome}`, (r as any).error);
   const d: DadosInd = { schedules: arr(s.data), checkins: new Map(), leads: arr(l.data), stages: arr(st.data), proposals: arr(p.data), comodatos: arr(c.data), tarefas: arr(t.data),
-    abertas: arr(a.data), atend: arr(at.data), aprovados: arr(tl.data) };
+    abertas: arr(a.data), atend: arr(at.data), aprovados: arr(tl.data), historico: arr(hs?.data) };
   if (uid) {
     d.proposals = d.proposals.filter((x) => x.assigned_to === uid || x.created_by === uid);
     d.atend = d.atend.filter((x) => x.assumido_por === uid || x.responsavel_id === uid);
@@ -4742,6 +4753,9 @@ async function carregarIndicadores(supabase: ReturnType<typeof getClient>, org: 
     d.leads = d.leads.filter((x) => cityInArea(x.city, rec.cidade)); d.atend = d.atend.filter((x) => x.lead_id && cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
     d.aprovados = d.aprovados.filter((x) => cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
   }
+  // Stage history follows the (already sliced) leads: a stage change always touches the lead's updated_at.
+  const leadsNoRecorte = new Set(d.leads.map((x) => x.id));
+  d.historico = (d.historico ?? []).filter((x) => leadsNoRecorte.has(x.lead_id));
   const sids = d.schedules.filter((x) => ["concluido", "em_atendimento", "nao_realizado"].includes(x.status)).map((x) => x.id);
   for (let i = 0; i < sids.length; i += 150) {
     const { data } = await supabase.from("schedule_checkins").select("schedule_id, checkin_em, precisao_m, distancia_m, fora_do_raio, destino_sem_coordenadas").eq("organization_id", org).in("schedule_id", sids.slice(i, i + 150));
