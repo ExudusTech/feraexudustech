@@ -393,9 +393,11 @@ function jsonRpcError(
 
 // ─── Supabase client (service role — bypasses RLS for Flora) ──────────────────
 
-function getClient() {
+// x-fera-origem / x-fera-usuario let the history triggers record who changed a lead/proposal (trusted only with the service role).
+function getClient(origem: "flora" | "mcp" = "flora", usuario?: string | null) {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
+    global: { headers: { "x-fera-origem": origem, ...(usuario ? { "x-fera-usuario": usuario } : {}) } },
   });
 }
 
@@ -3745,7 +3747,7 @@ async function withTeam(fn: (u: TeamUser, supabase: ReturnType<typeof getClient>
   const { user, ambiguo } = await resolverEquipe(supabase, params.chat_id);
   if (ambiguo) return { ...NAO_AUTORIZADO, message: "não autorizado: este número está em mais de um cadastro; peça ao gestor para corrigir em Usuários" };
   if (!user || (allowed && !allowed(user))) return NAO_AUTORIZADO;
-  return fn(user, supabase);
+  return fn(user, getClient("mcp", user.user_id));
 }
 
 /** Client-flow tools refuse team chats so a team member is never turned into a lead, booking or handoff. */
