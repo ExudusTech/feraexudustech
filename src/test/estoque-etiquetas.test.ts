@@ -132,7 +132,7 @@ describe("PDF de etiquetas (geração)", () => {
   it("30 etiquetas 5×3 cm saem em 2 folhas A4", async () => {
     const { gerarPdfEtiquetas } = await import("@/lib/etiquetas-pdf");
     const blob = await gerarPdfEtiquetas({ inicio: 1, fim: 30, largura: 50, altura: 30, marca: "NitsClean" });
-    const txt = await blob.text();
+    const txt = await new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsText(blob); });
     expect((txt.match(/\/Type \/Page\b/g) ?? []).length).toBe(2);
   }, 30_000);
 });
