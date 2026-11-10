@@ -5,6 +5,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo } from "../_shared/base-instalada.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
+import { acoesEtiqueta, formatEtiqueta, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
+import { qtdAparelhos } from "../_shared/estoque.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -12,7 +14,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
-const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "material_separado"];
+const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "material_separado",
+  "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
 Deno.serve(async (req) => {
@@ -27,7 +30,8 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
   if (!ACTIONS.includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  // Origin/author headers let the database attribute stock movements to the caller (trusted only with the service role).
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { global: { headers: { "x-fera-origem": "app", "x-fera-usuario": user.id } } });
   const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", user.id);
   const roleSet = new Set((roles ?? []).map((r: any) => r.role as string));
   const privileged = ["admin", "super_admin", "gestor"].some((r) => roleSet.has(r));
@@ -50,6 +54,8 @@ Deno.serve(async (req) => {
     const { data } = await admin.from("products").select("id, name").eq("id", id).eq("organization_id", org).maybeSingle();
     return data;
   };
+
+  if (String(b.action).startsWith("etiqueta_")) return await etiqueta(b, { admin, caller, user, org, privileged, roleSet, loadVisit, productOk });
 
   switch (b.action) {
     case "material_separado": {
@@ -126,7 +132,7 @@ Deno.serve(async (req) => {
       // Test installation (or still a lead): the device stays EM_TESTE on the lead; the conversion trigger moves it to the client.
       const { data, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, product_id: disp?.id ?? null,
         refil_product_id: refil?.id ?? null, quantidade: qtd, foto_path: foto, localizacao_interna: txt(b.localizacao_interna, 120), notes: txt(b.observacao, 500) || null,
-        cidade: c?.city ?? null, estado: (c as any)?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo",
+        cidade: c?.city ?? null, estado: (c as any)?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo", ocorrencia_schedule_id: s.id,
         periodicidade_manut: "mensal", data_inicio: new Date().toISOString().slice(0, 10), created_by: user.id }).select("id").single();
       if (error) { console.error("[base-instalada] ponto", error.code); return json({ error: "Não foi possível salvar o ponto" }, 400); }
       // The new point leaves already evaluated (estado + checks + the same photo), so closing is never blocked by a hidden step.
@@ -266,3 +272,225 @@ Deno.serve(async (req) => {
   }
   return json({ error: "Requisição inválida" }, 400);
 });
+
+// ─── Numbered QR labels (10/11) ─────────────────────────────────────────────────────────────────────────────────────────
+// The number belongs to the device (comodatos row) forever; linking happens by scanning at separation or inside the open occurrence.
+const ETQ = "id, organization_id, client_id, lead_id, product_id, refil_product_id, status, quantidade, localizacao_interna, etiqueta_numero, ocorrencia_schedule_id, reserva_os_id, periodicidade_manut, proxima_manutencao, ultima_manutencao, linha_produto, fabricante, dispenser_family_id, cidade, estado, endereco_instalacao, aparelho_descricao, notes";
+// deno-lint-ignore no-explicit-any
+type Ctx = { admin: any; caller: any; user: { id: string }; org: string; privileged: boolean; roleSet: Set<string>; loadVisit: (id: unknown) => Promise<any>; productOk: (id: string | null) => Promise<any> };
+
+// deno-lint-ignore no-explicit-any
+async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
+  const { admin, user, org } = x;
+  const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const usado = (n: number) => json({ error: `Etiqueta nº ${formatEtiqueta(n)} já pertence a outro aparelho` }, 409);
+  const porNumero = async (n: number) => (await admin.from("comodatos").select(ETQ).eq("organization_id", org).eq("etiqueta_numero", n).maybeSingle()).data as any;
+  const doLocal = (s: any, c: any) => !!c && (s.client_id ? c.client_id === s.client_id : !c.client_id && c.lead_id === s.lead_id);
+  const evento = (s: any, comodatoId: string, texto: string, foto?: string | null) => admin.from("schedule_evidencias").insert({ organization_id: s.organization_id,
+    schedule_id: s.id, comodato_id: comodatoId, tipo: "evento", observacoes: texto.slice(0, 500), foto_path: foto || null, itens: [], autor_id: user.id });
+  const visitaAberta = async () => {
+    const s = await x.loadVisit(b.schedule_id);
+    if (!s || (!s.client_id && !s.lead_id)) return { erro: json({ error: "Ocorrência não encontrada" }, 404) };
+    if (s.status !== "em_atendimento") return { erro: json({ error: "Faça o check-in da ocorrência antes" }, 409) };
+    return { s };
+  };
+  const pontoDaVisita = async (s: any, id: unknown) => {
+    if (!UUID.test(String(id ?? ""))) return null;
+    const { data } = await admin.from("comodatos").select(ETQ).eq("id", id).eq("organization_id", s.organization_id).maybeSingle();
+    return doLocal(s, data) ? data : null;
+  };
+  const dividir = async (id: string) => (await admin.rpc("comodato_separar_unidade", { _id: id, _org: org })).data as string | null;
+  const salvar = async (q: Promise<{ error: any }>, n?: number) => {
+    const { error } = await q;
+    if (!error) return null;
+    if (error.code === "23505" && n) return usado(n);
+    console.error("[base-instalada] etiqueta", error.code);
+    return json({ error: error.message?.includes("pertence ao aparelho") ? "O número da etiqueta pertence ao aparelho e não pode ser trocado" : "Não foi possível salvar" }, 400);
+  };
+  const fotoOk = (s: any, foto: string) => !foto || foto.startsWith(`${s.organization_id}/${s.id}/`);
+  const nome = (id?: string | null) => id ? admin.from("products").select("name").eq("id", id).maybeSingle().then((r: any) => r.data?.name ?? "Aparelho") : Promise.resolve("Aparelho");
+
+  switch (b.action) {
+    case "etiqueta_info": {
+      const n = parseEtiqueta(b.numero);
+      if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
+      const c = await porNumero(n);
+      let s: any = null;
+      if (b.schedule_id) s = await x.loadVisit(b.schedule_id);
+      const deste = s ? doLocal(s, c) : false;
+      let cliente: string | null = null;
+      if (c?.client_id) cliente = (await admin.from("clients").select("name").eq("id", c.client_id).maybeSingle()).data?.name ?? null;
+      else if (c?.lead_id) { const { data: l } = await admin.from("leads").select("empresa_nome, company, title").eq("id", c.lead_id).maybeSingle(); cliente = l?.empresa_nome ?? l?.company ?? l?.title ?? null; }
+      const ap = c ? { id: c.id, status: c.status, status_label: STATUS_APARELHO_LABEL[c.status] ?? c.status, local: c.localizacao_interna, product_id: c.product_id,
+        aparelho: c.product_id ? await nome(c.product_id) : c.aparelho_descricao, cliente, deste_local: deste } : null;
+      const { acoes, aviso } = s ? acoesEtiqueta(s.operacao_material, c ? { status: c.status, deste_local: deste } : null) : { acoes: [], aviso: undefined };
+      return json({ ok: true, numero: n, aparelho: ap, acoes, aviso: aviso ?? null });
+    }
+    case "etiqueta_vincular": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
+      if (await porNumero(n)) return usado(n);
+      const p = await pontoDaVisita(s, b.comodato_id);
+      if (!p || !["ATIVO", "EM_TESTE"].includes(p.status) || p.etiqueta_numero) return json({ error: "Escolha um aparelho instalado sem número" }, 404);
+      const alvo = await dividir(p.id) ?? p.id;
+      const e = await salvar(admin.from("comodatos").update({ etiqueta_numero: n }).eq("id", alvo).is("etiqueta_numero", null), n); if (e) return e;
+      await evento(s, alvo, `🏷️ Etiqueta nº ${formatEtiqueta(n)} colada no aparelho (${p.localizacao_interna ?? "ponto"})`);
+      return json({ ok: true, id: alvo, numero: n });
+    }
+    case "etiqueta_separar": {
+      // Who separates: privileged, operacional (stock) or the visit's consultant. Visit/work order read with the caller's own access first.
+      const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
+      const pid = UUID.test(String(b.product_id ?? "")) ? String(b.product_id) : null;
+      if (!pid) return json({ error: "Escolha qual item reservado é este aparelho" }, 400);
+      let alvo: { client_id: string | null; lead_id: string | null; ocorrencia_schedule_id: string | null; reserva_os_id: string | null; qtd: number; dono: string | null; titulo: string };
+      if (b.schedule_id) {
+        if (!UUID.test(String(b.schedule_id))) return json({ error: "Requisição inválida" }, 400);
+        const { data: s } = await x.caller.from("schedules").select("id, organization_id, status, assigned_to, client_id, lead_id, itens, title").eq("id", b.schedule_id).maybeSingle();
+        if (!s || s.organization_id !== org || !["agendado", "confirmado", "em_atendimento"].includes(s.status)) return json({ error: "Ocorrência não encontrada" }, 404);
+        const qtd = ((s.itens ?? []) as any[]).filter((i) => i?.product_id === pid).reduce((a, i) => a + qtdAparelhos(i.quantidade), 0);
+        if (!qtd) return json({ error: "Este aparelho não está reservado nesta ocorrência" }, 409);
+        alvo = { client_id: s.client_id, lead_id: s.client_id ? null : s.lead_id, ocorrencia_schedule_id: s.id, reserva_os_id: null, qtd, dono: s.assigned_to, titulo: s.title };
+      } else if (UUID.test(String(b.os_id ?? ""))) {
+        const { data: o } = await x.caller.from("maintenance_schedule").select("id, organization_id, status, assigned_to, client_id, item_product_id, quantidade, title").eq("id", b.os_id).eq("tipo_os", "substituicao").maybeSingle();
+        if (!o || o.organization_id !== org || !["agendada", "em_andamento"].includes(o.status)) return json({ error: "Pendência não encontrada" }, 404);
+        if (o.item_product_id !== pid) return json({ error: "Este aparelho não está reservado nesta pendência" }, 409);
+        alvo = { client_id: o.client_id, lead_id: null, ocorrencia_schedule_id: null, reserva_os_id: o.id, qtd: qtdAparelhos(o.quantidade), dono: o.assigned_to, titulo: o.title };
+      } else return json({ error: "Requisição inválida" }, 400);
+      if (!x.privileged && !x.roleSet.has("operacional") && alvo.dono !== user.id) return json({ error: "Sem permissão para separar este material" }, 403);
+      let q = admin.from("comodatos").select("id", { count: "exact", head: true }).eq("organization_id", org).eq("status", "SEPARADO").eq("product_id", pid);
+      q = alvo.ocorrencia_schedule_id ? q.eq("ocorrencia_schedule_id", alvo.ocorrencia_schedule_id) : q.eq("reserva_os_id", alvo.reserva_os_id);
+      const { count } = await q;
+      if ((count ?? 0) >= alvo.qtd) return json({ error: `Os ${alvo.qtd} aparelho(s) deste item já foram separados` }, 409);
+      const c = await porNumero(n);
+      const campos = { status: "SEPARADO", client_id: alvo.client_id, lead_id: alvo.lead_id, ocorrencia_schedule_id: alvo.ocorrencia_schedule_id, reserva_os_id: alvo.reserva_os_id };
+      if (c) {
+        // A labelled device back in stock can be separated again (same model only).
+        if (c.status !== "ENCERRADO") return usado(n);
+        if (c.product_id && c.product_id !== pid) return json({ error: `A etiqueta nº ${formatEtiqueta(n)} é de outro modelo (${await nome(c.product_id)})` }, 409);
+        const e = await salvar(admin.from("comodatos").update({ ...campos, product_id: pid, data_fim: null, retirada_schedule_id: null }).eq("id", c.id)); if (e) return e;
+        return json({ ok: true, id: c.id, numero: n });
+      }
+      const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: org, ...campos, product_id: pid, quantidade: "1", etiqueta_numero: n, origem: "campo",
+        periodicidade_manut: "mensal", created_by: user.id, notes: `Separado para: ${alvo.titulo}`.slice(0, 300) }).select("id").single();
+      if (error) return (await salvar(Promise.resolve({ error }), n))!;
+      return json({ ok: true, id: novo.id, numero: n });
+    }
+    case "etiqueta_desfazer_separacao": {
+      if (!UUID.test(String(b.comodato_id ?? ""))) return json({ error: "Requisição inválida" }, 400);
+      const { data: c } = await x.caller.from("comodatos").select("id, status, organization_id").eq("id", b.comodato_id).maybeSingle();
+      if (!c || c.organization_id !== org || c.status !== "SEPARADO") return json({ error: "Aparelho separado não encontrado" }, 404);
+      if (!x.privileged && !x.roleSet.has("operacional")) {
+        const { data: s } = await admin.from("comodatos").select("schedules!comodatos_ocorrencia_schedule_id_fkey(assigned_to)").eq("id", c.id).maybeSingle();
+        if ((s as any)?.schedules?.assigned_to !== user.id) return json({ error: "Sem permissão" }, 403);
+      }
+      const { count } = await admin.from("schedule_evidencias").select("id", { count: "exact", head: true }).eq("comodato_id", c.id);
+      // A device with history keeps its row (and number) and just goes back to stock.
+      const r = count ? await admin.from("comodatos").update({ status: "ENCERRADO", ocorrencia_schedule_id: null, reserva_os_id: null }).eq("id", c.id)
+        : await admin.from("comodatos").delete().eq("id", c.id);
+      if (r.error) { console.error("[base-instalada] desfazer", r.error.code); return json({ error: "Não foi possível desfazer" }, 400); }
+      return json({ ok: true });
+    }
+    case "etiqueta_instalar": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
+      const foto = txt(b.foto_path, 300);
+      if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
+      const c = await porNumero(n);
+      if (c && !(c.status === "ENCERRADO" || (["SEPARADO", "PREVISTO"].includes(c.status) && doLocal(s, c))))
+        return c.status === "SEPARADO" || !doLocal(s, c) ? usado(n) : json({ error: "Este aparelho já está instalado" }, 409);
+      const previsto = b.comodato_id ? await pontoDaVisita(s, b.comodato_id) : null;
+      if (b.comodato_id && (!previsto || previsto.status !== "PREVISTO")) return json({ error: "Ponto previsto não encontrado" }, 404);
+      const local = txt(b.localizacao_interna, 120) || previsto?.localizacao_interna || c?.localizacao_interna || "";
+      const err = pontoErro({ localizacao_interna: local, foto_path: foto });
+      if (err) return json({ error: err }, 400);
+      const prod = (await x.productOk(uuidOrNull(b.product_id)))?.id ?? c?.product_id ?? previsto?.product_id ?? null;
+      if (!prod) return json({ error: "Escolha o aparelho" }, 400);
+      const refil = (await x.productOk(uuidOrNull(b.refil_product_id)))?.id ?? previsto?.refil_product_id ?? c?.refil_product_id ?? null;
+      const { data: end } = s.client_id ? await admin.from("clients").select("city, state, address").eq("id", s.client_id).maybeSingle()
+        : await admin.from("leads").select("city, address:endereco").eq("id", s.lead_id).maybeSingle();
+      const status = statusPontoNovo(s);
+      const campos = { client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, status, product_id: prod, refil_product_id: refil, localizacao_interna: local,
+        foto_path: foto, ocorrencia_schedule_id: s.id, reserva_os_id: null, retirada_schedule_id: null, data_inicio: hoje, data_fim: null, quantidade: "1",
+        cidade: end?.city ?? null, estado: (end as any)?.state ?? null, endereco_instalacao: (end as any)?.address ?? null,
+        estado_atual: "verde", ultima_avaliacao_em: new Date().toISOString(), periodicidade_manut: previsto?.periodicidade_manut ?? c?.periodicidade_manut ?? "mensal" };
+      let id: string;
+      if (c) {
+        const e = await salvar(admin.from("comodatos").update(campos).eq("id", c.id)); if (e) return e;
+        id = c.id;
+      } else {
+        const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n, origem: "campo", created_by: user.id })
+          .select("id").single();
+        if (error) return (await salvar(Promise.resolve({ error }), n))!;
+        id = novo.id;
+      }
+      // The planned point is absorbed by the device: one less unit to install.
+      if (previsto) {
+        const q = qtdAparelhos(previsto.quantidade);
+        await admin.from("comodatos").update(q > 1 ? { quantidade: String(q - 1) }
+          : { status: "ENCERRADO", notes: [previsto.notes, `Ponto previsto instalado com o aparelho nº ${formatEtiqueta(n)}`].filter(Boolean).join("\n") }).eq("id", previsto.id);
+      }
+      // Leaves already evaluated (OK) with the installation photo, so closing never waits on a hidden step.
+      await admin.from("schedule_evidencias").insert({ organization_id: s.organization_id, schedule_id: s.id, comodato_id: id, estado: "verde", itens: [], precisa_substituir: false,
+        foto_path: foto, observacoes: `Instalação do aparelho nº ${formatEtiqueta(n)}`, autor_id: user.id });
+      await evento(s, id, `🏷️ Aparelho nº ${formatEtiqueta(n)} instalado (${status === "EM_TESTE" ? "em teste" : "ativo"}) em ${local}`);
+      return json({ ok: true, id, numero: n, status });
+    }
+    case "etiqueta_trocar_ponto": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const p = await pontoDaVisita(s, b.comodato_id);
+      if (!p || !["ATIVO", "EM_TESTE"].includes(p.status)) return json({ error: "Aparelho não encontrado neste cliente" }, 404);
+      const local = txt(b.localizacao_interna, 120);
+      if (local.length < 2) return json({ error: "Informe o novo local do aparelho" }, 400);
+      const foto = txt(b.foto_path, 300); if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
+      const e = await salvar(admin.from("comodatos").update({ localizacao_interna: local, ...(foto ? { foto_path: foto } : {}) }).eq("id", p.id)); if (e) return e;
+      await evento(s, p.id, `↔️ Trocado de ponto: ${p.localizacao_interna ?? "—"} → ${local}`, foto);
+      return json({ ok: true });
+    }
+    case "etiqueta_retirar": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const p = await pontoDaVisita(s, b.comodato_id);
+      if (!p) return json({ error: "Aparelho não encontrado neste cliente" }, 404);
+      if (p.status === "EM_TESTE") return json({ error: "Aparelho em teste: feche o teste como não aprovado (a nota de devolução devolve ao estoque)" }, 409);
+      if (p.status !== "ATIVO") return json({ error: "Só um aparelho ativo pode ser retirado" }, 409);
+      const motivo = txt(b.motivo, 200);
+      if (motivo.length < 3) return json({ error: "Informe o motivo da retirada" }, 400);
+      const e = await salvar(admin.from("comodatos").update({ status: "ENCERRADO", data_fim: hoje, retirada_schedule_id: s.id,
+        notes: [p.notes, `Retirado: ${motivo}`].filter(Boolean).join("\n").slice(0, 2000) }).eq("id", p.id)); if (e) return e;
+      await evento(s, p.id, `📦 Retirado do ponto ${p.localizacao_interna ?? ""} — volta ao estoque. Motivo: ${motivo}`);
+      return json({ ok: true });
+    }
+    case "etiqueta_substituir": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const velho = await pontoDaVisita(s, b.comodato_id);
+      if (!velho || !["ATIVO", "EM_TESTE"].includes(velho.status)) return json({ error: "Aparelho a substituir não encontrado" }, 404);
+      const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Escaneie a etiqueta do aparelho novo" }, 400);
+      if (n === velho.etiqueta_numero) return json({ error: "Escaneie a etiqueta do aparelho NOVO" }, 400);
+      const foto = txt(b.foto_path, 300);
+      if (!foto) return json({ error: "Tire a foto do aparelho novo instalado" }, 400);
+      if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
+      const c = await porNumero(n);
+      if (c && !(c.status === "ENCERRADO" || (c.status === "SEPARADO" && (doLocal(s, c) || (!c.client_id && !c.lead_id))))) return usado(n);
+      const prod = (await x.productOk(uuidOrNull(b.product_id)))?.id ?? c?.product_id ?? velho.product_id;
+      // The removed device waits for the return invoice (RETIRADO keeps it out of stock until the signed return arrives).
+      const e1 = await salvar(admin.from("comodatos").update({ status: "RETIRADO", data_fim: hoje, retirada_schedule_id: s.id }).eq("id", velho.id)); if (e1) return e1;
+      const campos = { client_id: velho.client_id, lead_id: velho.lead_id, status: velho.status, product_id: prod, refil_product_id: velho.refil_product_id,
+        localizacao_interna: velho.localizacao_interna, foto_path: foto, ocorrencia_schedule_id: s.id, reserva_os_id: null, retirada_schedule_id: null, data_inicio: hoje, data_fim: null,
+        quantidade: "1", periodicidade_manut: velho.periodicidade_manut ?? "mensal", proxima_manutencao: velho.proxima_manutencao, ultima_manutencao: hoje,
+        cidade: velho.cidade, estado: velho.estado, endereco_instalacao: velho.endereco_instalacao, linha_produto: velho.linha_produto, fabricante: velho.fabricante,
+        estado_atual: "verde", ultima_avaliacao_em: new Date().toISOString() };
+      let id: string;
+      if (c) { const e = await salvar(admin.from("comodatos").update(campos).eq("id", c.id)); if (e) return e; id = c.id; }
+      else {
+        const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n, origem: "campo", created_by: user.id }).select("id").single();
+        if (error) { await admin.from("comodatos").update({ status: velho.status, data_fim: null, retirada_schedule_id: null }).eq("id", velho.id); return (await salvar(Promise.resolve({ error }), n))!; }
+        id = novo.id;
+      }
+      await admin.from("schedule_evidencias").insert({ organization_id: s.organization_id, schedule_id: s.id, comodato_id: id, estado: "verde", itens: ["aparelho_trocado"],
+        precisa_substituir: false, foto_path: foto, observacoes: `Entrou no lugar do aparelho ${velho.etiqueta_numero ? `nº ${formatEtiqueta(velho.etiqueta_numero)}` : "sem número"}`, autor_id: user.id });
+      await evento(s, velho.id, `🔁 Substituído pelo aparelho nº ${formatEtiqueta(n)} — aguardando nota de devolução`);
+      await evento(s, id, `🔁 Instalado no lugar do aparelho ${velho.etiqueta_numero ? `nº ${formatEtiqueta(velho.etiqueta_numero)}` : "sem número"} (${velho.localizacao_interna ?? "ponto"})`, foto);
+      return json({ ok: true, id, numero: n });
+    }
+  }
+  return json({ error: "Requisição inválida" }, 400);
+}
