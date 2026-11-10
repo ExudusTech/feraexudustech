@@ -121,16 +121,16 @@ export default function InstalledBasePanel() {
         </MapContainer>
       </div>
       {visible.length > located.length && <p className="text-xs text-muted-foreground">{visible.length - located.length} cliente(s) ainda sem localização: ela é gravada no primeiro check-in.</p>}
-      <div className="rounded-lg border">
-        <Table>
+      <div className="rounded-lg md:border">
+        <Table className="table-cards">
           <TableHeader><TableRow><TableHead>Cliente</TableHead><TableHead>Cidade</TableHead><TableHead>Pontos</TableHead><TableHead>Estado</TableHead><TableHead>Situação</TableHead></TableRow></TableHeader>
           <TableBody>
             {!visible.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum cliente. A base é montada nas visitas de manutenção.</TableCell></TableRow>}
             {visible.map((r) => (
               <TableRow key={r.id} className="cursor-pointer" onClick={() => setOpen(r)}>
-                <TableCell className="font-medium">{r.name}{r.etiquetas.length > 0 && <span className="block text-xs font-normal text-muted-foreground font-mono">nº {r.etiquetas.slice(0, 6).map(formatEtiqueta).join(", ")}{r.etiquetas.length > 6 ? ` +${r.etiquetas.length - 6}` : ""}</span>}</TableCell><TableCell>{r.city ?? "—"}</TableCell><TableCell>{r.pontos}</TableCell>
-                <TableCell>{r.pior ? <Badge className={ESTADO_CLASS[r.pior]}>{ESTADO_LABEL[r.pior]}</Badge> : "—"}</TableCell>
-                <TableCell className="space-x-1">{r.atrasado && <Badge variant="destructive">Atrasada</Badge>}{r.ocorrencias > 0 && <Badge variant="outline">{r.ocorrencias} a levar</Badge>}</TableCell>
+                <TableCell className="font-medium">{r.name}{r.etiquetas.length > 0 && <span className="block text-xs font-normal text-muted-foreground font-mono">nº {r.etiquetas.slice(0, 6).map(formatEtiqueta).join(", ")}{r.etiquetas.length > 6 ? ` +${r.etiquetas.length - 6}` : ""}</span>}</TableCell><TableCell data-label="Cidade">{r.city ?? "—"}</TableCell><TableCell data-label="Pontos">{r.pontos}</TableCell>
+                <TableCell data-label="Estado">{r.pior ? <Badge className={ESTADO_CLASS[r.pior]}>{ESTADO_LABEL[r.pior]}</Badge> : "—"}</TableCell>
+                <TableCell data-card="body" className="space-x-1">{r.atrasado && <Badge variant="destructive">Atrasada</Badge>}{r.ocorrencias > 0 && <Badge variant="outline">{r.ocorrencias} a levar</Badge>}</TableCell>
               </TableRow>))}
           </TableBody>
         </Table>
