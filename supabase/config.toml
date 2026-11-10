@@ -6,3 +6,6 @@ verify_jwt = false
 [functions.mcp]
 verify_jwt = false
 
+
+[functions.etiqueta-publica]
+verify_jwt = false

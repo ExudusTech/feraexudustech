@@ -76,3 +76,8 @@ export function acoesEtiqueta(operacao: string | null | undefined, ap: AparelhoE
 export const STATUS_APARELHO_LABEL: Record<string, string> = {
   ATIVO: "Ativo", EM_TESTE: "Em teste", SEPARADO: "Separado", PREVISTO: "Previsto", RETIRADO: "Retirado (aguarda nota)", ENCERRADO: "No estoque", SUSPENSO: "Suspenso", PENDENTE: "Pendente",
 };
+
+/** Fallback WhatsApp when Settings → Proposal PDF has none (same as DEFAULT_PROPOSTA_CONFIG.whatsapp, test-enforced). */
+export const WHATSAPP_PADRAO = "(22) 99266-8769";
+/** Public lookups per IP per hour before the message stops naming the establishment (anti-enumeration). */
+export const LIMITE_CONSULTAS_HORA = 30;
