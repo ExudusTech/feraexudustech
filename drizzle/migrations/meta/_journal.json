@@ -372,6 +372,13 @@
       "when": 1794330328189,
       "tag": "0052_estoque_e_etiquetas_qr",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794330451548,
+      "tag": "0053_comodato_separar_unidade",
+      "breakpoints": true
     }
   ]
 }

@@ -8440,6 +8440,10 @@ export type Database = {
         Returns: boolean
       }
       cnpj_valido: { Args: { _cnpj: string }; Returns: boolean }
+      comodato_separar_unidade: {
+        Args: { _id: string; _org: string }
+        Returns: string
+      }
       converter_lead_em_cliente: {
         Args: {
           _cliente_existente?: string
