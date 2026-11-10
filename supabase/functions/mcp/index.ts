@@ -3275,6 +3275,22 @@ async function validarCodigoOtp(params: Record<string, unknown>): Promise<McpRes
 
 const TOOLS_MANIFEST_CLIENTE = [
   {
+    name: "contexto_qr",
+    description: "QR do aparelho: quando a mensagem tiver 'ref Q…', chame primeiro. Devolve tipo de quem escaneou (EQUIPE/CLIENTE/PUBLICO), estabelecimento, segmento, ponto, produto e indicação de uso, campanha vigente, sugestões de complemento (só CLIENTE) e mensagem_para_lead. Nada sensível para PUBLICO.",
+    parameters: { type: "object", required: ["chat_id", "ref"], properties: {
+      chat_id: { type: "string", description: "chat_id da conversa atual" },
+      ref: { type: "string", description: "Código do fim da mensagem do QR (ex.: 'Q7K2M' ou 'ref Q7K2M'); pode mandar a mensagem inteira" } } },
+  },
+  {
+    name: "registrar_avaliacao_qr",
+    description: "QR do aparelho: grava a nota 0–10 (e comentário) ligada ao cliente/ponto/aparelho. Nota ≤ 6 ou comentário negativo avisa o gestor/consultor e devolve sugestao para oferecer falar com alguém (transferir para humano, motivo 'avaliação baixa QR').",
+    parameters: { type: "object", required: ["chat_id", "ref", "nota"], properties: {
+      chat_id: { type: "string", description: "chat_id da conversa atual" },
+      ref: { type: "string", description: "Mesmo código 'ref Q…' usado em contexto_qr" },
+      nota: { type: "integer", minimum: 0, maximum: 10, description: "Nota de 0 a 10" },
+      comentario: { type: "string", maxLength: 1000, description: "Opcional: comentário da pessoa" } } },
+  },
+  {
     name: "localizar_estabelecimento",
     description: "Localiza estabelecimento por nome + cidade ou CEP. Antes de buscar, checa a cobertura: SEM_COBERTURA registra fora de cobertura e devolve a mensagem de fora de área; MATRIZ orienta transferir; sem cidade/CEP pede cidade e bairro. Só busca em DISTRIBUIDORA; sempre confirme o candidato com o lead.",
     parameters: { type: "object", required: ["nome"], properties: {
@@ -5473,6 +5489,332 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
     next_action_hint: "Envie mensagem_para_equipe literalmente ao usuário." };
 }
 
+
+// ─── QR do aparelho (adendo 10/11): contexto_qr + registrar_avaliacao_qr ───────────────────────────────────────────────
+// Identical copy of supabase/functions/_shared/qr.ts between the markers (test-enforced): the mcp test harness cannot load imports.
+// BEGIN qr
+/** Crockford-style alphabet (no I, L, O, U): 32 symbols, 4 symbols = 2^20 codes, enough for numbers up to 999999. */
+const QR_ALFABETO = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const QR_M = 1 << 20;
+const QR_A = 738197;
+const QR_B = 419431;
+function qrInverso(a: number, m: number): number {
+  let [r0, r1, s0, s1] = [a, m, 1, 0];
+  while (r1 !== 0) { const q = Math.floor(r0 / r1); [r0, r1] = [r1, r0 - q * r1]; [s0, s1] = [s1, s0 - q * s1]; }
+  return ((s0 % m) + m) % m;
+}
+const QR_A_INV = qrInverso(QR_A, QR_M);
+function qrMulMod(a: number, b: number): number {
+  // a, b < 2^20: split b to keep products below 2^53.
+  return ((a * (b >>> 10)) % QR_M * 1024 + a * (b & 1023)) % QR_M;
+}
+
+/** Short reference shown at the end of the public message ("ref Q7K2M"): a reversible scramble of the label number, never the number itself. */
+function qrRef(numero: number): string {
+  let x = (qrMulMod(numero % QR_M, QR_A) + QR_B) % QR_M;
+  let s = "";
+  for (let i = 0; i < 4; i++) { s = QR_ALFABETO[x % 32] + s; x = Math.floor(x / 32); }
+  return `Q${s}`;
+}
+/** Label number behind a reference (accepts "ref Q7K2M", "q7k2m", the whole message), or null. */
+function qrNumeroDaRef(raw: unknown): number | null {
+  const t = String(raw ?? "").toUpperCase().replace(/[IL]/g, "1").replace(/O/g, "0");
+  const m = t.match(/(?:^|[^0-9A-Z])Q([0-9A-HJKMNP-TV-Z]{4})(?![0-9A-Z])/) ?? t.match(/^Q?([0-9A-HJKMNP-TV-Z]{4})$/);
+  if (!m) return null;
+  let x = 0;
+  for (const ch of m[1]) x = x * 32 + QR_ALFABETO.indexOf(ch);
+  const n = qrMulMod(((x - QR_B) % QR_M + QR_M) % QR_M, QR_A_INV);
+  return n >= 1 && n <= 999999 ? n : null;
+}
+
+interface QrCampanha { id?: string; nome: string; texto: string; inicio?: string | null; fim?: string | null; dias_semana?: number[] | null;
+  hora_inicio?: string | null; hora_fim?: string | null; segmentos?: string[] | null; prioridade?: number | null; padrao?: boolean | null; ativo?: boolean | null }
+interface QrVars { estabelecimento?: string | null; segmento?: string | null; produto_do_aparelho?: string | null }
+const QR_VARIAVEIS = ["estabelecimento", "segmento", "saudacao", "dia_semana", "produto_do_aparelho"] as const;
+/** Used only when no campaign fits (none configured, or every one needs data this scan does not have). */
+const QR_TEXTO_RESERVA = "{saudacao}! Quero saber mais sobre a NitsClean.";
+const QR_DIAS = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+const qrFold = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+/** São Paulo calendar parts of an instant. */
+function qrAgoraSP(agora: Date): { data: string; dia: number; minutos: number } {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", weekday: "short", hourCycle: "h23" }).formatToParts(agora).map((x) => [x.type, x.value]));
+  const dia = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday);
+  return { data: `${p.year}-${p.month}-${p.day}`, dia, minutos: Number(p.hour) * 60 + Number(p.minute) };
+}
+function qrSaudacao(minutos: number): string { return minutos >= 300 && minutos < 720 ? "Bom dia" : minutos >= 720 && minutos < 1080 ? "Boa tarde" : "Boa noite"; }
+const qrMin = (h?: string | null) => { const m = String(h ?? "").match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+function qrUsa(texto: string): string[] { return [...texto.matchAll(/\{(\w+)\}/g)].map((m) => m[1]); }
+
+/** Campaign in force now: specific campaigns (date range, weekdays, hours, segments) by priority; else the default; else the reserve text. */
+function qrEscolherCampanha(campanhas: QrCampanha[], agora: Date, vars: QrVars): QrCampanha {
+  const sp = qrAgoraSP(agora);
+  const temVar = (c: QrCampanha) => qrUsa(c.texto).every((v) => !["estabelecimento", "segmento", "produto_do_aparelho"].includes(v) || !!(vars as Record<string, unknown>)[v]);
+  const vigente = (c: QrCampanha) => c.ativo !== false && (!c.inicio || c.inicio <= sp.data) && (!c.fim || c.fim >= sp.data);
+  const naHora = (c: QrCampanha) => {
+    if (c.dias_semana?.length && !c.dias_semana.includes(sp.dia)) return false;
+    const i = qrMin(c.hora_inicio), f = qrMin(c.hora_fim);
+    if (i !== null && sp.minutos < i) return false;
+    if (f !== null && sp.minutos >= f) return false;
+    return true;
+  };
+  const noSegmento = (c: QrCampanha) => !c.segmentos?.length || (!!vars.segmento && c.segmentos.some((s) => qrFold(s) === qrFold(vars.segmento)));
+  const ok = campanhas.filter((c) => vigente(c) && temVar(c));
+  const especifica = ok.filter((c) => !c.padrao && naHora(c) && noSegmento(c)).sort((a, b) => (b.prioridade ?? 0) - (a.prioridade ?? 0))[0];
+  return especifica ?? ok.find((c) => c.padrao) ?? { nome: "Reserva", texto: QR_TEXTO_RESERVA };
+}
+
+function qrRenderizar(texto: string, vars: QrVars, agora: Date): string {
+  const sp = qrAgoraSP(agora);
+  const valores: Record<string, string> = { saudacao: qrSaudacao(sp.minutos), dia_semana: QR_DIAS[sp.dia] ?? "",
+    estabelecimento: (vars.estabelecimento ?? "").trim(), segmento: (vars.segmento ?? "").trim(), produto_do_aparelho: (vars.produto_do_aparelho ?? "").trim() };
+  return texto.replace(/\{(\w+)\}/g, (all, k) => (k in valores ? valores[k] : all)).replace(/[ \t]{2,}/g, " ").trim();
+}
+/** Public pre-filled WhatsApp text: campaign text + a discreet reference at the end (never the label number or internal data). */
+function qrMensagem(campanhas: QrCampanha[], agora: Date, vars: QrVars, ref: string): { texto: string; campanha: string } {
+  const c = qrEscolherCampanha(campanhas, agora, vars);
+  return { texto: `${qrRenderizar(c.texto, vars, agora)}\n\nref ${ref}`, campanha: c.nome };
+}
+
+const QR_NEGATIVAS = ["ruim", "pessim", "horrivel", "sujo", "suja", "fedor", "fedid", "mau cheiro", "cheiro ruim", "quebrad", "estragad", "faltando", "falta ", "sem papel",
+  "sem sabonete", "vazio", "vazia", "nojo", "nojent", "demor", "reclam", "nao funciona", "não funciona", "decepcion", "insatisf", "terrivel", "lixo", "pior"];
+const QR_POSITIVAS = ["otim", "excelente", "limp", "bom", "boa", "parabens", "adorei", "amei", "cheiros", "maravilh", "perfeit", "show", "top", "gostei", "lindo"];
+/** Simple sentiment: a negative word or a score ≤ 6 is negative; ≥ 9 (or 7–8 with praise) is positive; otherwise neutral. */
+function qrSentimento(nota: number, comentario?: string | null): "positivo" | "neutro" | "negativo" {
+  const t = ` ${qrFold(comentario)} `.replace(/\s+/g, " ");
+  const neg = QR_NEGATIVAS.some((w) => t.includes(qrFold(w)));
+  if (neg || nota <= 6) return "negativo";
+  if (nota >= 9 || QR_POSITIVAS.some((w) => t.includes(w))) return "positivo";
+  return "neutro";
+}
+/** Score ≤ 6 or a negative comment alerts the client's manager/consultant. */
+function qrPrecisaAlerta(nota: number, comentario?: string | null): boolean { return nota <= 6 || qrSentimento(nota, comentario) === "negativo"; }
+function qrNotaValida(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && /^\s*\d{1,2}\s*$/.test(v) ? Number(v) : NaN;
+  return Number.isInteger(n) && n >= 0 && n <= 10 ? n : null;
+}
+/** NPS (promoters 9–10 minus detractors 0–6, in %) and average score. */
+function qrNps(notas: number[]): { n: number; media: number | null; nps: number | null; promotores: number; detratores: number } {
+  const n = notas.length;
+  if (!n) return { n: 0, media: null, nps: null, promotores: 0, detratores: 0 };
+  const promotores = notas.filter((x) => x >= 9).length, detratores = notas.filter((x) => x <= 6).length;
+  return { n, media: Math.round((notas.reduce((a, b) => a + b, 0) / n) * 10) / 10, nps: Math.round(((promotores - detratores) / n) * 100), promotores, detratores };
+}
+
+interface QrProduto { id: string; name: string; is_dispenser?: boolean | null; is_active?: boolean | null; dispenser_family_id?: string | null;
+  compatible_dispenser_families?: string[] | null; brand?: string | null }
+/** Search terms of the room/segment kit (higher priority first). */
+const QR_KIT: Record<string, string[]> = {
+  "restaurante/bar": ["papel toalha", "sabonete", "alcool gel", "desengordurante", "detergente"], "hotel/pousada": ["papel toalha", "sabonete", "aromatizador", "papel higienico"],
+  "clinica/hospital": ["alcool gel", "antisseptico", "papel toalha", "sabonete"], academia: ["papel toalha", "sabonete", "aromatizador"],
+  escola: ["papel toalha", "sabonete", "alcool gel"], "comercio/loja": ["papel toalha", "sabonete", "aromatizador"], escritorio: ["papel toalha", "sabonete", "aromatizador", "cafe"],
+};
+const QR_KIT_BASE = ["papel toalha", "sabonete", "papel higienico", "aromatizador", "alcool gel"];
+/**
+ * Kit complements this client does NOT have installed yet: refills compatible with the point's device family first,
+ * then products matching the segment kit; never a product already installed or one of its refills.
+ */
+function qrComplementos(v: { aparelho?: QrProduto | null; instalados: string[]; catalogo: QrProduto[]; segmento?: string | null; max?: number }): QrProduto[] {
+  const tem = new Set(v.instalados);
+  const ativos = v.catalogo.filter((p) => p.is_active !== false && !tem.has(p.id));
+  const fam = v.aparelho?.dispenser_family_id;
+  const compat = fam ? ativos.filter((p) => !p.is_dispenser && (p.compatible_dispenser_families ?? []).includes(fam)) : [];
+  const termos = QR_KIT[qrFold(v.segmento)] ?? QR_KIT_BASE;
+  const kit: QrProduto[] = [];
+  for (const t of termos) {
+    const hit = ativos.find((p) => qrFold(p.name).includes(t) && !kit.includes(p) && !compat.includes(p));
+    if (hit) kit.push(hit);
+  }
+  return [...compat.slice(0, 2), ...kit].slice(0, v.max ?? 4);
+}
+// END qr
+
+type QrTipo = "EQUIPE" | "CLIENTE" | "PUBLICO";
+const QR_STATUS_ATIVO = ["ATIVO", "EM_TESTE"];
+const fmtEtq = (n: number) => String(n).padStart(6, "0");
+
+/** Device behind a QR reference (organization-scoped), with its client/lead and products. */
+async function qrAparelho(supabase: ReturnType<typeof getClient>, ref: unknown) {
+  const numero = qrNumeroDaRef(ref);
+  if (!numero) return { numero: null, ap: null as any };
+  const { data: ap, error } = await supabase.from("comodatos").select("id, status, client_id, lead_id, product_id, refil_product_id, localizacao_interna, etiqueta_numero")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("etiqueta_numero", numero).maybeSingle();
+  if (error) throw new Error(dbFail("ler o aparelho do QR", error));
+  return { numero, ap: ap as any };
+}
+
+/** Who is scanning: team (profile phone), the client's own contact (person linked to that company or the client phone), or the public. */
+async function qrTipo(supabase: ReturnType<typeof getClient>, chatId: unknown, ap: any): Promise<{ tipo: QrTipo; equipe?: TeamUser; contato?: string | null }> {
+  const { user } = await resolverEquipe(supabase, chatId);
+  if (user) return { tipo: "EQUIPE", equipe: user };
+  if (!ap || (!ap.client_id && !ap.lead_id)) return { tipo: "PUBLICO" };
+  const channel = resolveChannelFromChatId(chatId);
+  const phone = channel?.canal === "WHATSAPP" ? digits(channel.identificador) : null;
+  const variants = phone && phone.length >= 10 ? phoneVariants(phone) : [];
+  try {
+    const ors = [...variants.flatMap((v) => [`whatsapp.eq.${v}`, `telefone.eq.${v}`]), ...(typeof chatId === "string" && chatId ? [`chat_ids.cs.{${JSON.stringify(chatId)}}`] : [])];
+    if (ors.length) {
+      const { data: pessoas } = await supabase.from("pessoas").select("id, nome").eq("organization_id", NITSCLEAN_ORG_ID).or(ors.join(",")).limit(10);
+      const ids = (Array.isArray(pessoas) ? pessoas : []).map((p: any) => p.id);
+      if (ids.length) {
+        let q = supabase.from("empresa_contatos").select("pessoa_id").eq("organization_id", NITSCLEAN_ORG_ID).in("pessoa_id", ids);
+        q = ap.client_id ? q.eq("client_id", ap.client_id) : q.eq("lead_id", ap.lead_id);
+        const { data: vin } = await q.limit(1);
+        const hit = (Array.isArray(vin) ? vin : [])[0];
+        if (hit) return { tipo: "CLIENTE", contato: (pessoas as any[]).find((p) => p.id === hit.pessoa_id)?.nome ?? null };
+      }
+    }
+    if (variants.length && ap.client_id) {
+      const { data: c } = await supabase.from("clients").select("id").eq("id", ap.client_id).in("phone", variants).maybeSingle();
+      if (c) return { tipo: "CLIENTE", contato: null };
+    }
+  } catch { console.error("[mcp] qr tipo lookup failed"); }
+  return { tipo: "PUBLICO" };
+}
+
+async function qrEmpresa(supabase: ReturnType<typeof getClient>, ap: any): Promise<{ nome: string | null; segmento: string | null; consultor: string | null }> {
+  if (ap?.client_id) {
+    const { data: c } = await supabase.from("clients").select("name, ramo_atuacao, levantamento, assigned_user_id").eq("id", ap.client_id).maybeSingle();
+    return { nome: c?.name ?? null, segmento: (c?.levantamento as any)?.segmento ?? c?.ramo_atuacao ?? null, consultor: c?.assigned_user_id ?? null };
+  }
+  if (ap?.lead_id) {
+    const { data: l } = await supabase.from("leads").select("empresa_nome, company, category, assigned_to").eq("id", ap.lead_id).maybeSingle();
+    return { nome: l?.empresa_nome ?? l?.company ?? null, segmento: l?.category ?? null, consultor: l?.assigned_to ?? null };
+  }
+  return { nome: null, segmento: null, consultor: null };
+}
+
+async function contextoQr(params: Record<string, unknown>): Promise<McpResponse> {
+  const supabase = getClient();
+  let r: { numero: number | null; ap: any };
+  try { r = await qrAparelho(supabase, params.ref ?? params.texto); } catch (e) { return fail(e instanceof Error ? e.message : "Erro interno ao ler o QR"); }
+  if (!r.numero) return fail("Referência do QR inválida", "Use o código 'ref Q…' que vem no fim da mensagem do QR (ex.: ref Q7K2M).");
+  const ap = r.ap;
+  const ativo = !!ap && QR_STATUS_ATIVO.includes(String(ap.status).toUpperCase());
+  const quem = await qrTipo(supabase, params.chat_id, ativo ? ap : null);
+  const emp = ativo ? await qrEmpresa(supabase, ap) : { nome: null, segmento: null, consultor: null };
+  const ids = [ap?.product_id, ap?.refil_product_id].filter(Boolean);
+  const { data: prods } = ids.length ? await supabase.from("products").select("id, name, description, dispenser_family_id, is_dispenser").in("id", ids) : { data: [] };
+  const prod = (prods as any[] ?? []).find((p) => p.id === ap?.product_id) ?? null;
+  const refil = (prods as any[] ?? []).find((p) => p.id === ap?.refil_product_id) ?? null;
+  const { data: campanhas } = await supabase.from("qr_campanhas").select("nome, texto, inicio, fim, dias_semana, hora_inicio, hora_fim, segmentos, prioridade, padrao, ativo")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true).limit(100);
+  const vars = ativo ? { estabelecimento: emp.nome, segmento: emp.segmento, produto_do_aparelho: prod?.name ?? null } : {};
+  const campanha = qrEscolherCampanha((campanhas as QrCampanha[]) ?? [], new Date(), vars);
+  const uso = String(refil?.description ?? prod?.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200) || null;
+  const ponto = ativo ? ap.localizacao_interna ?? null : null;
+  const base = { tipo: quem.tipo, aparelho_ativo: ativo, estabelecimento: emp.nome, segmento: emp.segmento, ponto,
+    produto: ativo ? prod?.name ?? null : null, refil: ativo ? refil?.name ?? null : null, indicacao_uso: ativo ? uso : null,
+    campanha: { nome: campanha.nome, texto: qrRenderizar(campanha.texto, vars, new Date()) } };
+  if (quem.tipo === "EQUIPE") {
+    const link = feraLink(`/aparelho/${fmtEtq(r.numero)}`);
+    return ok({ ...base, etiqueta: fmtEtq(r.numero), status: ap?.status ?? "SEM_APARELHO", ficha_url: link,
+      mensagem_para_lead: ap ? `Aparelho nº ${fmtEtq(r.numero)}${emp.nome ? ` — ${emp.nome}` : ""}${ponto ? ` · ${ponto}` : ""}. Ficha: ${link}` : `Etiqueta nº ${fmtEtq(r.numero)} ainda não está ligada a um aparelho. Ela é ligada ao escanear na separação ou na instalação.` },
+      "QR escaneado por alguém da equipe", "EQUIPE: envie mensagem_para_lead (ficha do aparelho no app).");
+  }
+  let sugestoes: Array<{ nome: string }> = [];
+  if (quem.tipo === "CLIENTE" && ativo) {
+    let qi = supabase.from("comodatos").select("product_id, refil_product_id").eq("organization_id", NITSCLEAN_ORG_ID).in("status", QR_STATUS_ATIVO);
+    qi = ap.client_id ? qi.eq("client_id", ap.client_id) : qi.eq("lead_id", ap.lead_id);
+    const { data: inst } = await qi.limit(500);
+    const instalados = (Array.isArray(inst) ? inst : []).flatMap((c: any) => [c.product_id, c.refil_product_id]).filter(Boolean);
+    const { data: catalogo } = await supabase.from("products").select("id, name, is_dispenser, is_active, dispenser_family_id, compatible_dispenser_families, brand, disponibilidade")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true).neq("disponibilidade", "descontinuado").limit(3000);
+    sugestoes = qrComplementos({ aparelho: prod, instalados, catalogo: (catalogo as QrProduto[]) ?? [], segmento: emp.segmento }).map((p) => ({ nome: p.name }));
+  }
+  const ambiente = ponto ? ` do ${ponto.toLowerCase()}` : " do ambiente";
+  const saud = qrSaudacao(qrAgoraSP(new Date()).minutos);
+  const mensagem = quem.tipo === "CLIENTE"
+    ? `${saud}${quem.contato ? `, ${String(quem.contato).replace(/^\[DEMO\]\s*/, "").split(" ")[0]}` : ""}! Que bom falar com você 😊 De 0 a 10, que nota você dá para o atendimento${ambiente}?${sugestoes.length ? " Depois te conto de um complemento que combina com o que vocês já usam." : ""}`
+    : ativo ? `${saud}! Obrigada por escanear 😊 De 0 a 10, que nota você dá para o ambiente${ponto ? ` (${ponto})` : ""}${emp.nome ? ` aqui no ${emp.nome}` : ""}?`
+      : `${saud}! Obrigada pelo contato 😊 Sou a Flora, da NitsClean. Quer conhecer nossas soluções de higiene para o seu negócio?`;
+  const data: Record<string, unknown> = { ...base, mensagem_para_lead: mensagem };
+  if (quem.tipo === "CLIENTE") data.sugestoes_complemento = sugestoes;
+  else data.origem_lead = emp.nome ? `QR no cliente ${emp.nome}` : "QR NitsClean";
+  return ok(data, `QR escaneado: ${quem.tipo}`, quem.tipo === "CLIENTE"
+    ? "CLIENTE: envie mensagem_para_lead, peça a nota (registrar_avaliacao_qr) e depois ofereça sugestoes_complemento."
+    : "PUBLICO: agradeça, peça a nota (registrar_avaliacao_qr); se a pessoa for decisora de um negócio, siga a qualificação e use origem_lead em criar_lead (origem_especifica).");
+}
+
+async function alertarAvaliacaoBaixa(supabase: ReturnType<typeof getClient>, v: { avaliacaoId: string; numero: number; empresa: string | null; ponto: string | null;
+  nota: number; comentario: string | null; tipo: QrTipo; consultor: string | null; ids: string[] }): Promise<void> {
+  try {
+    const { data: isDemo } = await (supabase as any).rpc("demo_envolvido", { _ids: v.ids });
+    if (isDemo === true) return;
+  } catch { /* lookup only */ }
+  const { data: recipients } = await supabase.from("notification_recipients").select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
+    .contains("eventos", ["avaliacao_qr_baixa"]);
+  const lista = (Array.isArray(recipients) ? recipients : []) as Array<Record<string, any>>;
+  const userIds = [...new Set([...lista.map((r) => r.user_id).filter(Boolean), ...(v.consultor ? [v.consultor] : [])])];
+  const { data: profiles } = userIds.length ? await supabase.from("profiles").select("user_id, name, phone, is_active").eq("organization_id", NITSCLEAN_ORG_ID).in("user_id", userIds) : { data: [] };
+  const byUser = new Map((Array.isArray(profiles) ? profiles : []).map((p: any) => [p.user_id, p]));
+  const destinos = new Map<string, { id: string | null; nome: string }>();
+  for (const r of lista) {
+    const p = r.user_id ? byUser.get(r.user_id) : null;
+    const fone = r.user_id ? (p && p.is_active !== false ? p.phone : null) : r.whatsapp;
+    if (fone) destinos.set(fone, { id: r.id, nome: p?.name ?? r.nome });
+  }
+  const cons = v.consultor ? byUser.get(v.consultor) : null;
+  if (cons?.phone && cons.is_active !== false && !destinos.has(cons.phone)) destinos.set(cons.phone, { id: null, nome: cons.name ?? "Consultor" });
+  const quem = v.tipo === "CLIENTE" ? "contato do cliente" : v.tipo === "EQUIPE" ? "equipe" : "visitante (público)";
+  const message = [`⚠️ Avaliação baixa no QR: ${v.nota}/10`, `Cliente: ${v.empresa ?? "—"}`, `Ponto: ${v.ponto ?? "—"} (aparelho nº ${fmtEtq(v.numero)})`,
+    v.comentario ? `Comentário: ${v.comentario.slice(0, 300)}` : null, `Quem avaliou: ${quem}`, `Ver no Fera: ${feraLink(`/aparelho/${fmtEtq(v.numero)}`)}`, "",
+    "(Mensagem automática — não responda aqui; abra o link.)"].filter((x) => x !== null).join("\n");
+  for (const [fone, d] of destinos) {
+    let status = "FAILED"; let errorMessage: string | null = null;
+    try {
+      if (!GPTMAKER_API_TOKEN || !GPTMAKER_WHATSAPP_CHANNEL_ID) throw new Error("CONFIG_MISSING");
+      if (!/^\d{8,15}$/.test(fone)) throw new Error("INVALID_PHONE");
+      const res = await fetch(`https://api.gptmaker.ai/v2/channel/${GPTMAKER_WHATSAPP_CHANNEL_ID}/start-conversation`, { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${GPTMAKER_API_TOKEN}` }, body: JSON.stringify({ phone: fone, message }), signal: AbortSignal.timeout(10000) });
+      if (res.ok) status = "SENT"; else errorMessage = `HTTP ${res.status}`;
+      await res.body?.cancel();
+    } catch (e) { errorMessage = e instanceof Error && ["CONFIG_MISSING", "INVALID_PHONE"].includes(e.message) ? e.message : "DELIVERY_FAILED"; }
+    await supabase.from("notification_logs").insert({ organization_id: NITSCLEAN_ORG_ID, event_type: "avaliacao_qr_baixa", recipient_id: d.id, recipient_name: d.nome,
+      channel: "WHATSAPP", destination: fone, payload: { avaliacao_id: v.avaliacaoId, message }, status, error_message: errorMessage });
+  }
+}
+
+async function registrarAvaliacaoQr(params: Record<string, unknown>): Promise<McpResponse> {
+  const supabase = getClient();
+  const nota = qrNotaValida(params.nota);
+  if (nota === null) return fail("Nota inválida", "A nota é um número inteiro de 0 a 10.");
+  const comentario = typeof params.comentario === "string" ? params.comentario.replace(/\s+/g, " ").trim().slice(0, 1000) || null : null;
+  let r: { numero: number | null; ap: any };
+  try { r = await qrAparelho(supabase, params.ref ?? params.texto); } catch (e) { return fail(e instanceof Error ? e.message : "Erro interno ao ler o QR"); }
+  if (!r.numero) return fail("Referência do QR inválida", "Use o código 'ref Q…' que vem no fim da mensagem do QR.");
+  if (!r.ap || !QR_STATUS_ATIVO.includes(String(r.ap.status).toUpperCase())) return fail("Este QR ainda não está ligado a um aparelho instalado", "Agradeça o contato e siga a conversa sem registrar nota.");
+  const ap = r.ap;
+  const quem = await qrTipo(supabase, params.chat_id, ap);
+  const emp = await qrEmpresa(supabase, ap);
+  const sentimento = qrSentimento(nota, comentario);
+  const alerta = qrPrecisaAlerta(nota, comentario);
+  const chatId = typeof params.chat_id === "string" ? params.chat_id.slice(0, 200) : null;
+  const row = { organization_id: NITSCLEAN_ORG_ID, comodato_id: ap.id, client_id: ap.client_id ?? null, lead_id: ap.lead_id ?? null, ponto: ap.localizacao_interna ?? null,
+    etiqueta_numero: r.numero, ref: qrRef(r.numero), tipo_avaliador: quem.tipo, nota, comentario, sentimento, alerta, chat_id: chatId };
+  // The same chat rating the same device again within 10 minutes corrects the previous rating instead of adding one.
+  const desde = new Date(Date.now() - 10 * 60_000).toISOString();
+  const { data: prev } = chatId ? await supabase.from("qr_avaliacoes").select("id, alerta").eq("organization_id", NITSCLEAN_ORG_ID).eq("comodato_id", ap.id).eq("chat_id", chatId)
+    .gte("created_at", desde).order("created_at", { ascending: false }).limit(1).maybeSingle() : { data: null };
+  const res = prev ? await supabase.from("qr_avaliacoes").update(row).eq("id", prev.id).select("id").single()
+    : await supabase.from("qr_avaliacoes").insert(row).select("id").single();
+  if (res.error || !res.data) return fail(dbFail("registrar a avaliação do QR", res.error));
+  if (alerta && !(prev as any)?.alerta) {
+    try {
+      const task = alertarAvaliacaoBaixa(supabase, { avaliacaoId: res.data.id, numero: r.numero, empresa: emp.nome, ponto: ap.localizacao_interna ?? null, nota, comentario,
+        tipo: quem.tipo, consultor: emp.consultor, ids: [ap.id, ap.client_id, ap.lead_id].filter(Boolean) }).catch(() => console.error("[mcp] qr alert failed"));
+      (globalThis as unknown as { EdgeRuntime?: { waitUntil: (t: Promise<void>) => void } }).EdgeRuntime?.waitUntil(task);
+    } catch { console.error("[mcp] qr alert not scheduled"); }
+  }
+  const mensagem = alerta
+    ? "Sinto muito por isso, e obrigada por avisar 🙏 Já passei para a nossa equipe cuidar. Quer falar com alguém agora?"
+    : nota >= 9 ? `Obrigada pela nota ${nota}! 😊 Que bom que está gostando.` : `Obrigada pela nota ${nota}! Se quiser, me conta o que podemos melhorar.`;
+  return ok({ registrado: true, nota, sentimento, alerta, tipo: quem.tipo, mensagem_para_lead: mensagem,
+    sugestao: alerta ? { acao: "transferir_para_humano", ferramenta: "solicitar_atendimento_humano", motivo: "avaliação baixa QR" } : null },
+    "Avaliação registrada", alerta ? "Ofereça falar com alguém; se aceitar, transfira para humano com motivo 'avaliação baixa QR'." : undefined);
+}
+
 const TEAM_TOOLS: Record<string, (p: Record<string, unknown>) => Promise<McpResponse>> = {
   anexar_coleta_ocorrencia: anexarColetaOcorrencia, pendencias_ocorrencia: pendenciasOcorrencia, confirmar_coleta_ocorrencia: confirmarColetaOcorrencia,
   identificar_usuario: identificarUsuario, minha_agenda: minhaAgenda, agenda_equipe: agendaEquipe, listar_pendencias: listarPendencias,
@@ -5558,6 +5900,9 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     // Block 5
     case "solicitar_atendimento_humano": return solicitarAtendimentoHumano(params);
     case "registrar_fora_cobertura":     return registrarForaCobertura(params);
+    // QR do aparelho
+    case "contexto_qr":                  return contextoQr(params);
+    case "registrar_avaliacao_qr":       return registrarAvaliacaoQr(params);
     // Block 6
     case "enviar_codigo_otp":            return enviarCodigoOtp(params);
     case "validar_codigo_otp":           return validarCodigoOtp(params);
