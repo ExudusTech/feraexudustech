@@ -276,11 +276,24 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   await reg("clients", clientId);
   await admin.from("leads").update({ stage_id: etapaId("cliente_ativo") }).eq("id", leads.cliente.id);
   const atrasada = plano.cliente_atrasada;
+  const ativosCliente: Array<{ id: string; local: string; numero: number }> = [];
   for (const [i, par] of pares.slice(0, 2).entries()) {
-    await ins("comodatos", { organization_id: org, client_id: clientId, lead_id: leads.cliente.id, status: "ATIVO", origem: "campo", localizacao_interna: ["Banheiro social", "Cozinha"][i],
+    const numero = proxEtq;
+    ativosCliente.push({ local: ["Banheiro social", "Cozinha"][i], numero, id: await ins("comodatos", { organization_id: org, client_id: clientId, lead_id: leads.cliente.id, status: "ATIVO", origem: "campo", localizacao_interna: ["Banheiro social", "Cozinha"][i],
       product_id: par.aparelho?.id ?? null, aparelho_descricao: par.aparelho?.name ?? "Dispenser", refil_product_id: par.refil.id, quantidade: "1", etiqueta_numero: etiqueta(), data_inicio: addDias(pr.data, 7),
       proxima_manutencao: atrasada.data, periodicidade_manut: "mensal", cidade: leads.cliente.cidade, created_by: leads.cliente.dono,
-      notes: "Aparelho em comodato (demonstração)" }, "criar aparelho ativo");
+      notes: "Aparelho em comodato (demonstração)" }, "criar aparelho ativo") });
+  }
+  // QR ratings of the client's devices over the last weeks (one low score with a comment, as a manager alert would show).
+  const avaliacoes = [{ d: -20, nota: 10, tipo: "PUBLICO", c: "Banheiro sempre limpo e cheiroso!" }, { d: -12, nota: 9, tipo: "CLIENTE", c: null },
+    { d: -6, nota: 8, tipo: "PUBLICO", c: null }, { d: -2, nota: 4, tipo: "PUBLICO", c: "Faltou papel no fim de semana" }];
+  for (const [i, a] of avaliacoes.entries()) {
+    const ap = ativosCliente[i % ativosCliente.length];
+    if (!ap) break;
+    const { error } = await admin.from("qr_avaliacoes").insert({ organization_id: org, comodato_id: ap.id, client_id: clientId, ponto: ap.local, etiqueta_numero: ap.numero,
+      tipo_avaliador: a.tipo, nota: a.nota, comentario: a.c, sentimento: a.nota <= 6 ? "negativo" : a.nota >= 9 ? "positivo" : "neutro", alerta: a.nota <= 6,
+      chat_id: `demo-${i}`, created_at: isoSP(addDias(hoje, a.d), "15:00") });
+    if (error) throw new Falha("criar avaliações do QR", error.code);
   }
   await ins("schedules", { organization_id: org, client_id: clientId, title: demoNome(`Manutenção — ${leads.cliente.empresa}`), scheduled_date: atrasada.data, start_time: atrasada.hora,
     end_time: maisHora(atrasada.hora, 60), duracao_min: 60, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", source: "manual",
