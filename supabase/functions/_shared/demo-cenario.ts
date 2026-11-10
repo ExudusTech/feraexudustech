@@ -191,5 +191,16 @@ export const CENARIO_RESUMO = [
   "2 tarefas de faturamento: emitir Simples Remessa (teste de amanhã) e emitir NF de Comodato (aparelho aprovado no teste)",
   "1 lead com aparelho em teste",
   "1 atendimento aberto aguardando humano",
+  "Estoque de 8 aparelhos (alguns abaixo do mínimo), com a reserva da instalação de teste de amanhã e 1 aparelho já separado com etiqueta",
+  "Aparelhos demo com etiqueta numerada da faixa 900001 em diante",
   "Histórico do funil nas últimas semanas (mudanças de etapa e de proposta) e mais 2 propostas — 1 enviada e 1 rejeitada — para o “Tempo do funil”",
 ];
+
+/** Demo stock (10/11): up to 8 dispensers, the first ones being the devices reserved for tomorrow's test; some end up at or below the minimum. */
+export const ESTOQUE_DEMO = [
+  { stock: 3, min_stock: 2 }, { stock: 6, min_stock: 2 }, { stock: 10, min_stock: 4 }, { stock: 1, min_stock: 3 },
+  { stock: 0, min_stock: 2 }, { stock: 8, min_stock: 3 }, { stock: 2, min_stock: 4 }, { stock: 15, min_stock: 5 },
+];
+export function planoEstoqueDemo(ids: string[]): Array<{ product_id: string; stock: number; min_stock: number }> {
+  return [...new Set(ids)].slice(0, ESTOQUE_DEMO.length).map((product_id, i) => ({ product_id, ...ESTOQUE_DEMO[i] }));
+}
