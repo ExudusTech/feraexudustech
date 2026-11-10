@@ -1039,6 +1039,8 @@ const MATRIZ_ORIGEM = "Encaminhado à Matriz";
 const MATRIZ_ACAO = "chame transferir_para_humano com motivo MATRIZ";
 /** One Matriz alert per lead (chat) inside this window, whichever path forwards first. */
 const MATRIZ_DEDUP_MS = 24 * 60 * 60 * 1000;
+/** Symbol key: marks the server-side auto-forward; JSON callers cannot set it. */
+const AUTO_MATRIZ = Symbol("auto_matriz");
 /** Lead-facing Matriz message: never promises a Distribuidora visit and never pauses Flora. */
 function matrizMessage(cidade: unknown): string {
   const raw = typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/)[0].trim() : "";
@@ -2970,10 +2972,10 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     fields[key] = value;
   }
   // Internal flag set only by comEncaminhamentoMatriz (never read from caller input).
-  if (params.__auto === true) fields.__auto = "1";
+  if (params[AUTO_MATRIZ] === true) fields.__auto = "1";
   const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
-  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo";
+  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo, matriz_encaminhado_em";
 
   params = await currentEstablishment(supabase, params);
   const channel = resolveChannelFromChatId(fields.chat_id);
@@ -3128,7 +3130,25 @@ async function isMatrizHandoff(supabase: ReturnType<typeof getClient>, fields: R
 /** Forward a Matriz lead: lead with origin "Encaminhado à Matriz", timeline, alert to subscribers + gestores (and "matriz" users). */
 async function encaminharMatriz(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>,
   fields: Record<string, string | null>, candidate: Record<string, unknown> | null, urgencia: string): Promise<McpResponse> {
-  const current = await resolveCurrentLead(supabase, params, candidate);
+  // Same chat already forwarded inside the window (e.g. by the coverage auto-forward, often without a
+  // company yet): reuse that lead and only fill its blanks, so a later transfer never duplicates it.
+  const company = productSearchText(params.empresa ?? params.empresa_nome);
+  const candidateCompany = candidate ? productSearchText(candidate.empresa_nome ?? candidate.company) : null;
+  const forwardedAt = typeof candidate?.matriz_encaminhado_em === "string" ? new Date(candidate.matriz_encaminhado_em).getTime() : NaN;
+  const reuse = !!candidate && Date.now() - forwardedAt < MATRIZ_DEDUP_MS && !["fechado_ganho", "fechado_perdido"].includes(String(candidate.stage))
+    && (!company || !candidateCompany || normalizedEstablishment(candidateCompany) === normalizedEstablishment(company));
+  const fill: Record<string, unknown> = {};
+  let current: { lead: any; pessoa: any; created: boolean; params: Record<string, unknown> };
+  if (reuse) {
+    const product = productSearchText(params.produto_interesse);
+    if (company && !candidateCompany) { fill.empresa_nome = company; fill.company = company; }
+    if (fields.cidade && !candidate.city) fill.city = fields.cidade;
+    if (product && !candidate.category) fill.category = product;
+    if (fields.nome_contato && !candidate.contact_name) fill.contact_name = fields.nome_contato;
+    current = { lead: { ...candidate, ...fill }, pessoa: null, created: false, params };
+  } else {
+    current = await resolveCurrentLead(supabase, params, candidate);
+  }
   const { lead, pessoa } = current;
   params = current.params;
   const leadId = String(lead.id);
@@ -3137,7 +3157,7 @@ async function encaminharMatriz(supabase: ReturnType<typeof getClient>, params: 
   const nowDate = new Date();
   // Atomic claim per lead (one per chat): the first forwarding in MATRIZ_DEDUP_MS alerts; the
   // server-side auto-forward and a later transferir_para_humano never duplicate the lead or the alert.
-  const marks = { origem_especifica: MATRIZ_ORIGEM, vinculo: "MATRIZ", updated_at: nowDate.toISOString() };
+  const marks = { ...fill, origem_especifica: MATRIZ_ORIGEM, vinculo: "MATRIZ", updated_at: nowDate.toISOString() };
   let primeira: boolean | null = null;
   try {
     const cutoff = new Date(nowDate.getTime() - MATRIZ_DEDUP_MS).toISOString();
@@ -3224,7 +3244,7 @@ async function comEncaminhamentoMatriz(res: McpResponse, params: Record<string, 
       const value = text(params[key], max);
       if (value) handoff[key] = value;
     }
-    handoff.__auto = true;
+    handoff[AUTO_MATRIZ] = true;
     const forwarded = await solicitarAtendimentoHumano(handoff);
     const f = forwarded.data as Record<string, unknown> | undefined;
     if (!forwarded.success || !f?.encaminhado_matriz) return res;
