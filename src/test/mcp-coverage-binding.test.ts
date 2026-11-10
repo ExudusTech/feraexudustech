@@ -70,7 +70,7 @@ describe("coverage bindings", () => {
     const result = await harness().route("verificar_cobertura_regiao", params);
     expect(result.data).toMatchObject({ coberto: false, vinculo: "MATRIZ" });
     expect(result.data.mensagem_para_lead).toContain("Matriz");
-    expect(result.next_action_hint).toContain("solicitar_atendimento_humano com motivo contendo MATRIZ");
+    expect(result.next_action_hint).toContain("transferir_para_humano com motivo MATRIZ");
   });
   it.each([{ cidade: "São Paulo", estado: "SP" }, { cidade: "Vitória", estado: "Espírito Santo" }])("routes known outside state for %j", async params => {
     const result = await harness().route("verificar_cobertura_regiao", params);
