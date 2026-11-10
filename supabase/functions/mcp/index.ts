@@ -1895,6 +1895,14 @@ const PRODUCT_GENERIC_WORDS = new Set(["produto", "produtos", "para", "de", "da"
 // Generic need/segment phrasing ("produtos para hotel", "limpeza de cozinha", "coisas para banheiro") never counts as a named product.
 const PRODUCT_GENERIC_TERM = /^(produtos?|coisas?|itens?|item|algo|opcoes|algum|alguma|material|materiais)\b|^limpeza (de|da|do|para)\b|\bpara (o |a |os |as )?(hotel|hoteis|hotelaria|cozinhas?|banheiros?|restaurantes?|lavanderias?|hospita\w*|clinicas?|escritorios?|pisos?|limpeza)\b/;
 const PRODUCT_SEARCH_FIELDS = ["name", "brand", "category", "fornecedor", "linha_produto", "description"] as const;
+// Smell words ("cheiro", "perfume", "cheiroso", "odor", "fragrância") mean the aromatização/neutralização line (Ekkoa).
+const ODOR_WORD = /^(cheir\w*|perfum\w*|odor\w*|fragranc\w*|aroma\w*|odoriz\w*)$/;
+const ODOR_CATEGORY = /aromat|odor|neutralizador|neutralizacao|difusor|fragranc/;
+// Context words that keep a smell request generic ("cheiro para ambiente", "tirar mau cheiro do banheiro").
+const ODOR_CONTEXT_WORDS = new Set(["ambiente", "ambientes", "sala", "salas", "banheiro", "banheiros", "recepcao", "loja", "lojas",
+  "escritorio", "quarto", "quartos", "casa", "local", "espaco", "bom", "boa", "agradavel", "gostoso", "mau", "ruim", "forte",
+  "tirar", "eliminar", "acabar", "neutralizar", "aromatizar", "deixar", "no", "na", "nos", "nas", "pro", "pra", "meu", "minha"]);
+const isOdorText = (fold: string) => fold.split(" ").some((w) => ODOR_WORD.test(w)) || /aromatiza|neutraliza\w* de odor/.test(fold);
 
 function foldProductText(value: unknown): string {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -1981,7 +1989,9 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     .limit(3000);
   const products = ((rows ?? []) as Array<Record<string, unknown>>).filter((p) => p.disponibilidade !== "descontinuado" && p.is_active !== false);
   const categoryFold = foldProductText(categoria ?? "");
-  const matchesCategory = (p: Record<string, unknown>) => Boolean(categoryFold) && foldProductText(p.category).includes(categoryFold);
+  const odorCategory = Boolean(categoryFold) && isOdorText(categoryFold);
+  const matchesCategory = (p: Record<string, unknown>) => Boolean(categoryFold) && (foldProductText(p.category).includes(categoryFold)
+    || (odorCategory && ODOR_CATEGORY.test(foldProductText(p.category))));
   // Category is a ranking hint only: never remove a term/brand/segment match.
   const rankByCategory = (list: Array<Record<string, unknown>>) => [...list].sort((a, b) => Number(matchesCategory(b)) - Number(matchesCategory(a)));
   const termFold = foldProductText(termo ?? "");
@@ -2026,6 +2036,19 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       return sigWords.every((w) => hasWord(full, w)) && sigWords.some((w) => hasWord(name, w));
     });
     if (byName.length) return respondFound("total", rankByCategory(byName).slice(0, 5), true);
+  }
+  // 2b. Smell synonyms → aromatização/neutralização (Ekkoa first), unless another word names a product ("sabonete perfumado").
+  const odorWords = sigWords.filter((w) => ODOR_WORD.test(w));
+  if (odorWords.length) {
+    const others = sigWords.filter((w) => !ODOR_WORD.test(w) && !ODOR_CONTEXT_WORDS.has(w));
+    const namesOther = others.some((w) => products.some((p) => hasWord(foldProductText(p.name), w)));
+    const odorProducts = products.filter((p) => ODOR_CATEGORY.test(foldProductText(p.category)));
+    if (!namesOther && odorProducts.length) {
+      const ekkoaFirst = [...odorProducts].sort((a, b) => Number(foldProductText(b.brand) === "ekkoa") - Number(foldProductText(a.brand) === "ekkoa"));
+      const res = await respondFound("segmento", pickVaried(ekkoaFirst, 5), false);
+      (res.data as Record<string, unknown>).linha_sugerida = "Aromatização e neutralização de odores (Ekkoa)";
+      return res;
+    }
   }
   // 3. Description/category/segment matches are never "total" and never send images.
   let correspondencia: "parcial" | "nenhuma" = "parcial";
