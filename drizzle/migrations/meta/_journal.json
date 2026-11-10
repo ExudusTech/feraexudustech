@@ -351,6 +351,13 @@
       "when": 1794315141529,
       "tag": "0049_historico_funil_propostas",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794315187468,
+      "tag": "0050_demo_contagem_historico_funil",
+      "breakpoints": true
     }
   ]
 }
