@@ -15,7 +15,7 @@ export default function SepararEquipamentos() {
   const { data = [] } = useQuery({
     queryKey: ["ocorrencias", "inventario", user?.organization_id], enabled: !!user?.organization_id,
     queryFn: async () => {
-      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, aprovacao_status, clients(name), comodatos(localizacao_interna)")
+      const { data } = await (supabase as any).from("maintenance_schedule").select("id, item_descricao, quantidade, urgente, status, aprovacao_status, clients(name), comodatos!maintenance_schedule_comodato_id_fkey(localizacao_interna)")
         .eq("organization_id", user!.organization_id).eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]).order("created_at");
       return (data ?? []) as any[];
     },
