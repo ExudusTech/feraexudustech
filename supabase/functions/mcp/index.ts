@@ -2972,7 +2972,7 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     fields[key] = value;
   }
   // Internal flag set only by comEncaminhamentoMatriz (never read from caller input).
-  if (params[AUTO_MATRIZ] === true) fields.__auto = "1";
+  if ((params as Record<PropertyKey, unknown>)[AUTO_MATRIZ] === true) fields.__auto = "1";
   const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
   const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo, matriz_encaminhado_em";
@@ -3237,7 +3237,7 @@ async function comEncaminhamentoMatriz(res: McpResponse, params: Record<string, 
     const nomeLocal = text(params.nome, 200);
     const empresa = text(params.empresa, 500) ?? text(params.empresa_nome, 500)
       ?? (nomeLocal && !genericBusinessType(nomeLocal, cidade ?? null) ? nomeLocal : undefined);
-    const handoff: Record<string, unknown> = { chat_id: params.chat_id.trim(), motivo: "MATRIZ", urgencia: "media",
+    const handoff: Record<PropertyKey, unknown> = { chat_id: params.chat_id.trim(), motivo: "MATRIZ", urgencia: "media",
       ...(cidade ? { cidade } : {}), ...(empresa ? { empresa } : {}) };
     for (const [key, max] of [["nome_contato", 500], ["telefone", 30], ["produto_interesse", 500], ["resumo", 1000],
       ["bairro", 120], ["cep", 20], ["interaction_id", 200], ["email", 200]] as const) {
@@ -3245,7 +3245,7 @@ async function comEncaminhamentoMatriz(res: McpResponse, params: Record<string, 
       if (value) handoff[key] = value;
     }
     handoff[AUTO_MATRIZ] = true;
-    const forwarded = await solicitarAtendimentoHumano(handoff);
+    const forwarded = await solicitarAtendimentoHumano(handoff as Record<string, unknown>);
     const f = forwarded.data as Record<string, unknown> | undefined;
     if (!forwarded.success || !f?.encaminhado_matriz) return res;
     const acao = "Encaminhamento à Matriz já registrado no Fera (lead e aviso à gestão): envie mensagem_para_lead e continue a conversa sem pausar; não precisa chamar transferir_para_humano";
