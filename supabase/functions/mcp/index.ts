@@ -4771,7 +4771,7 @@ function boletimSvg(b: BoletimDados): string {
   else out.push(`<text x="${X}" y="118" font-size="58" font-weight="800"><tspan fill="${BRAND.petroleo}">Nits</tspan><tspan fill="${BRAND.verde}">Clean</tspan></text>`);
   txt(R, 88, "BOLETIM", 24, BRAND.agua, 800, "end");
   txt(R, 124, caber(b.titulo, 520, 26), 26, BRAND.cinza, 500, "end");
-  txt(X, 218, caber(b.periodo, R - X, 46), 46, BRAND.petroleo, 800);
+  txt(X, 218, caber(b.periodo.charAt(0).toUpperCase() + b.periodo.slice(1), R - X, 46), 46, BRAND.petroleo, 800);
   txt(X, 260, caber(`Comparado com ${b.comparacao}`, R - X, 24), 24, BRAND.cinza);
   if (b.recorte) txt(X, 294, caber(`Recorte: ${b.recorte}`, R - X, 24), 24, BRAND.marinho, 800);
   const y0 = b.recorte ? 322 : 300, cw = 465, ch = 200, gap = 30;
@@ -4785,7 +4785,7 @@ function boletimSvg(b: BoletimDados): string {
     const bom = c.inverter ? desce : sobe, ruim = c.inverter ? sobe : desce;
     const fill = bom ? "#E6F1D6" : ruim ? "#F7DCD9" : "#E6ECEE", cor = bom ? "#4F7A16" : ruim ? "#A3332A" : BRAND.cinza;
     const rot = sobe || desce ? `${c.delta.slice(1)} vs anterior` : "igual ao anterior";
-    const larg = 52 + rot.length * 13;
+    const larg = 50 + rot.length * 12;
     out.push(`<rect x="${x + 30}" y="${y + 154}" width="${larg}" height="34" rx="17" fill="${fill}"/>`);
     const ax = x + 48, ay = y + 171;
     if (sobe) out.push(`<polygon points="${ax - 9},${ay + 7} ${ax + 9},${ay + 7} ${ax},${ay - 8}" fill="${cor}"/>`);
