@@ -3457,7 +3457,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "verificar_cobertura_regiao",
-    description: "Define vinculo DISTRIBUIDORA (área ativa), MATRIZ (RJ sem área) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
+    description: "Define vinculo DISTRIBUIDORA (área ativa), MATRIZ (RJ sem área) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. MATRIZ: chame transferir_para_humano com motivo MATRIZ. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
     parameters: {
       type: "object",
       properties: {
@@ -3465,6 +3465,7 @@ const TOOLS_MANIFEST_CLIENTE = [
         cep:    { type: "string" },
         estado: { type: "string", description: "UF ou nome do estado; RJ descoberto encaminha à MATRIZ" },
         regiao: { type: "string", description: "Nome exato de uma área ativa; prioridade sobre CEP e cidade" },
+        chat_id: { type: "string", description: "chat_id do GPT Maker; liga o resultado MATRIZ à transferência seguinte" },
       },
     },
   },
@@ -3725,7 +3726,31 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "solicitar_atendimento_humano",
-    description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta).",
+    description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta). Com motivo MATRIZ (ou cidade da Matriz) não pausa a Flora nem abre atendimento: registra o lead como Encaminhado à Matriz, avisa a gestão e devolve mensagem_para_lead.",
+    parameters: {
+      type: "object",
+      properties: {
+        resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
+        proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
+        telefone: { type: "string" }, email: { type: "string" }, cep: { type: "string" },
+        endereco: { type: "string" }, bairro: { type: "string" },
+        maps_url: { type: "string" }, place_id: { type: "string" },
+        lead_id:           { type: "string", description: "ID do lead, se já conhecido" },
+        interaction_id:    { type: "string" },
+        chat_id:           { type: "string", description: "chat_id do GPT Maker; identifica pessoa e canal" },
+        nome_contato:      { type: "string", description: "Nome de quem está conversando" },
+        empresa:           { type: "string", description: "Empresa/estabelecimento do cliente" },
+        cidade:            { type: "string" },
+        produto_interesse: { type: "string" },
+        resumo:            { type: "string", description: "O que o cliente pediu, em uma ou duas frases" },
+        motivo:            { type: "string", description: "Motivo da transferência; contenha MATRIZ para leads da Matriz" },
+        urgencia:          { type: "string", enum: ["baixa", "media", "alta"] },
+      },
+    },
+  },
+  {
+    name: "transferir_para_humano",
+    description: "Mesmo que solicitar_atendimento_humano. Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta). Com motivo MATRIZ (ou cidade da Matriz) não pausa a Flora nem abre atendimento: registra o lead como Encaminhado à Matriz, avisa a gestão e devolve mensagem_para_lead.",
     parameters: {
       type: "object",
       properties: {
