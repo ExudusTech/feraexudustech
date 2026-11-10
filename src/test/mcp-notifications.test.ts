@@ -7,7 +7,7 @@ vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T14
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const allEvents = ["agendamento_comercial", "agendamento_tecnico", "transferencia", "lead_matriz"];
-function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[] } = {}) {
+function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[]; roles?: any[]; coverageLog?: any[] } = {}) {
   const recipients = options.recipients ?? [
     { id: "all", nome: "PH", whatsapp: "5521995367752", organization_id: org, ativo: true, eventos: allEvents },
     { id: "handoff", nome: "Comercial", whatsapp: "5521999999999", organization_id: org, ativo: true, eventos: ["transferencia"] },
@@ -24,7 +24,9 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
       if (table === "notification_recipients") data = recipients.filter(r => filters.every(([op, key, val]) => op === "contains" ? val.every((v: string) => r[key].includes(v)) : r[key] === val));
       if (table === "holidays") data = [];
       if (table === "profiles") data = options.profiles ?? [];
-      if (table === "ekkoa_coverage_areas") data = [{ city: "Cabo Frio", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
+      if (table === "user_roles") data = options.roles ?? [];
+      if (table === "mcp_request_log") data = options.coverageLog ?? [];
+      if (table === "ekkoa_coverage_areas") data = [{ city: "Cabo Frio", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }, { city: "Armação dos Búzios", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
       if (table === "notification_logs" && operation === "read") data = options.recent ? [{ id: "old" }] : [];
       if (table === "pessoas") data = operation === "read" ? null : { id: "pessoa", nome: value?.nome ?? "Contato", ...value };
       if (table === "leads" && "lead" in options) data = operation === "read" ? options.lead : { id: "new-lead", ...value };
@@ -227,5 +229,68 @@ describe("Lote 8 — human service hours in solicitar_atendimento_humano", () =>
     const h = harness();
     expect((await h.route("agendar_visita_tecnica", visit)).success).toBe(true); await h.flush();
     expect(h.fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe("Matriz handoff (Niterói case)", () => {
+  const wa = "3DF9D839DDCF463A3A350ADF91C40B89-5521987327216";
+  const MSG = "Niterói é atendida pela nossa Matriz. Vou passar seu contato para o responsável de lá, que vai te procurar em breve. Se preferir adiantar, o WhatsApp da Matriz é (21) 99461-1073.";
+  const gestor = { profiles: [{ user_id: "g1", name: "Arilson", phone: "5522999990000", is_active: true }, { user_id: "v1", name: "Vendedor", phone: "5522988880000", is_active: true }],
+    roles: [{ user_id: "g1", role: "gestor" }, { user_id: "v1", role: "vendedor" }] };
+  const route = async (h: any, method: string, extra: any = {}) => {
+    vi.setSystemTime(new Date("2026-11-10T19:47:00Z"));
+    const r = await h.route(method, { chat_id: wa, nome_contato: "Ana", empresa: "Clínica Icaraí", cidade: "Niterói", produto_interesse: "aromatização", resumo: "Quer aromatizar a recepção", ...extra });
+    await h.flush(); return r;
+  };
+  it.each(["solicitar_atendimento_humano", "transferir_para_humano"])("%s with motivo MATRIZ forwards without pausing or opening an atendimento", async method => {
+    const h = harness({ lead: null, ...gestor });
+    const r = await route(h, method, { motivo: "MATRIZ" });
+    expect(r.success).toBe(true);
+    expect(r.data).toMatchObject({ encaminhado_matriz: true, pausar_conversa: false, mensagem_para_lead: MSG });
+    expect(h.writes.some((w: any) => w.table === "atendimentos")).toBe(false);
+    expect(h.writes.some((w: any) => w.table === "leads" && w.value?.precisa_humano === true)).toBe(false);
+    expect(h.writes.find((w: any) => w.table === "leads" && w.operation === "update").value).toMatchObject({ origem_especifica: "Encaminhado à Matriz", vinculo: "MATRIZ" });
+    const insert = h.writes.find((w: any) => w.table === "leads" && w.operation === "insert").value;
+    expect(insert).toMatchObject({ city: "Niterói", empresa_nome: "Clínica Icaraí" });
+    const tl = h.writes.find((w: any) => w.table === "lead_timeline").value.resumo;
+    expect(tl).toContain("Encaminhado à Matriz"); expect(tl).toContain("Quer aromatizar a recepção");
+  });
+  it("alerts subscribers and the gestor (not other roles) with the lead link", async () => {
+    const h = harness({ lead: null, ...gestor });
+    await route(h, "transferir_para_humano", { motivo: "MATRIZ" });
+    const logs = h.writes.filter((w: any) => w.table === "notification_logs");
+    expect(logs.map((w: any) => w.value.destination).sort()).toEqual(["5521995367752", "5522999990000"]);
+    expect(logs.every((w: any) => w.value.event_type === "lead_matriz" && w.value.status === "SENT")).toBe(true);
+    expect(logs[0].value.payload.message).toContain("Lead encaminhado à Matriz");
+    expect(logs[0].value.payload.message).toContain("/leads?lead=new-lead");
+  });
+  it("users with a matriz role are alerted too, without duplicating a subscribed number", async () => {
+    const h = harness({ lead: null, profiles: [{ user_id: "m1", name: "Matriz", phone: "5521994611073", is_active: true }, { user_id: "dup", name: "PH", phone: "5521995367752", is_active: true }],
+      roles: [{ user_id: "m1", role: "matriz" }, { user_id: "dup", role: "gestor" }] });
+    await route(h, "transferir_para_humano", { motivo: "lead MATRIZ" });
+    const phones = h.writes.filter((w: any) => w.table === "notification_logs").map((w: any) => w.value.destination).sort();
+    expect(phones).toEqual(["5521994611073", "5521995367752"]);
+  });
+  it("a Matriz city forwards even when the motivo omits MATRIZ", async () => {
+    const h = harness({ lead: null, ...gestor });
+    const r = await route(h, "solicitar_atendimento_humano", { motivo: "Quer falar com alguém" });
+    expect(r.data.encaminhado_matriz).toBe(true); expect(h.writes.some((w: any) => w.table === "atendimentos")).toBe(false);
+  });
+  it("the chat's last coverage check returning MATRIZ forwards the handoff", async () => {
+    const h = harness({ lead: null, ...gestor, coverageLog: [{ response: { result: { data: { vinculo: "MATRIZ" } } } }] });
+    const r = await route(h, "solicitar_atendimento_humano", { cidade: undefined, motivo: "Quer falar com alguém" });
+    expect(r.data.encaminhado_matriz).toBe(true);
+  });
+  it("Distribuidora handoffs still open an atendimento and mark precisa_humano", async () => {
+    const h = harness({ lead: null, ...gestor });
+    const r = await route(h, "solicitar_atendimento_humano", { cidade: "Cabo Frio", motivo: "Pedido de preço" });
+    expect(r.data.encaminhado_matriz).toBeUndefined();
+    expect(h.writes.some((w: any) => w.table === "atendimentos" && w.operation === "insert")).toBe(true);
+    expect(h.writes.filter((w: any) => w.table === "notification_logs").map((w: any) => w.value.destination)).toEqual(["5521995367752", "5521999999999"]);
+  });
+  it("verificar_cobertura_regiao MATRIZ tells Flora to call transferir_para_humano and returns the reference message", async () => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Niterói", estado: "RJ" });
+    expect(r.data).toMatchObject({ vinculo: "MATRIZ", proxima_acao: "chame transferir_para_humano com motivo MATRIZ", mensagem_para_lead: MSG });
+    expect(r.next_action_hint).toContain("chame transferir_para_humano com motivo MATRIZ");
   });
 });

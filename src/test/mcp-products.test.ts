@@ -18,6 +18,10 @@ const catalog = [
   { id: "sm", name: "Dispenser Smart Autocorte", brand: "Nits", category: "Dispensers", fornecedor: null, unit: "UN", description: "Dispenser de papel", image_url: "org/NC-NIT-001.jpg", pode_enviar_foto_cliente: true },
   { id: "gh", name: "GUARD GRAND HOTEL CQT 90X50FLS", brand: "Guard", category: "Papel", fornecedor: null, unit: "CX", description: "Papel", image_url: "org/NC-GH-1.jpg", pode_enviar_foto_cliente: true },
   { id: "pi", name: "Pano Microfibra Interno", brand: "Nits", category: "Panos", fornecedor: null, unit: "UN", description: "Pano", image_url: "org/NC-PAN-001.jpg", pode_enviar_foto_cliente: false },
+  { id: "ek1", name: "AGUA DE CHEIRO PARIS 500ML", brand: "EKKOA", category: "Aromatizante", fornecedor: "EKKOA", unit: "UN", description: "Água perfumada" },
+  { id: "ek2", name: "REFIL BALI OCEAN 80ML", brand: "EKKOA", category: "Neutralizadores", fornecedor: "EKKOA", unit: "UN", description: "Neutraliza odores" },
+  { id: "bs", name: "ACRIL PROX B", brand: "DIVERSEY", category: "Base seladora", fornecedor: "DIVERSEY", unit: "UN", description: "Base seladora. Indicado para: Escritórios e salas, ambientes internos" },
+  { id: "cx", name: "CLAX ANTI CHLOR", brand: "DIVERSEY", category: "Neutralizantes", fornecedor: "DIVERSEY", unit: "UN", description: "Neutralizante de cloro" },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -194,5 +198,19 @@ describe("consultar_produto: total só pelo nome", () => {
     expect(r.data.produtos[0].image_url).toBeNull();
     expect(r.data.imagem_enviada).toBe(false);
     expect(h.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("consultar_produto — smell synonyms go to aromatização/neutralização (Ekkoa)", () => {
+  it.each(["cheiro para ambiente", "perfume para ambiente", "algo cheiroso pra recepção", "tirar odor do banheiro", "fragrância para loja", "cheiro"])("%s", async termo => {
+    const r = await harness().route("consultar_produto", { termo, categoria: "aromatização e neutralização de odores" });
+    expect(r.data.encontrado).toBe(true);
+    const ids = r.data.produtos.map((p: any) => p.id);
+    expect(ids).not.toContain("bs"); expect(ids).not.toContain("cx");
+    expect(ids.slice(0, 2).sort()).toEqual(["ek1", "ek2"]);
+  });
+  it("a named product with a smell word keeps its own match", async () => {
+    const r = await harness().route("consultar_produto", { termo: "sabonete perfumado" });
+    expect(r.data.produtos.map((p: any) => p.id)).not.toContain("ek1");
   });
 });
