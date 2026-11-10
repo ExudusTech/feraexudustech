@@ -4877,8 +4877,14 @@ async function logoDataUri(supabase: ReturnType<typeof getClient>): Promise<stri
 
 // Identical copy of supabase/functions/_shared/funil-tempos.ts (test-enforced): the mcp test harness cannot load imports.
 // BEGIN funil-tempos
+/** Funnel timing (stage times, cycles, "who decides faster") is a management topic. */
+const FT_PAPEIS_GESTAO = ["gestor", "super_admin", "admin"];
+const FT_RECUSA_GESTAO = "Essa informação é da gestão; peça ao Arilson.";
+function podeVerTempoFunil(papeis: readonly (string | null | undefined)[] | null | undefined): boolean {
+  return (papeis ?? []).some((r) => !!r && FT_PAPEIS_GESTAO.includes(r));
+}
 interface FtEtapa { id: string; nome: string; ordem: number; tipo?: string | null; chave?: string | null }
-interface FtMudanca { lead_id: string; etapa_anterior_id?: string | null; etapa_nova_id: string | null; mudou_em: string; estimado?: boolean | null }
+interface FtMudanca { lead_id: string; etapa_anterior_id?: string | null; etapa_nova_id: string | null; mudou_em: string }
 interface FtLead {
   id: string; created_at?: string | null; segmento?: string | null; porte?: string | null; cidade?: string | null; regiao?: string | null;
   canal?: string | null; vendedor?: string | null; teste_instalado_em?: string | null; teste_aprovado_em?: string | null;
@@ -4888,7 +4894,7 @@ interface FtProposta {
   enviada_em?: string | null; aceita_em?: string | null; rejeitada_em?: string | null; ativado_em?: string | null;
 }
 interface FtEstat { n: number; media: number | null; mediana: number | null }
-interface FtEtapaTempo extends FtEstat { etapa_id: string; nome: string; ordem: number; parados: number; estimados: number }
+interface FtEtapaTempo extends FtEstat { etapa_id: string; nome: string; ordem: number; parados: number }
 interface FtCiclos { entrada_aceita: FtEstat; enviada_aceita: FtEstat; aceita_ativacao: FtEstat; teste_aprovado: FtEstat }
 interface FtGrupo extends FtEstat { grupo: string }
 interface FtJanela { inicio?: string | null; fim?: string | null }
@@ -4949,7 +4955,7 @@ function ftOrdenarHistorico(historico: FtMudanca[]): Map<string, FtMudanca[]> {
  */
 function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela?: FtJanela): FtEtapaTempo[] {
   const abertas = etapas.filter((e) => (e.tipo ?? "aberta") === "aberta");
-  const dur = new Map<string, number[]>(); const parados = new Map<string, number>(); const est = new Map<string, number>();
+  const dur = new Map<string, number[]>(); const parados = new Map<string, number>();
   for (const lista of ftOrdenarHistorico(historico).values()) {
     lista.forEach((h, i) => {
       if (!h.etapa_nova_id) return;
@@ -4958,11 +4964,10 @@ function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela?: FtJa
       if (!ftNaJanela(prox.mudou_em, janela)) return;
       const d = diasEntre(h.mudou_em, prox.mudou_em); if (d == null) return;
       (dur.get(h.etapa_nova_id) ?? dur.set(h.etapa_nova_id, []).get(h.etapa_nova_id)!).push(d);
-      if (h.estimado || prox.estimado) est.set(h.etapa_nova_id, (est.get(h.etapa_nova_id) ?? 0) + 1);
     });
   }
   return abertas.sort((a, b) => a.ordem - b.ordem).map((e) => ({
-    etapa_id: e.id, nome: e.nome, ordem: e.ordem, ...estatDias(dur.get(e.id) ?? []), parados: parados.get(e.id) ?? 0, estimados: est.get(e.id) ?? 0,
+    etapa_id: e.id, nome: e.nome, ordem: e.ordem, ...estatDias(dur.get(e.id) ?? []), parados: parados.get(e.id) ?? 0,
   }));
 }
 
@@ -5062,7 +5067,7 @@ async function tempoFunil(u: TeamUser, supabase: ReturnType<typeof getClient>, t
     supabase.from("ekkoa_coverage_areas").select("city, name").eq("organization_id", org).eq("is_active", true).limit(200),
     supabase.from("lead_stages").select("id, nome, ordem, tipo, chave").eq("organization_id", org),
     supabase.from("leads").select("id, created_at, category, city, canal_origem, created_by_flora, assigned_to, levantamento, teste_instalado_em, teste_aprovado_em").eq("organization_id", org).limit(5000),
-    supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em, estimado").eq("organization_id", org).order("mudou_em").limit(20000),
+    supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em").eq("organization_id", org).order("mudou_em").limit(20000),
     supabase.from("proposals").select("id, lead_id, client_id, status, created_at, enviada_em, aceita_em, rejeitada_em, ativado_em, assigned_to, created_by").eq("organization_id", org).limit(5000),
   ]);
   for (const [nome, r] of [["etapas", st], ["leads", ls], ["historico", hs], ["propostas", ps]] as const) if ((r as any)?.error) dbFail(`tempo funil ${nome}`, (r as any).error);
@@ -5097,7 +5102,6 @@ async function tempoFunil(u: TeamUser, supabase: ReturnType<typeof getClient>, t
   for (const [re, r] of RECORTES_FUNIL) if (re.test(t)) { recorte = r; break; }
   if (recorte === "vendedor" && visao === "campo") recorte = "segmento";
   const grupos = ciclosPorRecorte(leads, historico, propostas, recorte, jan), rank = rankingDecisao(grupos);
-  const estimados = etapasT.reduce((s, e) => s + e.estimados, 0);
 
   const ciclo = (rot: string, e: FtEstat, ant: FtEstat) => `${rot} ${e.n ? `${fmtDias(e.mediana)} (mediana; média ${fmtDias(e.media)}; ${e.n})${ant.n ? ` ${variacaoDias(e.mediana, ant.mediana)}` : ""}` : "sem dados"}`;
   const L: Record<string, string> = {
@@ -5122,7 +5126,7 @@ async function tempoFunil(u: TeamUser, supabase: ReturnType<typeof getClient>, t
   }
   const recorteTxt = [rec.consultor && visao !== "campo" ? primeiroNome(rec.consultor) : null, rec.cidade].filter(Boolean).join(", ") || null;
   const cab = `⏱️ Tempo do funil · ${periodo.rotulo} · vs ${periodo.anterior.rotulo}${recorteTxt ? ` · ${recorteTxt}` : ""}`;
-  const avisos = [...rec.avisos, ...(estimados ? [`${estimados} intervalos reconstruídos de dados antigos (estimados).`] : [])];
+  const avisos = rec.avisos;
   const msg = [cab, ...avisos.map((a) => `⚠️ ${a}`), ...chaves.map((k) => L[k]), `🔗 Relatórios ${feraLink("/relatorios")} · Leads ${feraLink("/leads")}`].join("\n");
 
   let imagem_enviada = false, imagem: "boletim" | "grafico" | null = null;
@@ -5216,7 +5220,11 @@ async function indicadores(params: Record<string, unknown>): Promise<McpResponse
     const hoje = spToday(), amanha = addDiasIso(hoje, 1);
     const visao = visaoIndicadores(u.papeis);
     const org = NITSCLEAN_ORG_ID;
-    if (ehTempoFunil(texto)) return tempoFunil(u, supabase, texto, params, visao, hoje);
+    if (ehTempoFunil(texto)) {
+      // Funnel timing is management-only: field and billing roles get a refusal with no numbers.
+      if (!podeVerTempoFunil(u.papeis)) return ok({ visao, modo: "tempo_funil", recusado: true, imagem_enviada: false, mensagem_para_equipe: FT_RECUSA_GESTAO });
+      return tempoFunil(u, supabase, texto, params, visao, hoje);
+    }
     if (visao === "campo" && ehAgendaCampo(texto) && !ehPanorama(texto)) return agendaCampo(u, supabase, hoje, amanha);
     const periodo = resolverPeriodo(texto, hoje);
     const [{ data: perfisRows }, { data: areasRows }] = await Promise.all([
