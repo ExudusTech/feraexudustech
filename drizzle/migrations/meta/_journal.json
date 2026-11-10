@@ -330,6 +330,13 @@
       "when": 1794005892691,
       "tag": "0046_product_images_gestor_write",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794270416167,
+      "tag": "0047_dados_demonstracao",
+      "breakpoints": true
     }
   ]
 }
