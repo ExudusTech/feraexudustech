@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useProducts, type Product } from "@/hooks/use-products";
 import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useOrganizationUsers } from "@/hooks/use-users";
 import { toast } from "@/hooks/use-toast";
 import { refisCompativeis } from "@/lib/base-instalada";
 import { ajusteErro, contagemBase, deltaAjuste, disponivel, emAlerta, reservasEstoque, STATUS_VISITA_RESERVA, TIPO_AJUSTE_LABEL, TIPO_MOV_LABEL, type TipoAjuste } from "@/lib/estoque";
@@ -119,9 +120,11 @@ function AjusteDialog({ produto, onClose }: { produto: Product | null; onClose: 
   const [tipo, setTipo] = useState<TipoAjuste>("entrada");
   const [qtd, setQtd] = useState(""); const [motivo, setMotivo] = useState(""); const [minimo, setMinimo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { data: users = [] } = useOrganizationUsers();
+  const nomeUsuario = (id?: string | null) => (users as any[]).find((u) => u.user_id === id)?.name ?? null;
   const { data: hist = [], refetch } = useQuery({
     queryKey: ["stock-movements", produto?.id], enabled: !!produto,
-    queryFn: async () => ((await (supabase as any).from("stock_movements").select("id, created_at, tipo, quantidade, saldo_antes, saldo_depois, motivo, profiles:autor_id(name)").eq("product_id", produto!.id)
+    queryFn: async () => ((await (supabase as any).from("stock_movements").select("id, created_at, tipo, quantidade, saldo_antes, saldo_depois, motivo, autor_id").eq("product_id", produto!.id)
       .order("created_at", { ascending: false }).limit(20)).data ?? []) as any[],
   });
   const n = qtd === "" ? null : Number(qtd);
@@ -163,7 +166,7 @@ function AjusteDialog({ produto, onClose }: { produto: Product | null; onClose: 
             {!hist.length && <p className="text-xs text-muted-foreground">Sem movimentações ainda.</p>}
             {hist.map((h) => (
               <div key={h.id} className="text-xs border-b last:border-0 pb-1">
-                <span className="text-muted-foreground">{new Date(h.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}{h.profiles?.name ? ` · ${h.profiles.name}` : ""}</span>
+                <span className="text-muted-foreground">{new Date(h.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}{nomeUsuario(h.autor_id) ? ` · ${nomeUsuario(h.autor_id)}` : ""}</span>
                 <p>{TIPO_MOV_LABEL[h.tipo] ?? h.tipo}: {h.quantidade > 0 ? "+" : ""}{h.quantidade} ({h.saldo_antes} → {h.saldo_depois}){h.motivo ? ` — ${h.motivo}` : ""}</p>
               </div>))}
           </div>
