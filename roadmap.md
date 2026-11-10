@@ -99,3 +99,9 @@
 - [x] Etiqueta QR: número no comodato (único/org), leitor, /q/<numero>, PDF de etiquetas, busca/número na Base instalada, separação, ações na ocorrência, demo 900001+, testes, funções publicadas
 - [ ] Conferir logado: aba Estoque, tela do aparelho, escanear na visita e recriar o cenário demo (blocked: sem sessão do PH no ambiente)
 - [ ] Escanear uma etiqueta impressa com a câmera do celular (blocked: aparelho físico)
+## Adendo etiqueta/QR (10/11)
+- [ ] A) Lotes: "Liberar novo lote" (próximos N), status liberado/impresso, usados × disponíveis, só números liberados são aceitos
+- [ ] B) Campanhas do QR (Configurações): variáveis, vigência, dias/horários, segmentos, prioridade, padrão; mensagem pública + "ref XXXX" sem número/dados internos
+- [ ] C) MCP contexto_qr(chat_id, ref): EQUIPE/CLIENTE/PUBLICO, ponto, produto, campanha, complementos do kit, mensagem_para_lead
+- [ ] D) MCP registrar_avaliacao_qr(chat_id, ref, nota, comentario?): sentimento, alerta nota ≤ 6, sugestão de humano; NPS por cliente/ponto/período (gestor); demo com avaliações
+- [ ] Testes, publicar funções e app, resumo com parâmetros exatos
