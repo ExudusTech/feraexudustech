@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { QrCode, MapPin, Wrench, History, Package } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
@@ -72,7 +72,6 @@ export default function Aparelho() {
             <p className="flex gap-1"><Package className="h-4 w-4 mt-0.5 shrink-0" /><span><span className="text-muted-foreground block text-xs">Aparelho</span>{c.produto?.name ?? "—"}{c.refil?.name && ` + ${c.refil.name}`}</span></p>
             <p className="flex gap-1"><Wrench className="h-4 w-4 mt-0.5 shrink-0" /><span><span className="text-muted-foreground block text-xs">Manutenção</span>Última {dataBR(c.ultima_manutencao)} · Próxima {dataBR(c.proxima_manutencao)}</span></p>
             <p><span className="text-muted-foreground block text-xs">Ativado em</span>{dataBR(c.ativado_em ?? c.data_inicio)}</p>
-            {c.client_id && <Button variant="link" className="justify-start px-0" asChild><Link to={`/clientes?cliente=${c.client_id}`}>Abrir cliente</Link></Button>}
           </CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-base">Ações</CardTitle></CardHeader><CardContent className="space-y-2">
             {aberta ? <>

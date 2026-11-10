@@ -32,6 +32,8 @@ import Equipamentos from "@/pages/Equipamentos";
 import Comodatos from "@/pages/Comodatos";
 import Inventario from "@/pages/Inventario";
 import Manutencoes from "@/pages/Manutencoes";
+import Aparelho from "@/pages/Aparelho";
+import EtiquetaQr from "@/pages/EtiquetaQr";
 
 const queryClient = new QueryClient();
 
@@ -46,6 +48,8 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/q/:numero" element={<EtiquetaQr />} />
+            <Route path="/aparelho/:numero" element={<ProtectedRoute><Aparelho /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/ekkoa" element={<LegacyEkkoaRedirect />} />
