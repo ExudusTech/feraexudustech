@@ -17,6 +17,7 @@ import { itensDevolucaoRemessa, precisaResultadoTeste, RESULTADO_TESTE_LABEL, RE
 async function fecharTeste(admin: any, s: any, resultado: string, emTeste: any[], timeline: (t: string, r: string, p?: string | null) => Promise<void>) {
   await timeline("visita", `Resultado do teste: ${RESULTADO_TESTE_LABEL[resultado as keyof typeof RESULTADO_TESTE_LABEL]}`);
   if (resultado === "aprovado") {
+    if (s.lead_id) await admin.from("leads").update({ teste_aprovado_em: new Date().toISOString() }).eq("id", s.lead_id).eq("organization_id", s.organization_id).is("teste_aprovado_em", null);
     const { data: p } = await admin.from("proposals").select("id").eq("organization_id", s.organization_id).eq("lead_id", s.lead_id)
       .not("status", "in", "(recusada,expirada)").order("created_at", { ascending: false }).limit(1).maybeSingle();
     return { resultado, proposta_id: p?.id ?? null };
@@ -124,7 +125,8 @@ Deno.serve(async (req) => {
   const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
   if (!s) return json({ error: "Agendamento não encontrado" }, 404);
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  // Headers let the history triggers record the app user behind service-role writes.
+  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { global: { headers: { "x-fera-origem": "app", "x-fera-usuario": user.id } } });
   const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", user.id);
   const privileged = (roles ?? []).some((r: any) => ["admin", "super_admin", "gestor"].includes(r.role));
   if (!privileged && s.assigned_to !== user.id && !(s.assigned_to === null && s.created_by === user.id)) {
@@ -277,6 +279,8 @@ Deno.serve(async (req) => {
           const { data: st } = await admin.from("lead_stages").select("id").eq("organization_id", s.organization_id).eq("chave", "proposta_enviada").maybeSingle();
           if (st) await admin.from("leads").update({ stage_id: st.id, stage: "proposta" }).eq("id", s.lead_id).eq("organization_id", s.organization_id);
         }
+        // The draft generated from this visit's collection becomes "enviada" (sets proposals.enviada_em).
+        await admin.from("proposals").update({ status: "enviada" }).eq("organization_id", s.organization_id).eq("origem_schedule_id", s.id).eq("status", "rascunho");
         await timeline("visita", `Proposta enviada (marcada por ${consultor})`);
       }
       return json({ ok: true });

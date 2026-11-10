@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
   if (!auth) return json({ error: "Não autorizado" }, 401);
   const url = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const admin = createClient(url, serviceKey);
+  let admin = createClient(url, serviceKey);
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
   if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar", "audios", "excluir_audio"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
@@ -95,6 +95,8 @@ Deno.serve(async (req) => {
     s = data;
   }
   if (!s) return json({ error: "Ocorrência não encontrada" }, 404);
+  // Writes from here on carry the acting user, so the history triggers record who moved the lead/proposal.
+  admin = createClient(url, serviceKey, { global: { headers: { "x-fera-origem": interno ? "mcp" : "app", "x-fera-usuario": userId } } });
   const { data: roles } = await admin.from("user_roles").select("role").eq("user_id", userId);
   const privileged = (roles ?? []).some((r: any) => ["admin", "super_admin", "gestor"].includes(r.role));
   if (interno) {

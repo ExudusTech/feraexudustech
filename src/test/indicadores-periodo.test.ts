@@ -46,8 +46,8 @@ function baseTables(): Record<string, any[]> {
     clients: [{ id: "c1", organization_id: org, city: "Cabo Frio" }],
     lead_stages: [{ id: "st1", organization_id: org, ordem: 10, tipo: "aberta", chave: "novo" }, { id: "st2", organization_id: org, ordem: 20, tipo: "aberta", chave: "qualificado" }],
     proposals: [
-      { id: "pr1", organization_id: org, status: "aceita", final_value: 1000, updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" },
-      { id: "pr2", organization_id: org, status: "enviada", final_value: 500, pdf_gerado_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u2", created_by: "u2", lead_id: "l2" },
+      { id: "pr1", organization_id: org, status: "aceita", final_value: 1000, enviada_em: "2026-11-05T13:00:00Z", aceita_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" },
+      { id: "pr2", organization_id: org, status: "enviada", final_value: 500, pdf_gerado_em: "2026-11-10T13:00:00Z", enviada_em: "2026-11-10T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u2", created_by: "u2", lead_id: "l2" },
     ],
     tarefas_faturamento: [
       { id: "t1", organization_id: org, acao: "emitir", status: "concluida", concluida_em: "2026-11-10T12:00:00Z", updated_at: "2026-11-10T12:00:00Z", schedule_id: "s1", empresa_nome: "Pousada Sol" },
@@ -196,6 +196,19 @@ describe("recorte e permissões", () => {
     expect(m).toContain("Canceladas/baixadas: 1 ▲1");
     expect(m).toContain("Pendentes agora: 1 (1 com prazo vencido)");
     expect(m).toMatch(/NF de Comodato \(1\): Hotel Sol até 09\/11/);
+  });
+  it("accepted proposals count by aceita_em and funnel advance by the stage history, not updated_at", async () => {
+    const t = baseTables();
+    t.proposals.push({ id: "pr3", organization_id: org, status: "aceita", final_value: 700, aceita_em: "2026-10-20T13:00:00Z", updated_at: "2026-11-10T13:00:00Z", assigned_to: "u1", created_by: "u1", lead_id: "l1" });
+    t.lead_stage_history = [
+      { organization_id: org, lead_id: "l1", etapa_anterior_id: "st1", etapa_nova_id: "st2", mudou_em: "2026-11-10T12:30:00Z" },
+      { organization_id: org, lead_id: "l2", etapa_anterior_id: "st2", etapa_nova_id: "st1", mudou_em: "2026-11-10T12:40:00Z" },
+    ];
+    const r = await harness(t).route(PHONES.ph, "indicadores de hoje");
+    expect(r.data.numeros.propostas_aceitas).toBe(1);
+    expect(r.data.mensagem_para_equipe).toContain("1 avançaram no funil");
+    const sem = await harness().route(PHONES.ph, "indicadores de hoje");
+    expect(sem.data.mensagem_para_equipe).toContain("0 avançaram no funil");
   });
   it("demo records count like any other", async () => {
     const t = baseTables();

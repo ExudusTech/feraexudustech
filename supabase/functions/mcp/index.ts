@@ -393,9 +393,11 @@ function jsonRpcError(
 
 // ─── Supabase client (service role — bypasses RLS for Flora) ──────────────────
 
-function getClient() {
+// x-fera-origem / x-fera-usuario let the history triggers record who changed a lead/proposal (trusted only with the service role).
+function getClient(origem: "flora" | "mcp" = "flora", usuario?: string | null) {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false },
+    global: { headers: { "x-fera-origem": origem, ...(usuario ? { "x-fera-usuario": usuario } : {}) } },
   });
 }
 
@@ -3745,7 +3747,7 @@ async function withTeam(fn: (u: TeamUser, supabase: ReturnType<typeof getClient>
   const { user, ambiguo } = await resolverEquipe(supabase, params.chat_id);
   if (ambiguo) return { ...NAO_AUTORIZADO, message: "não autorizado: este número está em mais de um cadastro; peça ao gestor para corrigir em Usuários" };
   if (!user || (allowed && !allowed(user))) return NAO_AUTORIZADO;
-  return fn(user, supabase);
+  return fn(user, getClient("mcp", user.user_id));
 }
 
 /** Client-flow tools refuse team chats so a team member is never turned into a lead, booking or handoff. */
@@ -4608,7 +4610,7 @@ function comprovacaoCheckin(s: any, c: any): "no_local" | "fora" | "sem_checkin"
   const p = Number(c.precisao_m), dist = c.distancia_m;
   return Number.isFinite(p) && p <= 40 && dist !== null && dist !== undefined && !c.fora_do_raio && !c.destino_sem_coordenadas ? "no_local" : "fora";
 }
-interface DadosInd { schedules: any[]; checkins: Map<string, any>; leads: any[]; stages: any[]; proposals: any[]; comodatos: any[]; tarefas: any[]; abertas: any[]; atend: any[]; aprovados: any[] }
+interface DadosInd { schedules: any[]; checkins: Map<string, any>; leads: any[]; stages: any[]; proposals: any[]; comodatos: any[]; tarefas: any[]; abertas: any[]; atend: any[]; aprovados: any[]; historico?: any[] }
 interface PorVendedor { ops: number; concluidas: number; nao: number; noLocal: number; executadas: number }
 interface Metricas {
   ops: number; porTipo: Record<string, number>; devidas: number; concluidas: number; resultados: Record<string, number>; naoRealizadas: number; motivos: Record<string, number>;
@@ -4652,17 +4654,27 @@ function metricas(d: DadosInd, f: Faixa, hoje: string): Metricas {
   for (const l of d.leads) {
     if (naFaixa(dataSp(l.created_at), f)) { m.leadsNovos++; inc(m.porCanal, CANAL_TXT[l.canal_origem] ?? (l.created_by_flora ? "Flora" : "Fera")); }
     if (naFaixa(dataSp(l.converted_at), f)) m.viraramCliente++;
-    const st: any = ordem.get(l.stage_id);
-    if (st && st.tipo !== "perdido" && Number(st.ordem) > ordemNovo && naFaixa(dataSp(l.updated_at), f)) m.avancaram++;
   }
+  // Funnel advance from the stage history (mudou_em): leads that moved forward to a later, non-lost stage in the period.
+  const avancou = new Set<string>();
+  for (const h of d.historico ?? []) {
+    if (!h.etapa_anterior_id || !naFaixa(dataSp(h.mudou_em), f)) continue;
+    const de: any = ordem.get(h.etapa_anterior_id), para: any = ordem.get(h.etapa_nova_id);
+    if (de && para && para.tipo !== "perdido" && Number(para.ordem) > Number(de.ordem) && Number(para.ordem) > ordemNovo) avancou.add(h.lead_id);
+  }
+  m.avancaram = avancou.size;
+  // Proposal milestones (enviada_em / aceita_em), set by the database the first time the status reaches them.
   for (const p of d.proposals) {
     const valor = Number(p.final_value ?? p.total_value ?? 0) || 0;
-    if (["enviada", "aceita", "recusada"].includes(p.status) && naFaixa(dataSp(p.pdf_gerado_em ?? p.updated_at), f)) { m.propEnviadas++; m.propEnviadasValor += valor; }
-    if (p.status === "aceita" && naFaixa(dataSp(p.updated_at), f)) { m.propAceitas++; m.propAceitasValor += valor; }
+    if (naFaixa(dataSp(p.enviada_em ?? (["enviada", "aceita", "rejeitada", "recusada"].includes(p.status) ? p.pdf_gerado_em : null)), f)) { m.propEnviadas++; m.propEnviadasValor += valor; }
+    if (naFaixa(dataSp(p.aceita_em), f)) { m.propAceitas++; m.propAceitasValor += valor; }
   }
-  for (const a of d.aprovados) if (naFaixa(dataSp(a.created_at), f)) m.testesAprovados++;
+  const aprovados = new Set<string>();
+  for (const l of d.leads) if (naFaixa(dataSp(l.teste_aprovado_em), f)) aprovados.add(l.id);
+  for (const a of d.aprovados) if (!d.leads.some((l) => l.id === a.lead_id && l.teste_aprovado_em) && naFaixa(dataSp(a.created_at), f)) aprovados.add(a.lead_id ?? a.created_at);
+  m.testesAprovados = aprovados.size;
   for (const c of d.comodatos) {
-    if (["ATIVO", "EM_TESTE"].includes(c.status) && naFaixa(c.data_inicio, f)) m.ativados++;
+    if (["ATIVO", "EM_TESTE"].includes(c.status) && naFaixa(c.ativado_em ? dataSp(c.ativado_em) : c.data_inicio, f)) m.ativados++;
     if (c.status === "ENCERRADO" && naFaixa(c.data_fim, f)) m.retirados++;
   }
   for (const t of d.tarefas) {
@@ -4695,21 +4707,22 @@ async function carregarIndicadores(supabase: ReturnType<typeof getClient>, org: 
   let qs = supabase.from("schedules").select("id, scheduled_date, status, resultado, nao_realizado_motivo, coleta_status, ocorrencia_tipo, schedule_type, operacao_material, assigned_to, source, lead_id, client_id, ocorrencia_codigo, title")
     .eq("organization_id", org).gte("scheduled_date", janela.inicio).lte("scheduled_date", janela.fim).neq("status", "cancelado");
   if (uid) qs = qs.eq("assigned_to", uid);
-  let ql = supabase.from("leads").select("id, created_at, updated_at, converted_at, canal_origem, created_by_flora, assigned_to, city, stage_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  let ql = supabase.from("leads").select("id, created_at, updated_at, converted_at, canal_origem, created_by_flora, assigned_to, city, stage_id, teste_aprovado_em").eq("organization_id", org).gte("updated_at", desdeTs);
   if (uid) ql = ql.eq("assigned_to", uid);
-  let qp = supabase.from("proposals").select("id, status, final_value, total_value, created_at, updated_at, pdf_gerado_em, assigned_to, created_by, lead_id, client_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  let qp = supabase.from("proposals").select("id, status, final_value, total_value, created_at, updated_at, pdf_gerado_em, enviada_em, aceita_em, rejeitada_em, assigned_to, created_by, lead_id, client_id").eq("organization_id", org).gte("updated_at", desdeTs);
   if (uid) qp = qp.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);
-  let qc = supabase.from("comodatos").select("id, status, data_inicio, data_fim, created_by, lead_id, client_id, cidade").eq("organization_id", org).or(`data_inicio.gte.${janela.inicio},data_fim.gte.${janela.inicio}`);
+  let qc = supabase.from("comodatos").select("id, status, data_inicio, data_fim, ativado_em, created_by, lead_id, client_id, cidade").eq("organization_id", org).or(`data_inicio.gte.${janela.inicio},data_fim.gte.${janela.inicio},ativado_em.gte.${desdeTs}`);
   if (uid) qc = qc.eq("created_by", uid);
   const qt = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, concluida_em, created_at, updated_at, prazo, empresa_nome, schedule_id").eq("organization_id", org).gte("updated_at", desdeTs);
   const qa = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, prazo, empresa_nome, schedule_id, created_at").eq("organization_id", org).eq("status", "aberta").order("prazo");
   const qat = supabase.from("atendimentos").select("id, aberto_em, relogio_inicia_em, assumido_em, assumido_por, responsavel_id, status, lead_id").eq("organization_id", org).gte("aberto_em", desdeTs).lt("aberto_em", ateTs);
   const qtl = supabase.from("lead_timeline").select("lead_id, created_at, resumo").eq("organization_id", org).eq("tipo", "visita").ilike("resumo", "Resultado do teste: Aprovado%").gte("created_at", desdeTs);
   const qst = supabase.from("lead_stages").select("id, ordem, tipo, chave").eq("organization_id", org);
-  const [s, l, p, c, t, a, at, tl, st] = await Promise.all([qs.limit(5000), ql.limit(5000), qp.limit(2000), qc.limit(3000), qt.limit(3000), qa.limit(500), qat.limit(3000), qtl.limit(1000), qst]);
+  const qh = supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em").eq("organization_id", org).gte("mudou_em", desdeTs).lt("mudou_em", ateTs);
+  const [s, l, p, c, t, a, at, tl, st, hs] = await Promise.all([qs.limit(5000), ql.limit(5000), qp.limit(2000), qc.limit(3000), qt.limit(3000), qa.limit(500), qat.limit(3000), qtl.limit(1000), qst, qh.limit(10000)]);
   for (const [nome, r] of [["schedules", s], ["leads", l], ["proposals", p], ["comodatos", c], ["tarefas", t], ["atendimentos", at]] as const) if ((r as any)?.error) dbFail(`indicadores ${nome}`, (r as any).error);
   const d: DadosInd = { schedules: arr(s.data), checkins: new Map(), leads: arr(l.data), stages: arr(st.data), proposals: arr(p.data), comodatos: arr(c.data), tarefas: arr(t.data),
-    abertas: arr(a.data), atend: arr(at.data), aprovados: arr(tl.data) };
+    abertas: arr(a.data), atend: arr(at.data), aprovados: arr(tl.data), historico: arr(hs?.data) };
   if (uid) {
     d.proposals = d.proposals.filter((x) => x.assigned_to === uid || x.created_by === uid);
     d.atend = d.atend.filter((x) => x.assumido_por === uid || x.responsavel_id === uid);
@@ -4740,6 +4753,9 @@ async function carregarIndicadores(supabase: ReturnType<typeof getClient>, org: 
     d.leads = d.leads.filter((x) => cityInArea(x.city, rec.cidade)); d.atend = d.atend.filter((x) => x.lead_id && cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
     d.aprovados = d.aprovados.filter((x) => cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
   }
+  // Stage history follows the (already sliced) leads: a stage change always touches the lead's updated_at.
+  const leadsNoRecorte = new Set(d.leads.map((x) => x.id));
+  d.historico = (d.historico ?? []).filter((x) => leadsNoRecorte.has(x.lead_id));
   const sids = d.schedules.filter((x) => ["concluido", "em_atendimento", "nao_realizado"].includes(x.status)).map((x) => x.id);
   for (let i = 0; i < sids.length; i += 150) {
     const { data } = await supabase.from("schedule_checkins").select("schedule_id, checkin_em, precisao_m, distancia_m, fora_do_raio, destino_sem_coordenadas").eq("organization_id", org).in("schedule_id", sids.slice(i, i + 150));
@@ -4859,6 +4875,300 @@ async function logoDataUri(supabase: ReturnType<typeof getClient>): Promise<stri
   } catch { return null; }
 }
 
+// Identical copy of supabase/functions/_shared/funil-tempos.ts (test-enforced): the mcp test harness cannot load imports.
+// BEGIN funil-tempos
+interface FtEtapa { id: string; nome: string; ordem: number; tipo?: string | null; chave?: string | null }
+interface FtMudanca { lead_id: string; etapa_anterior_id?: string | null; etapa_nova_id: string | null; mudou_em: string; estimado?: boolean | null }
+interface FtLead {
+  id: string; created_at?: string | null; segmento?: string | null; porte?: string | null; cidade?: string | null; regiao?: string | null;
+  canal?: string | null; vendedor?: string | null; teste_instalado_em?: string | null; teste_aprovado_em?: string | null;
+}
+interface FtProposta {
+  id: string; lead_id?: string | null; client_id?: string | null; status?: string | null; created_at?: string | null;
+  enviada_em?: string | null; aceita_em?: string | null; rejeitada_em?: string | null; ativado_em?: string | null;
+}
+interface FtEstat { n: number; media: number | null; mediana: number | null }
+interface FtEtapaTempo extends FtEstat { etapa_id: string; nome: string; ordem: number; parados: number; estimados: number }
+interface FtCiclos { entrada_aceita: FtEstat; enviada_aceita: FtEstat; aceita_ativacao: FtEstat; teste_aprovado: FtEstat }
+interface FtGrupo extends FtEstat { grupo: string }
+interface FtJanela { inicio?: string | null; fim?: string | null }
+type FtRecorte = "segmento" | "porte" | "cidade" | "regiao" | "canal" | "vendedor";
+
+const FT_DIA = 86_400_000;
+const ftMs = (iso?: string | null): number | null => { if (!iso) return null; const t = Date.parse(iso); return Number.isFinite(t) ? t : null; };
+const ftNaJanela = (iso: string | null | undefined, j?: FtJanela): boolean => {
+  const t = ftMs(iso); if (t == null) return false;
+  const a = ftMs(j?.inicio ?? null); const b = ftMs(j?.fim ?? null);
+  return (a == null || t >= a) && (b == null || t < b);
+};
+
+/** Days from a to b (fractional); null when either is missing or b is before a. */
+function diasEntre(a?: string | null, b?: string | null): number | null {
+  const x = ftMs(a); const y = ftMs(b);
+  if (x == null || y == null || y < x) return null;
+  return (y - x) / FT_DIA;
+}
+
+function estatDias(valores: number[]): FtEstat {
+  const v = valores.filter((n) => Number.isFinite(n) && n >= 0).sort((a, b) => a - b);
+  if (!v.length) return { n: 0, media: null, mediana: null };
+  const meio = Math.floor(v.length / 2);
+  const mediana = v.length % 2 ? v[meio] : (v[meio - 1] + v[meio]) / 2;
+  const media = v.reduce((s, n) => s + n, 0) / v.length;
+  return { n: v.length, media: Math.round(media * 10) / 10, mediana: Math.round(mediana * 10) / 10 };
+}
+
+/** "3,5 dias", "1 dia", "6 h" (under one day), "—" when there is no value. */
+function fmtDias(d: number | null | undefined): string {
+  if (d == null || !Number.isFinite(d)) return "—";
+  if (d < 1) { const h = Math.max(1, Math.round(d * 24)); return `${h} h`; }
+  const r = Math.round(d * 10) / 10;
+  const txt = Number.isInteger(r) ? String(r) : r.toFixed(1).replace(".", ",");
+  return `${txt} ${r === 1 ? "dia" : "dias"}`;
+}
+
+/** Size band from levantamento.porte (rooms/tables/people). */
+function faixaPorte(porte: unknown): string {
+  const n = typeof porte === "number" ? porte : Number(String(porte ?? "").replace(/\D/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return "Sem levantamento";
+  if (n <= 20) return "Pequeno (até 20)";
+  if (n <= 80) return "Médio (21–80)";
+  return "Grande (81+)";
+}
+
+function ftOrdenarHistorico(historico: FtMudanca[]): Map<string, FtMudanca[]> {
+  const por = new Map<string, FtMudanca[]>();
+  for (const h of historico) { if (!h?.lead_id || ftMs(h.mudou_em) == null) continue; (por.get(h.lead_id) ?? por.set(h.lead_id, []).get(h.lead_id)!).push(h); }
+  for (const lista of por.values()) lista.sort((a, b) => ftMs(a.mudou_em)! - ftMs(b.mudou_em)!);
+  return por;
+}
+
+/**
+ * Time spent in each open stage: the interval from entering a stage to the next change.
+ * An interval counts in the window when it ends inside it; leads still sitting in a stage count as "parados".
+ */
+function temposPorEtapa(etapas: FtEtapa[], historico: FtMudanca[], janela?: FtJanela): FtEtapaTempo[] {
+  const abertas = etapas.filter((e) => (e.tipo ?? "aberta") === "aberta");
+  const dur = new Map<string, number[]>(); const parados = new Map<string, number>(); const est = new Map<string, number>();
+  for (const lista of ftOrdenarHistorico(historico).values()) {
+    lista.forEach((h, i) => {
+      if (!h.etapa_nova_id) return;
+      const prox = lista[i + 1];
+      if (!prox) { parados.set(h.etapa_nova_id, (parados.get(h.etapa_nova_id) ?? 0) + 1); return; }
+      if (!ftNaJanela(prox.mudou_em, janela)) return;
+      const d = diasEntre(h.mudou_em, prox.mudou_em); if (d == null) return;
+      (dur.get(h.etapa_nova_id) ?? dur.set(h.etapa_nova_id, []).get(h.etapa_nova_id)!).push(d);
+      if (h.estimado || prox.estimado) est.set(h.etapa_nova_id, (est.get(h.etapa_nova_id) ?? 0) + 1);
+    });
+  }
+  return abertas.sort((a, b) => a.ordem - b.ordem).map((e) => ({
+    etapa_id: e.id, nome: e.nome, ordem: e.ordem, ...estatDias(dur.get(e.id) ?? []), parados: parados.get(e.id) ?? 0, estimados: est.get(e.id) ?? 0,
+  }));
+}
+
+/** Stage where leads take longest (by median, then mean), among stages with data. */
+function etapaMaisDemorada(tempos: FtEtapaTempo[]): FtEtapaTempo | null {
+  const com = tempos.filter((t) => t.n > 0);
+  if (!com.length) return null;
+  return [...com].sort((a, b) => (b.mediana ?? 0) - (a.mediana ?? 0) || (b.media ?? 0) - (a.media ?? 0))[0];
+}
+
+/** Entry of the lead in the funnel: first history row, else created_at. */
+function entradaLead(lead: FtLead, historico: FtMudanca[]): string | null {
+  let menor: number | null = null; let iso: string | null = null;
+  for (const h of historico) { if (h.lead_id !== lead.id) continue; const t = ftMs(h.mudou_em); if (t != null && (menor == null || t < menor)) { menor = t; iso = h.mudou_em; } }
+  return iso ?? lead.created_at ?? null;
+}
+
+/** First accepted proposal of each lead. */
+function ftAceitaPorLead(propostas: FtProposta[]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const p of propostas) {
+    if (!p.lead_id || !p.aceita_em) continue;
+    const atual = m.get(p.lead_id);
+    if (!atual || ftMs(p.aceita_em)! < ftMs(atual)!) m.set(p.lead_id, p.aceita_em);
+  }
+  return m;
+}
+
+/** Durations (days) lead entry → first accepted proposal, per lead id; counted when the acceptance is in the window. */
+function ciclosEntradaAceita(leads: FtLead[], historico: FtMudanca[], propostas: FtProposta[], janela?: FtJanela): Map<string, number> {
+  const aceitas = ftAceitaPorLead(propostas); const out = new Map<string, number>();
+  const hist = ftOrdenarHistorico(historico);
+  for (const l of leads) {
+    const aceita = aceitas.get(l.id); if (!aceita || !ftNaJanela(aceita, janela)) continue;
+    const d = diasEntre(entradaLead(l, hist.get(l.id) ?? []), aceita); if (d != null) out.set(l.id, d);
+  }
+  return out;
+}
+
+function ciclos(leads: FtLead[], historico: FtMudanca[], propostas: FtProposta[], janela?: FtJanela): FtCiclos {
+  const enviadaAceita: number[] = []; const aceitaAtiv: number[] = []; const teste: number[] = [];
+  for (const p of propostas) {
+    if (p.aceita_em && ftNaJanela(p.aceita_em, janela)) { const d = diasEntre(p.enviada_em, p.aceita_em); if (d != null) enviadaAceita.push(d); }
+    if (p.ativado_em && ftNaJanela(p.ativado_em, janela)) { const d = diasEntre(p.aceita_em, p.ativado_em); if (d != null) aceitaAtiv.push(d); }
+  }
+  for (const l of leads) {
+    if (l.teste_aprovado_em && ftNaJanela(l.teste_aprovado_em, janela)) { const d = diasEntre(l.teste_instalado_em, l.teste_aprovado_em); if (d != null) teste.push(d); }
+  }
+  return {
+    entrada_aceita: estatDias([...ciclosEntradaAceita(leads, historico, propostas, janela).values()]),
+    enviada_aceita: estatDias(enviadaAceita), aceita_ativacao: estatDias(aceitaAtiv), teste_aprovado: estatDias(teste),
+  };
+}
+
+const FT_RECORTE_LABEL: Record<FtRecorte, string> = {
+  segmento: "Segmento", porte: "Porte", cidade: "Cidade", regiao: "Região", canal: "Canal de origem", vendedor: "Vendedor",
+};
+
+function grupoDoLead(l: FtLead, recorte: FtRecorte): string {
+  const v = recorte === "porte" ? (l.porte ?? "Sem levantamento") : (l[recorte] as string | null | undefined);
+  const txt = String(v ?? "").trim();
+  if (txt) return txt;
+  return recorte === "segmento" ? "Sem segmento" : recorte === "vendedor" ? "Sem responsável" : recorte === "canal" ? "Sem canal" : "Sem cidade";
+}
+
+/** Cycle lead entry → accepted proposal grouped by a slice, fastest first. */
+function ciclosPorRecorte(leads: FtLead[], historico: FtMudanca[], propostas: FtProposta[], recorte: FtRecorte, janela?: FtJanela): FtGrupo[] {
+  const ciclo = ciclosEntradaAceita(leads, historico, propostas, janela); const por = new Map<string, number[]>();
+  for (const l of leads) { const d = ciclo.get(l.id); if (d == null) continue; const g = grupoDoLead(l, recorte); (por.get(g) ?? por.set(g, []).get(g)!).push(d); }
+  return [...por.entries()].map(([grupo, v]) => ({ grupo, ...estatDias(v) }))
+    .sort((a, b) => (a.mediana ?? Infinity) - (b.mediana ?? Infinity) || b.n - a.n || a.grupo.localeCompare(b.grupo));
+}
+
+/** "Who decides faster": fastest and slowest groups by median cycle (groups with at least `minimo` closed leads). */
+function rankingDecisao(grupos: FtGrupo[], minimo = 1): { rapidos: FtGrupo[]; lentos: FtGrupo[] } {
+  const ok = grupos.filter((g) => g.n >= minimo && g.mediana != null);
+  const rapidos = [...ok].sort((a, b) => a.mediana! - b.mediana! || b.n - a.n).slice(0, 3);
+  const lentos = [...ok].sort((a, b) => b.mediana! - a.mediana! || b.n - a.n).slice(0, 3);
+  return { rapidos, lentos };
+}
+// END funil-tempos
+
+// ─── Tempo do funil (stage history + proposal milestones) ───
+function ehTempoFunil(texto: string): boolean {
+  return /\bdemor|quanto tempo|tempo (medio|do funil|de ciclo|de fechamento|ate)|mais rapid|mais lent|fecha(m)? mais|decide(m)? mais|\bciclo\b|ate (a )?ativ|ate aprovar|parad[oa]s? (em|na|no)/.test(foldTxt(texto));
+}
+const RECORTES_FUNIL: Array<[RegExp, FtRecorte]> = [[/segment/, "segmento"], [/porte|tamanho/, "porte"], [/regia/, "regiao"], [/cidade/, "cidade"], [/canal|origem/, "canal"], [/vendedor|consultor|quem fecha/, "vendedor"]];
+
+async function tempoFunil(u: TeamUser, supabase: ReturnType<typeof getClient>, texto: string, params: Record<string, unknown>, visao: "gestor" | "faturamento" | "campo", hoje: string): Promise<McpResponse> {
+  const org = NITSCLEAN_ORG_ID;
+  const t = foldTxt(texto);
+  const explicito = /\bhoje\b/.test(t) || JSON.stringify(resolverPeriodo(texto, hoje)) !== JSON.stringify(resolverPeriodo("", hoje));
+  const periodo = explicito ? resolverPeriodo(texto, hoje) : resolverPeriodo("últimos 90 dias", hoje);
+  const janelaDe = (f: Faixa): FtJanela => ({ inicio: `${f.inicio}T03:00:00Z`, fim: `${addDiasIso(f.fim, 1)}T03:00:00Z` });
+  const [{ data: perfisRows }, { data: areasRows }, st, ls, hs, ps] = await Promise.all([
+    supabase.from("profiles").select("user_id, name, is_active").eq("organization_id", org).limit(200),
+    supabase.from("ekkoa_coverage_areas").select("city, name").eq("organization_id", org).eq("is_active", true).limit(200),
+    supabase.from("lead_stages").select("id, nome, ordem, tipo, chave").eq("organization_id", org),
+    supabase.from("leads").select("id, created_at, category, city, canal_origem, created_by_flora, assigned_to, levantamento, teste_instalado_em, teste_aprovado_em").eq("organization_id", org).limit(5000),
+    supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em, estimado").eq("organization_id", org).order("mudou_em").limit(20000),
+    supabase.from("proposals").select("id, lead_id, client_id, status, created_at, enviada_em, aceita_em, rejeitada_em, ativado_em, assigned_to, created_by").eq("organization_id", org).limit(5000),
+  ]);
+  for (const [nome, r] of [["etapas", st], ["leads", ls], ["historico", hs], ["propostas", ps]] as const) if ((r as any)?.error) dbFail(`tempo funil ${nome}`, (r as any).error);
+  const perfis: PerfilEquipe[] = arr(perfisRows).filter((p) => p.is_active !== false);
+  const areas = arr(areasRows);
+  const rec = resolverRecorte(texto, params, perfis, areas);
+  if (visao === "campo") {
+    if (rec.consultor && rec.consultor.user_id !== u.user_id) rec.avisos.push("Você vê só os seus números.");
+    rec.consultor = { user_id: u.user_id, name: u.nome };
+  }
+  const nomes = new Map(perfis.map((p) => [p.user_id, primeiroNome(p)]));
+  const regiaoDe = (city: unknown) => areas.find((a) => cityInArea(city, a.city))?.name ?? null;
+  let leadsRows = arr(ls.data);
+  if (rec.consultor) leadsRows = leadsRows.filter((l) => l.assigned_to === rec.consultor!.user_id);
+  if (rec.cidade) leadsRows = leadsRows.filter((l) => cityInArea(l.city, rec.cidade));
+  const leads: FtLead[] = leadsRows.map((l) => ({
+    id: l.id, created_at: l.created_at, segmento: l.levantamento?.segmento ?? l.category ?? null, porte: faixaPorte(l.levantamento?.porte),
+    cidade: l.city ?? null, regiao: regiaoDe(l.city), canal: CANAL_TXT[l.canal_origem] ?? (l.created_by_flora ? "Flora" : "Fera"),
+    vendedor: l.assigned_to ? (nomes.get(l.assigned_to) ?? "Equipe") : null, teste_instalado_em: l.teste_instalado_em, teste_aprovado_em: l.teste_aprovado_em,
+  }));
+  const ids = new Set(leads.map((l) => l.id));
+  const historico: FtMudanca[] = arr(hs.data).filter((h) => ids.has(h.lead_id));
+  let propostas: FtProposta[] = arr(ps.data);
+  propostas = rec.consultor
+    ? propostas.filter((p: any) => (p.lead_id && ids.has(p.lead_id)) || p.assigned_to === rec.consultor!.user_id || p.created_by === rec.consultor!.user_id)
+    : rec.cidade ? propostas.filter((p) => p.lead_id && ids.has(p.lead_id)) : propostas;
+  const etapas: FtEtapa[] = arr(st.data);
+  const jan = janelaDe(periodo), janAnt = janelaDe(periodo.anterior);
+  const etapasT = temposPorEtapa(etapas, historico, jan), lenta = etapaMaisDemorada(etapasT);
+  const cic = ciclos(leads, historico, propostas, jan), cicAnt = ciclos(leads, historico, propostas, janAnt);
+  let recorte: FtRecorte = "segmento";
+  for (const [re, r] of RECORTES_FUNIL) if (re.test(t)) { recorte = r; break; }
+  if (recorte === "vendedor" && visao === "campo") recorte = "segmento";
+  const grupos = ciclosPorRecorte(leads, historico, propostas, recorte, jan), rank = rankingDecisao(grupos);
+  const estimados = etapasT.reduce((s, e) => s + e.estimados, 0);
+
+  const ciclo = (rot: string, e: FtEstat, ant: FtEstat) => `${rot} ${e.n ? `${fmtDias(e.mediana)} (mediana; média ${fmtDias(e.media)}; ${e.n})${ant.n ? ` ${variacaoDias(e.mediana, ant.mediana)}` : ""}` : "sem dados"}`;
+  const L: Record<string, string> = {
+    etapas: lenta
+      ? `• Onde mais demora: ${lenta.nome} — ${fmtDias(lenta.mediana)} (mediana; média ${fmtDias(lenta.media)}; ${lenta.n} leads)${etapasT.filter((e) => e.n && e !== lenta).length ? ` · ${[...etapasT].filter((e) => e.n && e !== lenta).sort((a, b) => (b.mediana ?? 0) - (a.mediana ?? 0)).slice(0, 3).map((e) => `${e.nome} ${fmtDias(e.mediana)}`).join(" · ")}` : ""}`
+      : "• Onde mais demora: ainda sem mudanças de etapa no período.",
+    ciclo: `• Ciclo: ${ciclo("entrada→aceite", cic.entrada_aceita, cicAnt.entrada_aceita)} · ${ciclo("enviada→aceita", cic.enviada_aceita, cicAnt.enviada_aceita)}`,
+    ativacao: `• ${ciclo("Aceita→ativação", cic.aceita_ativacao, cicAnt.aceita_ativacao)} · ${ciclo("teste instalado→aprovado", cic.teste_aprovado, cicAnt.teste_aprovado)}`,
+    ranking: rank.rapidos.length
+      ? `• ${FT_RECORTE_LABEL[recorte]} que fecha mais rápido: ${rank.rapidos.map((g) => `${g.grupo} ${fmtDias(g.mediana)} (${g.n})`).join(" · ")}${rank.lentos.length > 1 || (rank.lentos[0] && rank.lentos[0] !== rank.rapidos[0]) ? ` | mais lento: ${rank.lentos[0].grupo} ${fmtDias(rank.lentos[0].mediana)}` : ""}`
+      : `• ${FT_RECORTE_LABEL[recorte]}: nenhuma proposta aceita no período para comparar.`,
+  };
+  let chaves = ["etapas", "ciclo", "ativacao", "ranking"];
+  const panorama = ehPanorama(texto) && !/^\s*(qual|quais|quanto|em que|onde|quem)\b/.test(t);
+  if (!panorama) {
+    const foco: string[] = [];
+    if (/etapa|demor|parad/.test(t)) foco.push("etapas");
+    if (/ativ/.test(t) || /teste/.test(t)) foco.push("ativacao");
+    if (/enviad|entrada|ciclo|fechamento|proposta aceita ate|ate aceit/.test(t) && !foco.includes("ativacao")) foco.push("ciclo");
+    if (/segment|porte|cidade|regia|canal|vendedor|quem|fecha mais|decide/.test(t)) foco.push("ranking");
+    if (foco.length) chaves = chaves.filter((k) => foco.includes(k));
+  }
+  const recorteTxt = [rec.consultor && visao !== "campo" ? primeiroNome(rec.consultor) : null, rec.cidade].filter(Boolean).join(", ") || null;
+  const cab = `⏱️ Tempo do funil · ${periodo.rotulo} · vs ${periodo.anterior.rotulo}${recorteTxt ? ` · ${recorteTxt}` : ""}`;
+  const avisos = [...rec.avisos, ...(estimados ? [`${estimados} intervalos reconstruídos de dados antigos (estimados).`] : [])];
+  const msg = [cab, ...avisos.map((a) => `⚠️ ${a}`), ...chaves.map((k) => L[k]), `🔗 Relatórios ${feraLink("/relatorios")} · Leads ${feraLink("/leads")}`].join("\n");
+
+  let imagem_enviada = false, imagem: "boletim" | "grafico" | null = null;
+  if (panorama) {
+    const gerado = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às");
+    const dCard = (rotulo: string, e: FtEstat, ant: FtEstat): BoletimCard => ({ rotulo, valor: e.mediana == null ? "—" : fmtDias(e.mediana).replace(" dias", "d").replace(" dia", "d"),
+      sub: e.n ? `mediana · ${e.n} ${e.n === 1 ? "caso" : "casos"}` : "sem dados", delta: e.n && ant.n ? variacaoDias(e.mediana, ant.mediana) : "=", inverter: true });
+    const cores = [BRAND.ambar, BRAND.agua, BRAND.verde, BRAND.petroleo];
+    const boletim: BoletimDados = {
+      titulo: "Tempo do funil", periodo: periodo.rotulo, comparacao: periodo.anterior.rotulo, recorte: recorteTxt, gerado,
+      cards: [dCard("Entrada → aceite", cic.entrada_aceita, cicAnt.entrada_aceita), dCard("Enviada → aceita", cic.enviada_aceita, cicAnt.enviada_aceita),
+        dCard("Aceita → ativação", cic.aceita_ativacao, cicAnt.aceita_ativacao), dCard("Teste → aprovado", cic.teste_aprovado, cicAnt.teste_aprovado)],
+      barras: { titulo: "Dias por etapa (mediana)", itens: [...etapasT].filter((e) => e.n).sort((a, b) => (b.mediana ?? 0) - (a.mediana ?? 0)).slice(0, 4)
+        .map((e, i) => ({ rotulo: e.nome, valor: Math.round((e.mediana ?? 0) * 10) / 10, cor: cores[i % cores.length] })) },
+      lista: { titulo: `${FT_RECORTE_LABEL[recorte]} · quem fecha mais rápido`, vazio: "Nenhuma proposta aceita no período.",
+        linhas: grupos.slice(0, 4).map((g) => ({ nome: `${g.grupo} · ${g.n} ${g.n === 1 ? "lead" : "leads"}`, valor: fmtDias(g.mediana) })) },
+    };
+    let png: Uint8Array | null = null;
+    try {
+      boletim.logo = await logoDataUri(supabase);
+      const { Resvg, fontes } = await carregarResvg();
+      png = renderizarBoletim(boletimSvg(boletim), Resvg, fontes);
+      imagem = "boletim";
+    } catch (e) {
+      console.warn("[mcp] boletim funil fallback", (e as Error)?.name ?? "ERR");
+      try { png = await graficoPng("Tempo do funil", boletim.barras.itens.map((i) => ({ rotulo: i.rotulo, valor: Math.round(i.valor) }))); imagem = png ? "grafico" : null; } catch { png = null; imagem = null; }
+    }
+    if (png) imagem_enviada = await enviarImagemEquipe(supabase, String(params.chat_id), png, `Tempo do funil · ${periodo.rotulo}`);
+    if (!imagem_enviada) imagem = null;
+  }
+  const est = (e: FtEstat) => ({ n: e.n, mediana_dias: e.mediana, media_dias: e.media });
+  return ok({ visao, modo: "tempo_funil", periodo: { inicio: periodo.inicio, fim: periodo.fim, rotulo: periodo.rotulo, anterior: periodo.anterior },
+    recorte: { consultor: rec.consultor?.name ?? null, cidade: rec.cidade, agrupado_por: recorte }, panorama, imagem_enviada, imagem,
+    etapa_mais_demorada: lenta ? { nome: lenta.nome, ...est(lenta) } : null,
+    etapas: etapasT.map((e) => ({ nome: e.nome, ...est(e), parados_agora: e.parados })),
+    ciclos: { entrada_aceita: est(cic.entrada_aceita), enviada_aceita: est(cic.enviada_aceita), aceita_ativacao: est(cic.aceita_ativacao), teste_aprovado: est(cic.teste_aprovado) },
+    grupos: grupos.map((g) => ({ grupo: g.grupo, ...est(g) })), mais_rapido: rank.rapidos[0]?.grupo ?? null, mais_lento: rank.lentos[0]?.grupo ?? null,
+    mensagem_para_equipe: msg.length > LIMITE_INDICADORES ? `${msg.slice(0, LIMITE_INDICADORES - 3)}...` : msg });
+}
+/** ▲/▼ in days (more days is worse — the boletim card is drawn with inverter). */
+function variacaoDias(cur: number | null, prev: number | null): string {
+  if (cur == null || prev == null) return "=";
+  const d = Math.round((cur - prev) * 10) / 10;
+  return d > 0 ? `▲${fmtDias(d)}` : d < 0 ? `▼${fmtDias(-d)}` : "=";
+}
+
 // ─── Intenção do pedido ───
 function ehPanorama(texto: string): boolean {
   return /resumo|boletim|panorama|como (estamos|esta|estao|foi|fomos|vai|vamos|anda|andam)|indicador|numeros|desempenho|balanco|relatorio|ranking|visao geral|dashboard|grafico|funil|semana|semanal|\bmes\b|mensal/.test(foldTxt(texto));
@@ -4906,6 +5216,7 @@ async function indicadores(params: Record<string, unknown>): Promise<McpResponse
     const hoje = spToday(), amanha = addDiasIso(hoje, 1);
     const visao = visaoIndicadores(u.papeis);
     const org = NITSCLEAN_ORG_ID;
+    if (ehTempoFunil(texto)) return tempoFunil(u, supabase, texto, params, visao, hoje);
     if (visao === "campo" && ehAgendaCampo(texto) && !ehPanorama(texto)) return agendaCampo(u, supabase, hoje, amanha);
     const periodo = resolverPeriodo(texto, hoje);
     const [{ data: perfisRows }, { data: areasRows }] = await Promise.all([
