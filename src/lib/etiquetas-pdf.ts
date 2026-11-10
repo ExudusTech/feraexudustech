@@ -39,7 +39,7 @@ export async function gerarPdfEtiquetas(o: { inicio: number; fim: number; largur
     const tx = x + pad + qr + pad, tw = o.largura - (tx - x) - pad;
     doc.setFont("helvetica", "bold"); doc.setFontSize(Math.max(6, o.altura * 0.28));
     doc.text(o.marca, tx, y + pad + o.altura * 0.2, { maxWidth: tw });
-    doc.setFontSize(Math.min(o.altura * 0.62, (tw / 6) * 2.9));
+    doc.setFontSize(Math.min(o.altura * 0.9, tw / 1.2));
     doc.text(formatEtiqueta(n), tx, y + o.altura * 0.66, { maxWidth: tw });
     doc.setFont("helvetica", "normal"); doc.setFontSize(Math.max(5, o.altura * 0.22));
     doc.text("Fale com a Flora", tx, y + o.altura - pad - 0.5, { maxWidth: tw });
