@@ -2,7 +2,7 @@
 // Records are written through the real tables (triggers number occurrences, create billing tasks, contacts and conversions);
 // every created id is registered in demo_registros, and apagar_cenario_demo removes exactly that set and its children.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, NITSCLEAN_ORG_ID, planejarDatas, precoDe, telefonesDemo,
+import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, NITSCLEAN_ORG_ID, planejarDatas, planejarHistorico, precoDe, telefonesDemo,
   type AreaDemo, type ParDemo, type ProdutoDemo, type VisitaPlano } from "../_shared/demo-cenario.ts";
 import { pendenciasColeta, resumoColeta, type RascunhoColeta } from "../_shared/coleta.ts";
 
@@ -260,8 +260,8 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
   const atrasada = plano.cliente_atrasada;
   for (const [i, par] of pares.slice(0, 2).entries()) {
     await ins("comodatos", { organization_id: org, client_id: clientId, lead_id: leads.cliente.id, status: "ATIVO", origem: "campo", localizacao_interna: ["Banheiro social", "Cozinha"][i],
-      product_id: par.aparelho?.id ?? null, aparelho_descricao: par.aparelho?.name ?? "Dispenser", refil_product_id: par.refil.id, quantidade: "2", data_inicio: addDias(hoje, -75),
-      ultima_manutencao: addDias(atrasada.data, -30), proxima_manutencao: atrasada.data, periodicidade_manut: "mensal", cidade: leads.cliente.cidade, created_by: leads.cliente.dono,
+      product_id: par.aparelho?.id ?? null, aparelho_descricao: par.aparelho?.name ?? "Dispenser", refil_product_id: par.refil.id, quantidade: "2", data_inicio: addDias(pr.data, 7),
+      proxima_manutencao: atrasada.data, periodicidade_manut: "mensal", cidade: leads.cliente.cidade, created_by: leads.cliente.dono,
       notes: "Aparelho em comodato (demonstração)" }, "criar aparelho ativo");
   }
   await ins("schedules", { organization_id: org, client_id: clientId, title: demoNome(`Manutenção — ${leads.cliente.empresa}`), scheduled_date: atrasada.data, start_time: atrasada.hora,
@@ -275,6 +275,60 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
     contato_nome: demoNome("Fernanda Costa"), canal: "WHATSAPP", whatsapp: fones[8], tipo: "transferencia", motivo: "Quer orçamento de papel toalha e sabonete para 3 andares",
     resumo: "Cliente pediu para falar com um consultor (demonstração).", urgencia: "media", status: "aberto", aberto_em: abertoEm, relogio_inicia_em: abertoEm, alerta_nivel: "verde" }, "criar atendimento");
   await admin.from("leads").update({ precisa_humano: true }).eq("id", leads.atendimento.id);
+
+  // Funnel history spread over the last weeks (replaces the "everything happened now" rows the triggers wrote),
+  // plus a sent and a rejected proposal, so Relatórios → Tempo do funil and Flora Equipe have coherent times.
+  const hist = planejarHistorico(hoje, plano);
+  const propostaSimples = async (key: string, status: string, n: number) => {
+    const L = leads[key];
+    const id = await ins("proposals", { organization_id: org, lead_id: L.id, ...(key === "cliente" ? { client_id: clientId } : {}), created_by: L.dono, assigned_to: L.dono,
+      title: demoNome(`Proposta — ${L.empresa}`), status, valid_until: addDias(hoje, 15), forma_pagamento: "Boleto 28 dias", prazo_entrega: "Até 7 dias úteis após o aceite",
+      periodicidade_manutencao: "mensal", total_value: 0, final_value: 0 }, "criar proposta do histórico");
+    let soma = 0;
+    const itens = pares.slice(0, n).map((par, i) => {
+      const preco = precoDe(par.refil) ?? 0; const qtd = 2 + i; soma += preco * qtd;
+      return { proposal_id: id, organization_id: org, product_id: par.refil.id, sort_order: i, quantity: qtd, unit_price: preco, total_price: Math.round(preco * qtd * 100) / 100,
+        description: par.refil.name.slice(0, 300) };
+    });
+    const { error } = await admin.from("proposal_items").insert(itens);
+    if (error) throw new Falha("criar itens da proposta do histórico", error.code);
+    soma = Math.round(soma * 100) / 100;
+    await admin.from("proposals").update({ total_value: soma, final_value: soma }).eq("id", id);
+    return id;
+  };
+  const propIds: Record<keyof typeof hist.propostas, string> = {
+    cliente: await propostaSimples("cliente", "aceita", 2), proposta: await propostaSimples("proposta", "enviada", 2), perdido: await propostaSimples("perdido", "rejeitada", 1),
+  };
+  for (const l of LEADS) {
+    const passos = hist.leads[l.key]; const L = leads[l.key];
+    if (!passos?.length || passos[passos.length - 1].chave !== l.etapa) throw new Falha("planejar histórico do funil");
+    const { error: de } = await admin.from("lead_stage_history").delete().eq("organization_id", org).eq("lead_id", L.id);
+    if (de) throw new Falha("limpar histórico do funil", de.code);
+    const rows = passos.map((p, i) => ({ organization_id: org, lead_id: L.id, etapa_anterior_id: i ? etapaId(passos[i - 1].chave) : null, etapa_nova_id: etapaId(p.chave),
+      mudou_em: p.em, mudou_por: L.dono, origem: "sistema" }));
+    const { error: he } = await admin.from("lead_stage_history").insert(rows);
+    if (he) throw new Falha("gravar histórico do funil", he.code);
+    const t = hist.teste[l.key];
+    const { error: ue } = await admin.from("leads").update({ created_at: passos[0].em, ...(t ? { teste_instalado_em: t.instalado_em, teste_aprovado_em: t.aprovado_em ?? null } : {}) }).eq("id", L.id);
+    if (ue) throw new Falha("datas do lead", ue.code);
+  }
+  for (const [key, plan] of Object.entries(hist.propostas) as Array<[keyof typeof hist.propostas, (typeof hist.propostas)["cliente"]]>) {
+    const id = propIds[key];
+    await admin.from("proposal_status_history").delete().eq("organization_id", org).eq("proposal_id", id);
+    const { error: pe2 } = await admin.from("proposal_status_history").insert(plan.passos.map((p, i) => ({ organization_id: org, proposal_id: id,
+      status_anterior: i ? plan.passos[i - 1].status : null, status_novo: p.status, mudou_em: p.em, mudou_por: leads[key].dono, origem: "sistema" })));
+    if (pe2) throw new Falha("gravar histórico da proposta", pe2.code);
+    const em = (st: string) => plan.passos.find((p) => p.status === st)?.em ?? null;
+    const { error: mu } = await admin.from("proposals").update({ created_at: plan.passos[0].em, enviada_em: em("enviada"), aceita_em: em("aceita"), rejeitada_em: em("rejeitada"),
+      ativado_em: plan.ativado_em ?? null }).eq("id", id);
+    if (mu) throw new Falha("marcos da proposta", mu.code);
+  }
+  // Devices: test devices since their installation, the client's definitive devices since activation (2 days after the acceptance).
+  const { error: ae } = await admin.from("comodatos").update({ ativado_em: hist.ativacao_cliente }).eq("organization_id", org).eq("client_id", clientId).eq("status", "ATIVO");
+  if (ae) throw new Falha("ativação dos aparelhos", ae.code);
+  await admin.from("comodatos").update({ ativado_em: hist.teste.cliente.instalado_em }).eq("organization_id", org).eq("lead_id", leads.cliente.id).eq("status", "EM_TESTE");
+  await admin.from("comodatos").update({ ativado_em: hist.teste.em_teste.instalado_em }).eq("organization_id", org).eq("lead_id", leads.em_teste.id).eq("status", "EM_TESTE");
+  await admin.from("clients").update({ ativado_em: hist.ativacao_cliente }).eq("id", clientId);
 
   return {
     leads: LEADS.length, cliente: leads.cliente.nome,
