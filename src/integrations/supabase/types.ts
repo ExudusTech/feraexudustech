@@ -4891,9 +4891,12 @@ export type Database = {
           fim: number
           gerado_por: string | null
           id: string
+          impresso_em: string | null
+          impresso_por: string | null
           inicio: number
           largura_mm: number
           organization_id: string
+          status: string
         }
         Insert: {
           altura_mm?: number
@@ -4901,9 +4904,12 @@ export type Database = {
           fim: number
           gerado_por?: string | null
           id?: string
+          impresso_em?: string | null
+          impresso_por?: string | null
           inicio: number
           largura_mm?: number
           organization_id: string
+          status?: string
         }
         Update: {
           altura_mm?: number
@@ -4911,9 +4917,12 @@ export type Database = {
           fim?: number
           gerado_por?: string | null
           id?: string
+          impresso_em?: string | null
+          impresso_por?: string | null
           inicio?: number
           largura_mm?: number
           organization_id?: string
+          status?: string
         }
         Relationships: [
           {
@@ -7491,6 +7500,154 @@ export type Database = {
           },
         ]
       }
+      qr_avaliacoes: {
+        Row: {
+          alerta: boolean
+          chat_id: string | null
+          client_id: string | null
+          comentario: string | null
+          comodato_id: string | null
+          created_at: string
+          etiqueta_numero: number | null
+          id: string
+          lead_id: string | null
+          nota: number
+          organization_id: string
+          ponto: string | null
+          ref: string | null
+          sentimento: string
+          tipo_avaliador: string
+        }
+        Insert: {
+          alerta?: boolean
+          chat_id?: string | null
+          client_id?: string | null
+          comentario?: string | null
+          comodato_id?: string | null
+          created_at?: string
+          etiqueta_numero?: number | null
+          id?: string
+          lead_id?: string | null
+          nota: number
+          organization_id: string
+          ponto?: string | null
+          ref?: string | null
+          sentimento: string
+          tipo_avaliador: string
+        }
+        Update: {
+          alerta?: boolean
+          chat_id?: string | null
+          client_id?: string | null
+          comentario?: string | null
+          comodato_id?: string | null
+          created_at?: string
+          etiqueta_numero?: number | null
+          id?: string
+          lead_id?: string | null
+          nota?: number
+          organization_id?: string
+          ponto?: string | null
+          ref?: string | null
+          sentimento?: string
+          tipo_avaliador?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qr_avaliacoes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qr_avaliacoes_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qr_avaliacoes_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qr_avaliacoes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qr_campanhas: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          created_by: string | null
+          dias_semana: number[] | null
+          fim: string | null
+          hora_fim: string | null
+          hora_inicio: string | null
+          id: string
+          inicio: string | null
+          nome: string
+          organization_id: string
+          padrao: boolean
+          prioridade: number
+          segmentos: string[] | null
+          texto: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          dias_semana?: number[] | null
+          fim?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
+          id?: string
+          inicio?: string | null
+          nome: string
+          organization_id: string
+          padrao?: boolean
+          prioridade?: number
+          segmentos?: string[] | null
+          texto: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          dias_semana?: number[] | null
+          fim?: string | null
+          hora_fim?: string | null
+          hora_inicio?: string | null
+          id?: string
+          inicio?: string | null
+          nome?: string
+          organization_id?: string
+          padrao?: boolean
+          prioridade?: number
+          segmentos?: string[] | null
+          texto?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qr_campanhas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saas_modules: {
         Row: {
           created_at: string
@@ -8480,6 +8637,11 @@ export type Database = {
         Args: { _chave: string; _tipo: string }
         Returns: Database["public"]["Enums"]["lead_stage"]
       }
+      liberar_lote_etiquetas: {
+        Args: { _altura: number; _largura: number; _quantidade: number }
+        Returns: Json
+      }
+      marcar_lote_impresso: { Args: { _id: string }; Returns: undefined }
       mov_estoque: {
         Args: {
           _comodato: string
