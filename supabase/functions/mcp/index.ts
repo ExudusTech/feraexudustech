@@ -4617,6 +4617,7 @@ interface Metricas {
   testes: number; testesAprovados: number; manutFeitas: number; manutAtrasadas: number; ativados: number; retirados: number;
   notasEmitidas: number; notasCanceladas: number; notasDevolucao: number; transferencias: number; tempoMedioMin: number | null;
 }
+const LIMITE_INDICADORES = 1500;
 const NOTA_EMITIR = ["emitir", "emitir_comodato"], NOTA_DEVOLUCAO = ["devolucao", "devolucao_remessa"], NOTA_CANCELAR = ["cancelar", "baixar_remessa"];
 function metricas(d: DadosInd, f: Faixa, hoje: string): Metricas {
   const inc = (o: Record<string, number>, k: string) => { o[k] = (o[k] ?? 0) + 1; };
@@ -4942,7 +4943,6 @@ async function indicadores(params: Record<string, unknown>): Promise<McpResponse
       atendimento: `• Atendimento: ${cur.transferencias} transferências para humano ${variacao(cur.transferencias, prev.transferencias)} · ${minTxt(cur.tempoMedioMin)} em média até assumir`,
       ranking: ranking.length ? `• Por vendedor: ${ranking.slice(0, 4).map((r) => `${r.nome} ${r.ops} ops, ${r.concluidas} concl., ${r.nao} não real., ${pct(r.noLocal, r.executadas)}% comprovadas`).join("; ")}` : "",
     };
-    const corta = (s: string) => s.length > 230 ? `${s.slice(0, 227)}...` : s;
     const pontual = ehPontual(texto), panorama = !pontual && ehPanorama(texto);
     let linhas: string[]; let links: string[];
     const cab = `📊 ${visao === "faturamento" ? "Notas" : "Indicadores"} · ${periodo.rotulo} · vs ${periodo.anterior.rotulo}${recorteTxt ? ` · ${recorteTxt}` : ""}`;
@@ -4975,7 +4975,10 @@ async function indicadores(params: Record<string, unknown>): Promise<McpResponse
         : [`Hoje ${feraLink("/hoje")}`, `Propostas ${feraLink("/propostas")}`];
       if (pontual) links = links.slice(0, 2);
     }
-    const msg = [cab, ...rec.avisos.map((a) => `⚠️ ${a}`), ...linhas.slice(0, 6).map(corta), `🔗 ${links.join(" · ")}`].join("\n");
+    // Short WhatsApp text: period, ≤6 highlights, links — lines share a fixed budget so links are never cut.
+    const fixo = [cab, ...rec.avisos.map((a) => `⚠️ ${a}`)], rodape = `🔗 ${links.join(" · ")}`, corpo = linhas.slice(0, 6);
+    const porLinha = Math.max(90, Math.floor((LIMITE_INDICADORES - fixo.join("\n").length - rodape.length - corpo.length - 2) / Math.max(1, corpo.length)));
+    const msg = [...fixo, ...corpo.map((s) => s.length > porLinha ? `${s.slice(0, porLinha - 1)}…` : s), rodape].join("\n");
 
     let imagem_enviada = false, imagem: "boletim" | "grafico" | null = null;
     if (panorama) {
@@ -5024,7 +5027,7 @@ async function indicadores(params: Record<string, unknown>): Promise<McpResponse
         sem_checkin: cur.semCheckin, leads_novos: cur.leadsNovos, propostas_aceitas: cur.propAceitas, notas_emitidas: cur.notasEmitidas, notas_pendentes: dados.abertas.length },
       anterior: { operacoes: prev.ops, pct_concluidas: pctConcAnt, leads_novos: prev.leadsNovos, propostas_aceitas: prev.propAceitas, notas_emitidas: prev.notasEmitidas },
       ranking: ranking.map((r) => ({ nome: r.nome, operacoes: r.ops, concluidas: r.concluidas, nao_realizadas: r.nao, pct_comprovadas: pct(r.noLocal, r.executadas) })),
-      mensagem_para_equipe: msg.length > 1200 ? `${msg.slice(0, 1197)}...` : msg });
+      mensagem_para_equipe: msg.length > LIMITE_INDICADORES ? `${msg.slice(0, LIMITE_INDICADORES - 3)}...` : msg });
   }, params);
 }
 
