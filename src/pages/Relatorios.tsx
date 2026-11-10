@@ -13,6 +13,7 @@ import { useOperations } from "@/hooks/use-operations";
 import { exportToExcel, exportToPDF } from "@/lib/export-utils";
 import { format } from "date-fns";
 import TempoFunilCard from "@/components/relatorios/TempoFunilCard";
+import AvaliacoesQrCard from "@/components/relatorios/AvaliacoesQrCard";
 import { usePermissions } from "@/hooks/use-permissions";
 import { podeVerTempoFunil } from "@/lib/funil-tempos";
 
@@ -104,6 +105,7 @@ export default function Relatorios() {
   return (
     <AppLayout title="Relatórios" subtitle="Análises e exportação de dados">
       {veTempoFunil && <TempoFunilCard />}
+      {veTempoFunil && <AvaliacoesQrCard />}
       <Tabs defaultValue="clientes" onValueChange={() => { setSearch(""); setStatusFilter("todos"); }}>
         <TabsList className="mb-4">
           <TabsTrigger value="clientes"><Users className="h-4 w-4 mr-1" /> Clientes</TabsTrigger>
