@@ -4,7 +4,8 @@ import { MessageCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
-import { formatEtiqueta, mensagemEtiqueta, parseEtiqueta, waLink, waNumero, WHATSAPP_PADRAO } from "@/lib/etiquetas";
+import { formatEtiqueta, parseEtiqueta, waLink, waNumero, WHATSAPP_PADRAO } from "@/lib/etiquetas";
+import { qrRenderizar, QR_TEXTO_RESERVA } from "@/lib/qr";
 
 /** /q/<numero> from the printed QR. Signed-in team → device screen. Anyone else → Flora's WhatsApp with a ready message (no internal data on this page). */
 export default function EtiquetaQr() {
@@ -21,7 +22,7 @@ export default function EtiquetaQr() {
     if (equipe && n) { navigate(`/aparelho/${formatEtiqueta(n)}`, { replace: true }); return; }
     let vivo = true;
     (async () => {
-      const fallback = waLink(waNumero(WHATSAPP_PADRAO)!, mensagemEtiqueta({ marca: "NitsClean", numero: 0, ativo: false }));
+      const fallback = waLink(waNumero(WHATSAPP_PADRAO)!, qrRenderizar(QR_TEXTO_RESERVA, {}, new Date()));
       const { data } = await supabase.functions.invoke("etiqueta-publica", { body: { numero: n } }).catch(() => ({ data: null }));
       const url = typeof (data as any)?.url === "string" && (data as any).url.startsWith("https://wa.me/") ? (data as any).url : fallback;
       if (!vivo) return;
