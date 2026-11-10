@@ -5734,7 +5734,8 @@ async function contextoQr(params: Record<string, unknown>): Promise<McpResponse>
   else data.origem_lead = emp.nome ? `QR no cliente ${emp.nome}` : "QR NitsClean";
   return ok(data, `QR escaneado: ${quem.tipo}`, quem.tipo === "CLIENTE"
     ? "CLIENTE: envie mensagem_para_lead, peça a nota (registrar_avaliacao_qr) e depois ofereça sugestoes_complemento."
-    : "PUBLICO: agradeça, peça a nota (registrar_avaliacao_qr); se a pessoa for decisora de um negócio, siga a qualificação e use origem_lead em criar_lead (origem_especifica).");
+    : ativo ? "PUBLICO: agradeça, peça a nota (registrar_avaliacao_qr); se a pessoa for decisora de um negócio, siga a qualificação e use origem_lead em criar_lead (origem_especifica)."
+      : "PUBLICO (aparelho ainda não instalado): agradeça e siga a qualificação, sem pedir nota; use origem_lead em criar_lead (origem_especifica).");
 }
 
 async function alertarAvaliacaoBaixa(supabase: ReturnType<typeof getClient>, v: { avaliacaoId: string; numero: number; empresa: string | null; ponto: string | null;
