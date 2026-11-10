@@ -4422,110 +4422,612 @@ async function enviarImagemEquipe(supabase: ReturnType<typeof getClient>, chatId
   } catch (e) { console.warn("[mcp] report send failed", (e as Error)?.name === "AbortError" ? "TIMEOUT" : "NETWORK"); return false; }
 }
 
-function ehPanorama(texto: string): boolean { return /como estamos|panorama|funil|semana|semanal|resumo geral|vis[aã]o geral|dashboard|gr[aá]fico/i.test(texto); }
+// ─── Período livre (America/Sao_Paulo) ───
+const MESES_NOME = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+const MESES_RE = "janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro";
+const MESES_FOLD = MESES_RE.split("|");
+const NUM_PALAVRA: Record<string, number> = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10,
+  doze: 12, catorze: 14, quatorze: 14, quinze: 15, vinte: 20, trinta: 30, sessenta: 60, noventa: 90 };
+interface Faixa { inicio: string; fim: string; rotulo: string }
+interface Periodo extends Faixa { anterior: Faixa }
+const foldTxt = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const addDiasIso = (iso: string, n: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const isoYmd = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const diasNoMes = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const diffDias = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const faixaTxt = (a: string, b: string) => a === b ? ddmm(a) : `${ddmm(a)} a ${ddmm(b)}`;
+const mesTxt = (y: number, m: number) => `${MESES_NOME[m - 1]}/${y}`;
+const arr = (v: unknown): any[] => Array.isArray(v) ? v : [];
+const brDia = (iso: string) => iso.split("-").reverse().slice(0, 2).join("/");
+
+/** Free-text period (today by default) and the equivalent previous period used for ▲/▼. Dates are São Paulo calendar days, inclusive. */
+function resolverPeriodo(texto: unknown, hoje: string = spToday()): Periodo {
+  const t = ` ${foldTxt(texto).replace(/[?!.,;]/g, " ").replace(/\s+/g, " ")} `;
+  const [Y, M, D] = hoje.split("-").map(Number);
+  const antIgual = (inicio: string, fim: string, nome = ""): Faixa => {
+    const n = diffDias(inicio, fim) + 1, f = addDiasIso(inicio, -1), i = addDiasIso(inicio, -n);
+    return { inicio: i, fim: f, rotulo: nome ? `${nome} (${faixaTxt(i, f)})` : faixaTxt(i, f) };
+  };
+  const per = (inicio: string, fim: string, nome: string | null, anterior?: Faixa): Periodo =>
+    ({ inicio, fim, rotulo: nome ? `${nome} (${faixaTxt(inicio, fim)})` : faixaTxt(inicio, fim), anterior: anterior ?? antIgual(inicio, fim) });
+  const mes = (y: number, m: number): Periodo => {
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    if (y === Y && m === M) {
+      const fimAnt = isoYmd(py, pm, Math.min(D, diasNoMes(py, pm)));
+      return { inicio: isoYmd(y, m, 1), fim: hoje, rotulo: `${mesTxt(y, m)} até hoje (${faixaTxt(isoYmd(y, m, 1), hoje)})`,
+        anterior: { inicio: isoYmd(py, pm, 1), fim: fimAnt, rotulo: `${mesTxt(py, pm)} até ${ddmm(fimAnt)}` } };
+    }
+    return { inicio: isoYmd(y, m, 1), fim: isoYmd(y, m, diasNoMes(y, m)), rotulo: mesTxt(y, m),
+      anterior: { inicio: isoYmd(py, pm, 1), fim: isoYmd(py, pm, diasNoMes(py, pm)), rotulo: mesTxt(py, pm) } };
+  };
+  const anoDe = (v?: string) => v ? (v.length <= 2 ? 2000 + Number(v) : Number(v)) : undefined;
+  const valida = (y: number, m: number, d: number) => m >= 1 && m <= 12 && d >= 1 && d <= diasNoMes(y, m);
+  const intervalo = (d1: number, m1: number, y1: number | undefined, d2: number, m2: number, y2: number | undefined): Periodo | null => {
+    let fy = y2 ?? Y, iy = y1 ?? (m1 > m2 ? fy - 1 : fy);
+    if (y1 === undefined && y2 === undefined && isoYmd(iy, m1, Math.min(d1, 28)) > hoje) { fy -= 1; iy -= 1; }
+    if (!valida(iy, m1, d1) || !valida(fy, m2, d2)) return null;
+    const a = isoYmd(iy, m1, d1), b = isoYmd(fy, m2, d2);
+    return a <= b ? per(a, b, null) : null;
+  };
+  // 1) "de 1 a 15 de novembro"
+  let m = new RegExp(`\\b(\\d{1,2})\\s*(?:a|ate|e|-|–)\\s*(\\d{1,2})\\s+de\\s+(${MESES_RE})(?:\\s+(?:de\\s+)?(\\d{4}))?`).exec(t);
+  if (m) { const mm = MESES_FOLD.indexOf(m[3]) + 1, y = anoDe(m[4]); const r = intervalo(+m[1], mm, y, +m[2], mm, y); if (r) return r; }
+  // 2) "de 1 a 15/11", "01/10 a 31/10", "01/10/2026 até 31/10/2026"
+  m = /\b(\d{1,2})(?:\/(\d{1,2})(?:\/(\d{2,4}))?)?\s*(?:a|ate|e|-|–)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(t);
+  if (m) { const r = intervalo(+m[1], m[2] ? +m[2] : +m[5], anoDe(m[3]), +m[4], +m[5], anoDe(m[6])); if (r) return r; }
+  // 3) a single day "05/11"
+  m = /\s(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\s/.exec(t);
+  if (m) {
+    const y = anoDe(m[3]) ?? Y; let d = valida(y, +m[2], +m[1]) ? isoYmd(y, +m[2], +m[1]) : null;
+    if (d && !m[3] && d > hoje) d = isoYmd(y - 1, +m[2], +m[1]);
+    if (d) return per(d, d, null, { inicio: addDiasIso(d, -1), fim: addDiasIso(d, -1), rotulo: ddmm(addDiasIso(d, -1)) });
+  }
+  // 4) "últimos N dias" / "últimas N semanas"
+  m = new RegExp(`\\bultim[oa]s\\s+(\\d{1,3}|${Object.keys(NUM_PALAVRA).join("|")})\\s+(dias|semanas)\\b`).exec(t);
+  if (m) {
+    const n = Math.min(366, Math.max(1, (/^\d+$/.test(m[1]) ? Number(m[1]) : NUM_PALAVRA[m[1]]) * (m[2] === "semanas" ? 7 : 1)));
+    const ini = addDiasIso(hoje, -(n - 1));
+    return per(ini, hoje, `últimos ${n} dias`, antIgual(ini, hoje, `${n} dias anteriores`));
+  }
+  // 5) month name ("outubro", "outubro de 2026"); "marco" right after do/pelo/o is a person (Marco), not March
+  m = new RegExp(`(\\S+)?\\s(${MESES_RE})\\b(?:\\s+(?:de\\s+)?(\\d{4}))?`).exec(t);
+  if (m && !(m[2] === "marco" && /^(do|pelo|o|com|pro|pra)$/.test(m[1] ?? ""))) {
+    const mm = MESES_FOLD.indexOf(m[2]) + 1;
+    const y = m[3] ? Number(m[3]) : (mm > M ? Y - 1 : Y);
+    return mes(y, mm);
+  }
+  const dow = new Date(`${hoje}T12:00:00Z`).getUTCDay(), seg = addDiasIso(hoje, -((dow + 6) % 7));
+  if (/\b(semana passada|ultima semana|semana anterior)\b/.test(t)) {
+    const i = addDiasIso(seg, -7), f = addDiasIso(seg, -1);
+    return per(i, f, "semana passada", antIgual(i, f, "semana retrasada"));
+  }
+  if (/\bsemana\b|\bsemanal\b/.test(t)) return per(seg, hoje, "esta semana", { inicio: addDiasIso(seg, -7), fim: addDiasIso(hoje, -7), rotulo: `semana anterior (${faixaTxt(addDiasIso(seg, -7), addDiasIso(hoje, -7))})` });
+  if (/\b(mes passado|ultimo mes|mes anterior)\b/.test(t)) return M === 1 ? mes(Y - 1, 12) : mes(Y, M - 1);
+  if (/\bmes\b|\bmensal\b/.test(t)) return mes(Y, M);
+  if (/\bano passado\b/.test(t)) return { inicio: `${Y - 1}-01-01`, fim: `${Y - 1}-12-31`, rotulo: String(Y - 1), anterior: { inicio: `${Y - 2}-01-01`, fim: `${Y - 2}-12-31`, rotulo: String(Y - 2) } };
+  if (/\b(este|esse|neste|nesse|no) ano\b|\bano atual\b/.test(t)) {
+    const fa = isoYmd(Y - 1, M, Math.min(D, diasNoMes(Y - 1, M)));
+    return { inicio: `${Y}-01-01`, fim: hoje, rotulo: `${Y} até hoje`, anterior: { inicio: `${Y - 1}-01-01`, fim: fa, rotulo: `${Y - 1} até ${ddmm(fa)}` } };
+  }
+  const ontem = addDiasIso(hoje, -1), anteontem = addDiasIso(hoje, -2);
+  if (/\banteontem\b/.test(t)) return per(anteontem, anteontem, "anteontem", { inicio: addDiasIso(hoje, -3), fim: addDiasIso(hoje, -3), rotulo: ddmm(addDiasIso(hoje, -3)) });
+  if (/\bontem\b/.test(t)) return per(ontem, ontem, "ontem", { inicio: anteontem, fim: anteontem, rotulo: `anteontem (${ddmm(anteontem)})` });
+  return per(hoje, hoje, "hoje", { inicio: ontem, fim: ontem, rotulo: `ontem (${ddmm(ontem)})` });
+}
+
+// ─── Recorte (vendedor/consultor, cidade/região, tipo de operação) ───
+interface PerfilEquipe { user_id: string; name: string | null }
+interface Recorte { consultor: PerfilEquipe | null; cidade: string | null; tipos: string[] | null; tipoRotulo: string | null; avisos: string[] }
+const TIPO_OPERACAO_LABEL: Record<string, string> = { primeira_visita: "1ª visita", instalacao_teste: "Instalação de teste", venda_direta: "Venda direta",
+  manutencao_preventiva: "Manutenção", chamado_corretivo: "Corretiva", entrega: "Entrega", substituicao: "Substituição", coleta_devolucao: "Coleta/devolução",
+  visita_tecnica: "Visita técnica", visita_comercial: "Visita comercial", outro: "Outras" };
+const TIPOS_RECORTE: Array<[RegExp, string[], string]> = [
+  [/corretiv|chamado/, ["chamado_corretivo"], "corretivas"],
+  [/instalac\w* de teste|\btestes?\b/, ["instalacao_teste"], "instalações de teste"],
+  [/manutenc|preventiva/, ["manutencao_preventiva", "chamado_corretivo"], "manutenções"],
+  [/primeira visita|\b1a visita|prospecc/, ["primeira_visita"], "1ª visita"],
+  [/venda direta/, ["venda_direta"], "venda direta"],
+  [/\bentregas?\b/, ["entrega"], "entregas"],
+  [/substituic/, ["substituicao"], "substituições"],
+  [/coleta de devoluc|recolhiment|retirada de aparelho/, ["coleta_devolucao"], "coletas/devolução"],
+];
+const NAO_REALIZADO_TXT: Record<string, string> = { cliente_ausente: "cliente ausente", cancelado_no_local: "cancelado no local", reagendar: "reagendar" };
+const CANAL_TXT: Record<string, string> = { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", MESSENGER: "Messenger", WIDGET: "Site", TELEGRAM: "Telegram" };
+const PALAVRAS_NAO_NOME = new Set(["mes", "dia", "ano", "semana", "periodo", "funil", "time", "equipe", "comercial", "cliente", "clientes", "lead", "leads", "fera", "sistema",
+  "whatsapp", "mesmo", "total", "geral", "grupo", "hoje", "ontem", "anteontem", "atendimento", "faturamento", "financeiro", "gestor", "gestao", "vendedor", "consultor",
+  "nitsclean", "flora", "estoque", "boletim", "resumo", "panorama", "indicadores", "ranking", "momento", "jeito", "trimestre"]);
+
+/** Nickname root: "Marquinho" → "marc", "Paulinho" → "paul", "Joãozinho" → "joao". */
+function apelidoBase(token: string): string {
+  const k = token.replace(/(zinh[oa]|inh[oa]|it[oa])$/, "");
+  return k === token ? token : k.replace(/qu$/, "c").replace(/gu$/, "g");
+}
+function acharPessoa(token: string, perfis: PerfilEquipe[]): PerfilEquipe[] {
+  const k = foldTxt(token), base = apelidoBase(k);
+  if (k.length < 2) return [];
+  return perfis.filter((p) => {
+    const nomes = foldTxt(p.name).split(" ").filter(Boolean);
+    return nomes.includes(k) || (base !== k && base.length >= 3 && (nomes[0] ?? "").startsWith(base));
+  });
+}
+const primeiroNome = (p: PerfilEquipe | null) => (p?.name ?? "Sem responsável").trim().split(/\s+/)[0];
+
+function resolverRecorte(texto: string, params: Record<string, unknown>, perfis: PerfilEquipe[], areas: Array<{ city?: string | null; name?: string | null }>): Recorte {
+  const rec: Recorte = { consultor: null, cidade: null, tipos: null, tipoRotulo: null, avisos: [] };
+  const t = foldTxt(texto);
+  // City / region: explicit field first, then the longest known alias or coverage city written in the text.
+  const candidatos: Array<{ chave: string; nome: string }> = [];
+  for (const a of areas) for (const v of [a.city, a.name]) if (v) candidatos.push({ chave: foldPlace(v), nome: String(a.city ?? v) });
+  for (const [alias, oficial] of Object.entries(CITY_ALIASES)) {
+    const area = areas.find((a) => cityKeys(a.city).includes(oficial));
+    const nome = area?.city ?? oficial.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+    candidatos.push({ chave: alias, nome }, { chave: oficial, nome });
+  }
+  candidatos.sort((a, b) => b.chave.length - a.chave.length);
+  const usado = new Set<string>();
+  const cidadeParam = typeof params.cidade === "string" && params.cidade.trim() ? params.cidade.trim() : null;
+  if (cidadeParam) rec.cidade = candidatos.find((c) => cityKeys(cidadeParam).includes(cityKeys(c.chave)[0] ?? ""))?.nome ?? cidadeParam;
+  else {
+    const fold = ` ${foldPlace(texto)} `;
+    const hit = candidatos.find((c) => c.chave.length >= 4 && fold.includes(` ${c.chave} `));
+    if (hit) { rec.cidade = hit.nome; for (const w of hit.chave.split(" ")) usado.add(w); }
+  }
+  // Operation type.
+  const tipoTxt = typeof params.tipo === "string" ? foldTxt(params.tipo) : t;
+  for (const [re, tipos, rotulo] of TIPOS_RECORTE) if (re.test(tipoTxt)) { rec.tipos = tipos; rec.tipoRotulo = rotulo; break; }
+  // Seller/consultant by (nick)name: "do Marquinho", "da Ana", "consultor Marcos", or a team first name written alone.
+  const nomesPedidos: Array<{ token: string; capitalizado: boolean }> = [];
+  if (typeof params.consultor === "string" && params.consultor.trim()) nomesPedidos.push({ token: params.consultor.trim().split(/\s+/)[0], capitalizado: true });
+  for (const mm of texto.matchAll(/(?:^|\s)(?:do|da|pelo|pela|consultora?|vendedora?|t[eé]cnico|pro|pra)\s+(\p{L}+)/giu)) nomesPedidos.push({ token: mm[1], capitalizado: /^\p{Lu}/u.test(mm[1]) });
+  for (const w of texto.split(/[^\p{L}]+/u)) if (w.length >= 4 && perfis.some((p) => foldTxt(p.name).split(" ")[0] === foldTxt(w))) nomesPedidos.push({ token: w, capitalizado: true });
+  for (const { token, capitalizado } of nomesPedidos) {
+    const k = foldTxt(token);
+    if (PALAVRAS_NAO_NOME.has(k) || usado.has(k) || MESES_FOLD.includes(k) && !capitalizado) continue;
+    const achados = acharPessoa(token, perfis);
+    if (achados.length === 1) { rec.consultor = achados[0]; break; }
+    if (achados.length > 1) { rec.avisos.push(`Achei mais de um "${token}": ${achados.map((p) => p.name).join(", ")}. Diga o nome completo.`); break; }
+    if (capitalizado && !candidatos.some((c) => c.chave.split(" ").includes(k)) && !MESES_FOLD.includes(k)) { rec.avisos.push(`Não achei "${token}" na equipe; mostrei todos.`); break; }
+  }
+  return rec;
+}
+
+// ─── Métricas ───
+const dataSp = (ts: unknown): string | null => typeof ts === "string" && ts ? new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" }) : null;
+const naFaixa = (d: string | null | undefined, f: Faixa) => !!d && d >= f.inicio && d <= f.fim;
+function tipoOperacao(s: any): string {
+  if (s.ocorrencia_tipo) return s.ocorrencia_tipo;
+  if (s.operacao_material === "instalacao_teste") return "instalacao_teste";
+  if (s.schedule_type === "manutencao") return "manutencao_preventiva";
+  if (s.schedule_type === "visita_comercial") return "primeira_visita";
+  return s.schedule_type || "outro";
+}
+/** On-site proof: GPS accuracy ≤ 40 m and inside the radius of a known destination. */
+function comprovacaoCheckin(s: any, c: any): "no_local" | "fora" | "sem_checkin" {
+  if (!c) return "sem_checkin";
+  const p = Number(c.precisao_m), dist = c.distancia_m;
+  return Number.isFinite(p) && p <= 40 && dist !== null && dist !== undefined && !c.fora_do_raio && !c.destino_sem_coordenadas ? "no_local" : "fora";
+}
+interface DadosInd { schedules: any[]; checkins: Map<string, any>; leads: any[]; stages: any[]; proposals: any[]; comodatos: any[]; tarefas: any[]; abertas: any[]; atend: any[]; aprovados: any[] }
+interface PorVendedor { ops: number; concluidas: number; nao: number; noLocal: number; executadas: number }
+interface Metricas {
+  ops: number; porTipo: Record<string, number>; devidas: number; concluidas: number; resultados: Record<string, number>; naoRealizadas: number; motivos: Record<string, number>;
+  infoPendente: number; abertas: number; noLocal: number; fora: number; semCheckin: number; relatadas: number; executadas: number; porVendedor: Record<string, PorVendedor>;
+  leadsNovos: number; porCanal: Record<string, number>; avancaram: number; viraramCliente: number; propEnviadas: number; propEnviadasValor: number; propAceitas: number; propAceitasValor: number;
+  testes: number; testesAprovados: number; manutFeitas: number; manutAtrasadas: number; ativados: number; retirados: number;
+  notasEmitidas: number; notasCanceladas: number; notasDevolucao: number; transferencias: number; tempoMedioMin: number | null;
+}
+const LIMITE_INDICADORES = 1500;
+const NOTA_EMITIR = ["emitir", "emitir_comodato"], NOTA_DEVOLUCAO = ["devolucao", "devolucao_remessa"], NOTA_CANCELAR = ["cancelar", "baixar_remessa"];
+function metricas(d: DadosInd, f: Faixa, hoje: string): Metricas {
+  const inc = (o: Record<string, number>, k: string) => { o[k] = (o[k] ?? 0) + 1; };
+  const m: Metricas = { ops: 0, porTipo: {}, devidas: 0, concluidas: 0, resultados: {}, naoRealizadas: 0, motivos: {}, infoPendente: 0, abertas: 0, noLocal: 0, fora: 0, semCheckin: 0,
+    relatadas: 0, executadas: 0, porVendedor: {}, leadsNovos: 0, porCanal: {}, avancaram: 0, viraramCliente: 0, propEnviadas: 0, propEnviadasValor: 0, propAceitas: 0, propAceitasValor: 0,
+    testes: 0, testesAprovados: 0, manutFeitas: 0, manutAtrasadas: 0, ativados: 0, retirados: 0, notasEmitidas: 0, notasCanceladas: 0, notasDevolucao: 0, transferencias: 0, tempoMedioMin: null };
+  for (const s of d.schedules) {
+    if (!naFaixa(s.scheduled_date, f) || s.status === "cancelado") continue;
+    const tipo = tipoOperacao(s);
+    m.ops++; inc(m.porTipo, tipo);
+    const v = (m.porVendedor[s.assigned_to ?? "-"] ??= { ops: 0, concluidas: 0, nao: 0, noLocal: 0, executadas: 0 });
+    v.ops++;
+    if (s.scheduled_date <= hoje) m.devidas++;
+    if (s.status === "concluido") { m.concluidas++; v.concluidas++; inc(m.resultados, ["boa", "mediana", "ruim"].includes(s.resultado) ? s.resultado : "tecnica"); }
+    else if (s.status === "nao_realizado") { m.naoRealizadas++; v.nao++; inc(m.motivos, NAO_REALIZADO_TXT[s.nao_realizado_motivo] ?? (s.nao_realizado_motivo ? String(s.nao_realizado_motivo).slice(0, 30) : "sem motivo")); }
+    else m.abertas++;
+    if (s.coleta_status === "pendente") m.infoPendente++;
+    if (["concluido", "em_atendimento", "nao_realizado"].includes(s.status)) {
+      m.executadas++; v.executadas++;
+      const c = comprovacaoCheckin(s, d.checkins.get(s.id));
+      if (c === "no_local") { m.noLocal++; v.noLocal++; } else if (c === "fora") m.fora++; else m.semCheckin++;
+      if (s.source === "flora_relatada") m.relatadas++;
+    }
+    if (tipo === "instalacao_teste" && s.status === "concluido") m.testes++;
+    if (["manutencao_preventiva", "chamado_corretivo"].includes(tipo)) {
+      if (s.status === "concluido") m.manutFeitas++;
+      else if (s.scheduled_date < hoje && ["agendado", "confirmado"].includes(s.status)) m.manutAtrasadas++;
+    }
+  }
+  const ordem = new Map(d.stages.map((s: any) => [s.id, s]));
+  const ordemNovo = Math.min(...d.stages.filter((s: any) => s.tipo === "aberta").map((s: any) => Number(s.ordem) || 0), Infinity);
+  for (const l of d.leads) {
+    if (naFaixa(dataSp(l.created_at), f)) { m.leadsNovos++; inc(m.porCanal, CANAL_TXT[l.canal_origem] ?? (l.created_by_flora ? "Flora" : "Fera")); }
+    if (naFaixa(dataSp(l.converted_at), f)) m.viraramCliente++;
+    const st: any = ordem.get(l.stage_id);
+    if (st && st.tipo !== "perdido" && Number(st.ordem) > ordemNovo && naFaixa(dataSp(l.updated_at), f)) m.avancaram++;
+  }
+  for (const p of d.proposals) {
+    const valor = Number(p.final_value ?? p.total_value ?? 0) || 0;
+    if (["enviada", "aceita", "recusada"].includes(p.status) && naFaixa(dataSp(p.pdf_gerado_em ?? p.updated_at), f)) { m.propEnviadas++; m.propEnviadasValor += valor; }
+    if (p.status === "aceita" && naFaixa(dataSp(p.updated_at), f)) { m.propAceitas++; m.propAceitasValor += valor; }
+  }
+  for (const a of d.aprovados) if (naFaixa(dataSp(a.created_at), f)) m.testesAprovados++;
+  for (const c of d.comodatos) {
+    if (["ATIVO", "EM_TESTE"].includes(c.status) && naFaixa(c.data_inicio, f)) m.ativados++;
+    if (c.status === "ENCERRADO" && naFaixa(c.data_fim, f)) m.retirados++;
+  }
+  for (const t of d.tarefas) {
+    if (t.status === "concluida" && naFaixa(dataSp(t.concluida_em), f)) {
+      if (NOTA_EMITIR.includes(t.acao)) m.notasEmitidas++; else if (NOTA_DEVOLUCAO.includes(t.acao)) m.notasDevolucao++; else if (NOTA_CANCELAR.includes(t.acao)) m.notasCanceladas++;
+    } else if (t.status === "cancelada" && naFaixa(dataSp(t.updated_at), f)) m.notasCanceladas++;
+  }
+  const tempos: number[] = [];
+  for (const a of d.atend) {
+    if (!naFaixa(dataSp(a.aberto_em), f)) continue;
+    m.transferencias++;
+    if (a.assumido_em) { const min = (Date.parse(a.assumido_em) - Date.parse(a.relogio_inicia_em ?? a.aberto_em)) / 60000; if (Number.isFinite(min)) tempos.push(Math.max(0, min)); }
+  }
+  m.tempoMedioMin = tempos.length ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null;
+  return m;
+}
+const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0;
+function variacao(cur: number, prev: number, unidade = ""): string {
+  const dlt = Math.round((cur - prev) * 10) / 10;
+  return dlt > 0 ? `▲${dlt}${unidade}` : dlt < 0 ? `▼${-dlt}${unidade}` : "=";
+}
+const brl = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const minTxt = (m: number | null) => m === null ? "—" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}`;
+const topK = (o: Record<string, number>, k = 3) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, k);
+
+/** Loads the rows of the whole window (previous + current period) once; metricas() splits them. */
+async function carregarIndicadores(supabase: ReturnType<typeof getClient>, org: string, janela: Faixa, rec: Recorte): Promise<DadosInd> {
+  const desdeTs = `${janela.inicio}T03:00:00Z`, ateTs = `${addDiasIso(janela.fim, 1)}T03:00:00Z`;
+  const uid = rec.consultor?.user_id ?? null;
+  let qs = supabase.from("schedules").select("id, scheduled_date, status, resultado, nao_realizado_motivo, coleta_status, ocorrencia_tipo, schedule_type, operacao_material, assigned_to, source, lead_id, client_id, ocorrencia_codigo, title")
+    .eq("organization_id", org).gte("scheduled_date", janela.inicio).lte("scheduled_date", janela.fim).neq("status", "cancelado");
+  if (uid) qs = qs.eq("assigned_to", uid);
+  let ql = supabase.from("leads").select("id, created_at, updated_at, converted_at, canal_origem, created_by_flora, assigned_to, city, stage_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  if (uid) ql = ql.eq("assigned_to", uid);
+  let qp = supabase.from("proposals").select("id, status, final_value, total_value, created_at, updated_at, pdf_gerado_em, assigned_to, created_by, lead_id, client_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  if (uid) qp = qp.or(`assigned_to.eq.${uid},created_by.eq.${uid}`);
+  let qc = supabase.from("comodatos").select("id, status, data_inicio, data_fim, created_by, lead_id, client_id, cidade").eq("organization_id", org).or(`data_inicio.gte.${janela.inicio},data_fim.gte.${janela.inicio}`);
+  if (uid) qc = qc.eq("created_by", uid);
+  const qt = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, concluida_em, created_at, updated_at, prazo, empresa_nome, schedule_id").eq("organization_id", org).gte("updated_at", desdeTs);
+  const qa = supabase.from("tarefas_faturamento").select("id, acao, tipo_nota, status, prazo, empresa_nome, schedule_id, created_at").eq("organization_id", org).eq("status", "aberta").order("prazo");
+  const qat = supabase.from("atendimentos").select("id, aberto_em, relogio_inicia_em, assumido_em, assumido_por, responsavel_id, status, lead_id").eq("organization_id", org).gte("aberto_em", desdeTs).lt("aberto_em", ateTs);
+  const qtl = supabase.from("lead_timeline").select("lead_id, created_at, resumo").eq("organization_id", org).eq("tipo", "visita").ilike("resumo", "Resultado do teste: Aprovado%").gte("created_at", desdeTs);
+  const qst = supabase.from("lead_stages").select("id, ordem, tipo, chave").eq("organization_id", org);
+  const [s, l, p, c, t, a, at, tl, st] = await Promise.all([qs.limit(5000), ql.limit(5000), qp.limit(2000), qc.limit(3000), qt.limit(3000), qa.limit(500), qat.limit(3000), qtl.limit(1000), qst]);
+  for (const [nome, r] of [["schedules", s], ["leads", l], ["proposals", p], ["comodatos", c], ["tarefas", t], ["atendimentos", at]] as const) if ((r as any)?.error) dbFail(`indicadores ${nome}`, (r as any).error);
+  const d: DadosInd = { schedules: arr(s.data), checkins: new Map(), leads: arr(l.data), stages: arr(st.data), proposals: arr(p.data), comodatos: arr(c.data), tarefas: arr(t.data),
+    abertas: arr(a.data), atend: arr(at.data), aprovados: arr(tl.data) };
+  if (uid) {
+    d.proposals = d.proposals.filter((x) => x.assigned_to === uid || x.created_by === uid);
+    d.atend = d.atend.filter((x) => x.assumido_por === uid || x.responsavel_id === uid);
+    const ids = [...new Set([...d.tarefas, ...d.abertas].map((x) => x.schedule_id).filter(Boolean))];
+    const meus = new Set<string>();
+    for (let i = 0; i < ids.length; i += 150) {
+      const { data } = await supabase.from("schedules").select("id").eq("organization_id", org).eq("assigned_to", uid).in("id", ids.slice(i, i + 150));
+      for (const r of arr(data)) meus.add(r.id);
+    }
+    d.tarefas = d.tarefas.filter((x) => meus.has(x.schedule_id)); d.abertas = d.abertas.filter((x) => meus.has(x.schedule_id));
+    const meusLeads = new Set(d.leads.map((x) => x.id));
+    d.aprovados = d.aprovados.filter((x) => meusLeads.has(x.lead_id));
+  }
+  if (rec.tipos) d.schedules = d.schedules.filter((x) => rec.tipos!.includes(tipoOperacao(x)));
+  if (rec.cidade) {
+    const cidadeDe = new Map<string, string | null>();
+    const leadIds = [...new Set([...d.schedules, ...d.proposals, ...d.comodatos, ...d.atend, ...d.aprovados].map((x) => x.lead_id).filter(Boolean))];
+    const clientIds = [...new Set([...d.schedules, ...d.proposals, ...d.comodatos].map((x) => x.client_id).filter(Boolean))];
+    for (const l of d.leads) cidadeDe.set(l.id, l.city ?? null);
+    for (const [tabela, ids] of [["leads", leadIds.filter((x) => !cidadeDe.has(x))], ["clients", clientIds]] as const) {
+      for (let i = 0; i < ids.length; i += 150) {
+        const { data } = await supabase.from(tabela).select("id, city").eq("organization_id", org).in("id", ids.slice(i, i + 150));
+        for (const r of arr(data)) cidadeDe.set(r.id, r.city ?? null);
+      }
+    }
+    const naCidade = (x: any) => cityInArea(x.cidade ?? cidadeDe.get(x.client_id) ?? cidadeDe.get(x.lead_id) ?? x.city, rec.cidade);
+    d.schedules = d.schedules.filter(naCidade); d.proposals = d.proposals.filter(naCidade); d.comodatos = d.comodatos.filter(naCidade);
+    d.leads = d.leads.filter((x) => cityInArea(x.city, rec.cidade)); d.atend = d.atend.filter((x) => x.lead_id && cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
+    d.aprovados = d.aprovados.filter((x) => cityInArea(cidadeDe.get(x.lead_id), rec.cidade));
+  }
+  const sids = d.schedules.filter((x) => ["concluido", "em_atendimento", "nao_realizado"].includes(x.status)).map((x) => x.id);
+  for (let i = 0; i < sids.length; i += 150) {
+    const { data } = await supabase.from("schedule_checkins").select("schedule_id, checkin_em, precisao_m, distancia_m, fora_do_raio, destino_sem_coordenadas").eq("organization_id", org).in("schedule_id", sids.slice(i, i + 150));
+    for (const r of arr(data)) { const old = d.checkins.get(r.schedule_id); if (!old || String(r.checkin_em) > String(old.checkin_em)) d.checkins.set(r.schedule_id, r); }
+  }
+  return d;
+}
+
+// ─── Boletim em imagem (SVG → PNG via resvg-wasm com Montserrat embutida) ───
+interface BoletimCard { rotulo: string; valor: string; sub?: string; delta: string; inverter?: boolean }
+interface BoletimDados {
+  logo?: string | null; titulo: string; periodo: string; comparacao: string; recorte?: string | null; cards: BoletimCard[];
+  barras: { titulo: string; itens: Array<{ rotulo: string; valor: number; cor: string }> };
+  lista: { titulo: string; linhas: Array<{ nome: string; valor: string }>; vazio: string }; gerado: string;
+}
+const BRAND = { petroleo: "#025159", verde: "#91BF4B", agua: "#5EB5BF", marinho: "#182859", texto: "#3D4B52", cinza: "#6B7A80", fundo: "#F1F6F6", borda: "#D6E4E5",
+  vermelho: "#C8463D", ambar: "#E3A72F" };
+const xmlEsc = (v: unknown) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/** Cuts text that would overflow `largura` px (Montserrat ≈ 0.6 em per character). */
+const caber = (v: string, largura: number, fonte: number) => { const max = Math.max(4, Math.floor(largura / (fonte * 0.6))); return v.length > max ? `${v.slice(0, max - 1)}…` : v; };
+
+function boletimSvg(b: BoletimDados): string {
+  const W = 1080, H = 1350, X = 60, R = W - 60;
+  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Montserrat">`,
+    `<rect width="${W}" height="${H}" fill="#FFFFFF"/>`, `<rect width="${W}" height="14" fill="${BRAND.petroleo}"/>`, `<rect x="0" y="14" width="${W / 3}" height="6" fill="${BRAND.verde}"/>`];
+  const txt = (x: number, y: number, s: string, size: number, cor: string, peso = 500, ancora = "start") =>
+    out.push(`<text x="${x}" y="${y}" font-size="${size}" font-weight="${peso}" fill="${cor}" text-anchor="${ancora}">${xmlEsc(s)}</text>`);
+  if (b.logo) out.push(`<image x="${X}" y="48" width="320" height="96" preserveAspectRatio="xMinYMid meet" href="${b.logo}" xlink:href="${b.logo}"/>`);
+  else out.push(`<text x="${X}" y="118" font-size="58" font-weight="800"><tspan fill="${BRAND.petroleo}">Nits</tspan><tspan fill="${BRAND.verde}">Clean</tspan></text>`);
+  txt(R, 88, "BOLETIM", 24, BRAND.agua, 800, "end");
+  txt(R, 124, caber(b.titulo, 520, 26), 26, BRAND.cinza, 500, "end");
+  txt(X, 218, caber(b.periodo.charAt(0).toUpperCase() + b.periodo.slice(1), R - X, 46), 46, BRAND.petroleo, 800);
+  txt(X, 260, caber(`Comparado com ${b.comparacao}`, R - X, 24), 24, BRAND.cinza);
+  if (b.recorte) txt(X, 294, caber(`Recorte: ${b.recorte}`, R - X, 24), 24, BRAND.marinho, 800);
+  const y0 = b.recorte ? 322 : 300, cw = 465, ch = 200, gap = 30;
+  b.cards.slice(0, 4).forEach((c, i) => {
+    const x = X + (i % 2) * (cw + gap), y = y0 + Math.floor(i / 2) * (ch + gap);
+    out.push(`<rect x="${x}" y="${y}" width="${cw}" height="${ch}" rx="26" fill="${BRAND.fundo}" stroke="${BRAND.borda}" stroke-width="2"/>`);
+    out.push(`<rect x="${x}" y="${y + 30}" width="8" height="40" rx="4" fill="${BRAND.verde}"/>`);
+    txt(x + 30, y + 60, caber(c.rotulo, cw - 60, 26), 26, BRAND.texto, 500);
+    txt(x + 30, y + 140, caber(c.valor, cw - 60, 76), 76, BRAND.petroleo, 800);
+    const sobe = c.delta.startsWith("▲"), desce = c.delta.startsWith("▼");
+    const bom = c.inverter ? desce : sobe, ruim = c.inverter ? sobe : desce;
+    const fill = bom ? "#E6F1D6" : ruim ? "#F7DCD9" : "#E6ECEE", cor = bom ? "#4F7A16" : ruim ? "#A3332A" : BRAND.cinza;
+    const rot = sobe || desce ? `${c.delta.slice(1)} vs anterior` : "igual ao anterior";
+    const larg = 50 + rot.length * 12;
+    out.push(`<rect x="${x + 30}" y="${y + 154}" width="${larg}" height="34" rx="17" fill="${fill}"/>`);
+    const ax = x + 48, ay = y + 171;
+    if (sobe) out.push(`<polygon points="${ax - 9},${ay + 7} ${ax + 9},${ay + 7} ${ax},${ay - 8}" fill="${cor}"/>`);
+    else if (desce) out.push(`<polygon points="${ax - 9},${ay - 7} ${ax + 9},${ay - 7} ${ax},${ay + 8}" fill="${cor}"/>`);
+    else out.push(`<rect x="${ax - 9}" y="${ay - 6}" width="18" height="4" fill="${cor}"/><rect x="${ax - 9}" y="${ay + 2}" width="18" height="4" fill="${cor}"/>`);
+    txt(x + 66, y + 179, rot, 21, cor, 800);
+    if (c.sub) txt(x + cw - 26, y + 60, caber(c.sub, 200, 22), 22, BRAND.cinza, 800, "end");
+  });
+  let y = y0 + 2 * ch + gap + 64;
+  txt(X, y, b.barras.titulo, 30, BRAND.marinho, 800);
+  const max = Math.max(1, ...b.barras.itens.map((i) => i.valor)), barX = 380, barW = 540;
+  y += 22;
+  for (const it of b.barras.itens.slice(0, 4)) {
+    txt(X, y + 30, caber(it.rotulo, barX - X - 20, 26), 26, BRAND.texto, 500);
+    out.push(`<rect x="${barX}" y="${y + 6}" width="${barW}" height="32" rx="16" fill="${BRAND.fundo}"/>`);
+    const w = it.valor > 0 ? Math.max(32, Math.round((it.valor / max) * barW)) : 0;
+    if (w) out.push(`<rect x="${barX}" y="${y + 6}" width="${w}" height="32" rx="16" fill="${it.cor}"/>`);
+    txt(R, y + 32, String(it.valor), 28, BRAND.petroleo, 800, "end");
+    y += 50;
+  }
+  y += 44;
+  txt(X, y, b.lista.titulo, 30, BRAND.marinho, 800);
+  y += 12;
+  const linhas = b.lista.linhas.slice(0, 4);
+  if (!linhas.length) txt(X, y + 40, b.lista.vazio, 24, BRAND.cinza);
+  for (const l of linhas) {
+    out.push(`<rect x="${X}" y="${y + 52}" width="${R - X}" height="2" fill="${BRAND.borda}"/>`);
+    txt(X, y + 38, caber(l.nome, 560, 26), 26, BRAND.texto, 500);
+    txt(R, y + 38, caber(l.valor, 400, 24), 24, BRAND.petroleo, 800, "end");
+    y += 46;
+  }
+  out.push(`<rect x="${X}" y="1292" width="${R - X}" height="2" fill="${BRAND.borda}"/>`);
+  txt(X, 1326, caber(`Gerado em ${b.gerado} · Fera — Sistema de Gestão`, 760, 21), 21, BRAND.cinza);
+  out.push(`<text x="${R}" y="1326" font-size="22" font-weight="800" text-anchor="end"><tspan fill="${BRAND.petroleo}">Nits</tspan><tspan fill="${BRAND.verde}">Clean</tspan></text>`);
+  out.push("</svg>");
+  return out.join("");
+}
+
+/** Renders the SVG with the given resvg class and embedded fonts (no system fonts). */
+function renderizarBoletim(svg: string, Resvg: any, fontes: Uint8Array[]): Uint8Array {
+  const r = new Resvg(svg, { fitTo: { mode: "width", value: 1080 }, background: "#FFFFFF", font: { fontBuffers: fontes, defaultFontFamily: "Montserrat", loadSystemFonts: false } });
+  return r.render().asPng();
+}
+const RESVG_WASM_URL = "https://cdn.jsdelivr.net/npm/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
+let resvgPronto: Promise<{ Resvg: any; fontes: Uint8Array[] }> | null = null;
+/** Loads resvg-wasm and the embedded Montserrat once per isolate; any failure resets so the next call retries (caller falls back to graficoPng). */
+function carregarResvg(): Promise<{ Resvg: any; fontes: Uint8Array[] }> {
+  resvgPronto ??= (async () => {
+    const mod: any = await import("npm:@resvg/resvg-wasm@2.6.2");
+    const wasm = await fetch(RESVG_WASM_URL, { signal: AbortSignal.timeout(8000) });
+    if (!wasm.ok) throw new Error(`WASM_HTTP_${wasm.status}`);
+    await mod.initWasm(new Uint8Array(await wasm.arrayBuffer()));
+    const fonte: any = await import("../_shared/boletim-fonte.ts");
+    return { Resvg: mod.Resvg, fontes: fonte.fontesBoletim() };
+  })().catch((e) => { resvgPronto = null; throw e; });
+  return resvgPronto;
+}
+/** Organization logo as a data URI (PNG/JPEG ≤ 1.5 MB), or null so the header shows the NitsClean wordmark. */
+async function logoDataUri(supabase: ReturnType<typeof getClient>): Promise<string | null> {
+  try {
+    const { data } = await supabase.from("organizations").select("logo_url").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
+    const url = (data as any)?.logo_url;
+    if (typeof url !== "string" || !/^https:\/\//.test(url)) return null;
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    const tipo = (res.headers.get("content-type") ?? "").split(";")[0].trim();
+    if (!res.ok || !["image/png", "image/jpeg"].includes(tipo)) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.length > 1_500_000) return null;
+    let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:${tipo};base64,${btoa(bin)}`;
+  } catch { return null; }
+}
+
+// ─── Intenção do pedido ───
+function ehPanorama(texto: string): boolean {
+  return /resumo|boletim|panorama|como (estamos|esta|estao|foi|fomos|vai|vamos|anda|andam)|indicador|numeros|desempenho|balanco|relatorio|ranking|visao geral|dashboard|grafico|funil|semana|semanal|\bmes\b|mensal/.test(foldTxt(texto));
+}
+function ehPontual(texto: string): boolean { return /^\s*(quant[oa]s?|qual|quais|quem)\b|\bquant[oa]s\b/.test(foldTxt(texto)); }
+function ehAgendaCampo(texto: string): boolean { return /o que (eu )?tenho|minha agenda|\bagenda\b|levar|amanha/.test(foldTxt(texto)); }
 function visaoIndicadores(papeis: string[]): "gestor" | "faturamento" | "campo" {
   if (papeis.some((r) => PRIVILEGED_ROLES.includes(r))) return "gestor";
   if (papeis.includes("faturamento") && !papeis.some((r) => ["vendedor", "consultor_tecnico"].includes(r))) return "faturamento";
   return "campo";
 }
-const addDiasIso = (iso: string, n: number) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const arr = (v: unknown): any[] => Array.isArray(v) ? v : [];
-const brDia = (iso: string) => iso.split("-").reverse().slice(0, 2).join("/");
+const TOPICOS: Array<[RegExp, string]> = [[/propost/, "comercial"], [/lead|canal|funil|cliente/, "comercial"], [/teste/, "comercial"], [/nota|fatur/, "operacao"],
+  [/manuten|aparelh|comodato|ativad|retirad/, "operacao"], [/atendiment|transfer|humano|assumir/, "atendimento"], [/comprov|check|gps|local/, "comprovacao"],
+  [/ranking|quem|vendedor|consultor/, "ranking"], [/visita|operac|ocorrenc|conclu|realizad|pendent/, "operacoes"]];
+
+/** Field agenda answer (today/tomorrow, what to take) — unchanged behaviour for "o que tenho amanhã?". */
+async function agendaCampo(u: TeamUser, supabase: ReturnType<typeof getClient>, hoje: string, amanha: string): Promise<McpResponse> {
+  const org = NITSCLEAN_ORG_ID;
+  const [{ data: ag }, { data: pend }, { data: props }] = await Promise.all([
+    supabase.from("schedules").select("id, ocorrencia_codigo, title, scheduled_date, start_time, itens, material_status, prontidao").eq("organization_id", org)
+      .eq("assigned_to", u.user_id).in("scheduled_date", [hoje, amanha]).in("status", ["agendado", "confirmado", "em_atendimento"]).order("scheduled_date").order("start_time").limit(40),
+    supabase.from("schedules").select("ocorrencia_codigo, title").eq("organization_id", org).eq("assigned_to", u.user_id).eq("coleta_status", "pendente").limit(20),
+    supabase.from("proposals").select("title, status, assigned_to, created_by").eq("organization_id", org).in("status", ["rascunho", "enviada"]).or(`assigned_to.eq.${u.user_id},created_by.eq.${u.user_id}`).limit(20),
+  ]);
+  const vis = arr(ag), linha = (v: any) => `${String(v.start_time ?? "").slice(0, 5) || "--:--"} ${v.title}${v.ocorrencia_codigo ? ` #${v.ocorrencia_codigo}` : ""}`;
+  const linhas: string[] = [];
+  for (const [dia, rot] of [[hoje, "Hoje"], [amanha, "Amanhã"]] as const) {
+    const d = vis.filter((v) => v.scheduled_date === dia);
+    linhas.push(`${rot} (${brDia(dia)}): ${d.length ? d.map(linha).join("; ") : "nada agendado"}`);
+  }
+  const levar = new Map<string, number>();
+  for (const v of vis.filter((x) => x.material_status === "pendente" || x.material_status === "separado")) for (const i of arr(v.itens)) levar.set(i.descricao, (levar.get(i.descricao) ?? 0) + (Number(String(i.quantidade).replace(",", ".")) || 0));
+  if (levar.size) linhas.push(`Levar: ${[...levar].map(([d, q]) => `${q}x ${d}`).join(", ")}`);
+  linhas.push(`Ocorrências com info pendente: ${arr(pend).length ? arr(pend).map((p) => `#${p.ocorrencia_codigo}`).join(", ") : "nenhuma"}`);
+  const minhas = arr(props).filter((p) => p.assigned_to === u.user_id || p.created_by === u.user_id);
+  linhas.push(`Propostas abertas: ${minhas.length}`);
+  linhas.push(`${feraLink("/hoje")} · ${feraLink("/propostas")}`);
+  const msg = linhas.join("\n");
+  return ok({ visao: "campo", modo: "agenda", imagem_enviada: false, mensagem_para_equipe: msg.length > 1200 ? `${msg.slice(0, 1197)}...` : msg });
+}
 
 async function indicadores(params: Record<string, unknown>): Promise<McpResponse> {
   return withTeam(async (u, supabase) => {
     const texto = typeof params.texto === "string" ? params.texto : "";
     const hoje = spToday(), amanha = addDiasIso(hoje, 1);
-    const semana = /semana/i.test(texto), desde = semana ? addDiasIso(hoje, -6) : hoje;
     const visao = visaoIndicadores(u.papeis);
     const org = NITSCLEAN_ORG_ID;
-    const linhas: string[] = []; let barras: Array<{ rotulo: string; valor: number }> = []; let titulo = "";
-    const amanhaSemNota = async (proprio: boolean) => {
-      let q = supabase.from("schedules").select("id, ocorrencia_codigo, title, prontidao, nota_status, material_status").eq("organization_id", org)
-        .eq("scheduled_date", amanha).in("status", ["agendado", "confirmado"]).neq("prontidao", "pronto");
-      if (proprio) q = q.eq("assigned_to", u.user_id);
-      return arr((await q.limit(50)).data);
+    if (visao === "campo" && ehAgendaCampo(texto) && !ehPanorama(texto)) return agendaCampo(u, supabase, hoje, amanha);
+    const periodo = resolverPeriodo(texto, hoje);
+    const [{ data: perfisRows }, { data: areasRows }] = await Promise.all([
+      supabase.from("profiles").select("user_id, name, is_active").eq("organization_id", org).limit(200),
+      supabase.from("ekkoa_coverage_areas").select("city, name").eq("organization_id", org).eq("is_active", true).limit(200),
+    ]);
+    const perfis: PerfilEquipe[] = arr(perfisRows).filter((p) => p.is_active !== false);
+    const rec = resolverRecorte(texto, params, perfis, arr(areasRows));
+    // Field roles only ever see their own numbers; billing sees the organization's invoices.
+    if (visao === "campo") {
+      if (rec.consultor && rec.consultor.user_id !== u.user_id) rec.avisos.push("Você vê só os seus números.");
+      rec.consultor = { user_id: u.user_id, name: u.nome };
+    } else if (visao === "faturamento") rec.consultor = null;
+    const dados = await carregarIndicadores(supabase, org, { inicio: periodo.anterior.inicio, fim: periodo.fim, rotulo: "" }, rec);
+    const cur = metricas(dados, periodo, hoje), prev = metricas(dados, periodo.anterior, hoje);
+    const pctConc = pct(cur.concluidas, cur.devidas), pctConcAnt = pct(prev.concluidas, prev.devidas);
+    const pctComp = pct(cur.noLocal, cur.executadas), pctCompAnt = pct(prev.noLocal, prev.executadas);
+    const nomes = new Map(perfis.map((p) => [p.user_id, primeiroNome(p)]));
+    const ranking = visao === "gestor" && !rec.consultor
+      ? Object.entries(cur.porVendedor).filter(([id]) => id !== "-").map(([id, v]) => ({ nome: nomes.get(id) ?? "Equipe", ...v })).sort((a, b) => b.ops - a.ops || b.concluidas - a.concluidas)
+      : [];
+    const vencidas = dados.abertas.filter((t) => t.prazo && Date.parse(t.prazo) < Date.now()).length;
+    const recorteTxt = [rec.consultor && visao === "gestor" ? primeiroNome(rec.consultor) : null, rec.cidade, rec.tipoRotulo].filter(Boolean).join(", ") || null;
+
+    const resultadosTxt = [["boa", "boa", "boas"], ["mediana", "mediana", "medianas"], ["ruim", "ruim", "ruins"], ["tecnica", "técnica", "técnicas"]]
+      .filter(([k]) => cur.resultados[k]).map(([k, s, p]) => `${cur.resultados[k]} ${cur.resultados[k] === 1 ? s : p}`).join(", ");
+    const motivosTxt = topK(cur.motivos).map(([k, n]) => `${k} ${n}`).join(", ");
+    const tiposTxt = topK(cur.porTipo, 4).map(([k, n]) => `${TIPO_OPERACAO_LABEL[k] ?? k} ${n}`).join(", ");
+    const canaisTxt = topK(cur.porCanal).map(([k, n]) => `${k} ${n}`).join(", ");
+    const L: Record<string, string> = {
+      operacoes: `• Operações: ${cur.ops} ${variacao(cur.ops, prev.ops)}${tiposTxt ? ` (${tiposTxt})` : ""} — ${cur.concluidas} concluídas${resultadosTxt ? ` (${resultadosTxt})` : ""}, ${cur.naoRealizadas} não realizadas${motivosTxt ? ` (${motivosTxt})` : ""}, ${cur.infoPendente} com info pendente · ${pctConc}% concluídas ${variacao(pctConc, pctConcAnt, " pp")}`,
+      comprovacao: `• Comprovação: ${cur.noLocal} no local (${pctComp}%) ${variacao(pctComp, pctCompAnt, " pp")} · ${cur.fora} fora do local/GPS impreciso · ${cur.semCheckin} sem check-in${cur.relatadas ? ` (${cur.relatadas} relatadas pela Flora)` : ""}`,
+      comercial: `• Comercial: ${cur.leadsNovos} leads novos ${variacao(cur.leadsNovos, prev.leadsNovos)}${canaisTxt ? ` (${canaisTxt})` : ""} · ${cur.avancaram} avançaram no funil · ${cur.viraramCliente} viraram cliente · propostas ${cur.propEnviadas} enviadas${cur.propEnviadasValor ? ` (${brl(cur.propEnviadasValor)})` : ""}, ${cur.propAceitas} aceitas ${variacao(cur.propAceitas, prev.propAceitas)}${cur.propAceitasValor ? ` (${brl(cur.propAceitasValor)})` : ""} · testes ${cur.testes} instalados, ${cur.testesAprovados} aprovados`,
+      operacao: `• Operação: manutenções ${cur.manutFeitas} feitas ${variacao(cur.manutFeitas, prev.manutFeitas)}, ${cur.manutAtrasadas} atrasadas · aparelhos ${cur.ativados} ativados, ${cur.retirados} retirados · notas ${cur.notasEmitidas} emitidas ${variacao(cur.notasEmitidas, prev.notasEmitidas)}, ${dados.abertas.length} pendentes agora`,
+      atendimento: `• Atendimento: ${cur.transferencias} transferências para humano ${variacao(cur.transferencias, prev.transferencias)}${cur.tempoMedioMin !== null ? ` · ${minTxt(cur.tempoMedioMin)} em média até assumir` : ""}`,
+      ranking: ranking.length ? `• Por vendedor: ${ranking.slice(0, 4).map((r) => `${r.nome} ${r.ops} ops, ${r.concluidas} concl., ${r.nao} não real., ${pct(r.noLocal, r.executadas)}% comprovadas`).join("; ")}` : "",
     };
-    if (visao === "gestor") {
-      const [leadsNovos, leadsAbertos, stages, visitas, coletas, atend, atrasadas, semNota, propostas] = await Promise.all([
-        supabase.from("leads").select("id").eq("organization_id", org).gte("created_at", `${desde}T03:00:00Z`).limit(1000),
-        supabase.from("leads").select("stage_id").eq("organization_id", org).is("client_id", null).limit(5000),
-        supabase.from("lead_stages").select("id, nome, ordem, tipo").eq("organization_id", org).eq("ativo", true).order("ordem"),
-        supabase.from("schedules").select("status").eq("organization_id", org).gte("scheduled_date", desde).lte("scheduled_date", hoje).in("status", ["concluido", "nao_realizado"]).limit(2000),
-        supabase.from("schedules").select("id").eq("organization_id", org).eq("coleta_status", "pendente").limit(500),
-        supabase.from("atendimentos").select("status, aberto_em, assumido_em").eq("organization_id", org).gte("aberto_em", `${addDiasIso(hoje, -30)}T03:00:00Z`).limit(2000),
-        supabase.from("schedules").select("id").eq("organization_id", org).eq("schedule_type", "manutencao").lt("scheduled_date", hoje).in("status", ["agendado", "confirmado"]).limit(500),
-        amanhaSemNota(false),
-        supabase.from("proposals").select("id").eq("organization_id", org).in("status", ["rascunho", "enviada"]).limit(1000),
-      ]);
-      const porEtapa = new Map<string, number>(); for (const l of arr(leadsAbertos.data)) porEtapa.set(l.stage_id, (porEtapa.get(l.stage_id) ?? 0) + 1);
-      const etapas = arr(stages.data).filter((s: any) => !["ganho", "perdido", "cliente"].includes(s.tipo)).map((s: any) => ({ rotulo: s.nome, valor: porEtapa.get(s.id) ?? 0 }));
-      const vs = arr(visitas.data), feitas = vs.filter((v) => v.status === "concluido").length;
-      const at = arr(atend.data), abertos = at.filter((a) => ["aberto", "em_atendimento"].includes(a.status)).length;
-      const tempos = at.filter((a) => a.assumido_em && a.aberto_em && a.assumido_em >= `${desde}`).map((a) => (Date.parse(a.assumido_em) - Date.parse(a.aberto_em)) / 60000).filter((m) => m >= 0);
-      const tMedio = tempos.length ? Math.round(tempos.reduce((a, b) => a + b, 0) / tempos.length) : null;
-      const per = semana ? "na semana" : "hoje";
-      titulo = semana ? "Fera - semana" : "Fera - hoje";
-      linhas.push(`📊 ${semana ? "Semana" : "Hoje"}:`,
-        `• Leads novos ${per}: ${arr(leadsNovos.data).length} — funil: ${etapas.map((e) => `${e.rotulo} ${e.valor}`).join(", ") || "sem etapas"} ${feraLink("/leads")}`,
-        `• Visitas ${per}: ${feitas} feitas, ${vs.length - feitas} não realizadas ${feraLink("/agenda")}`,
-        `• Ocorrências com informações pendentes: ${arr(coletas.data).length} ${feraLink("/hoje")}`,
-        `• Atendimentos abertos: ${abertos}${tMedio !== null ? ` — resposta média ${tMedio} min` : ""} ${feraLink("/atendimentos")}`,
-        `• Manutenções atrasadas: ${arr(atrasadas.data).length} ${feraLink("/manutencoes")}`,
-        `• Amanhã sem nota/material: ${semNota.length} ${feraLink("/tarefas")}`,
-        `• Propostas abertas: ${arr(propostas.data).length} ${feraLink("/propostas")}`);
-      barras = /funil/i.test(texto) && etapas.length ? etapas : [
-        { rotulo: "Leads novos", valor: arr(leadsNovos.data).length }, { rotulo: "Visitas feitas", valor: feitas },
-        { rotulo: "Info pendente", valor: arr(coletas.data).length }, { rotulo: "Atend. abertos", valor: abertos },
-        { rotulo: "Manut. atrasadas", valor: arr(atrasadas.data).length }, { rotulo: "Amanha sem nota", valor: semNota.length },
-        { rotulo: "Propostas abertas", valor: arr(propostas.data).length }];
-      if (/funil/i.test(texto)) titulo = "Funil de leads";
-    } else if (visao === "faturamento") {
-      const [{ data: tarefas }, semNota] = await Promise.all([
-        supabase.from("tarefas_faturamento").select("acao, empresa_nome, prazo, tipo_nota").eq("organization_id", org).eq("status", "aberta").order("prazo").limit(100),
-        amanhaSemNota(false),
-      ]);
-      const t = arr(tarefas), nome: Record<string, string> = { emitir: "Emitir", cancelar: "Cancelar", devolucao: "Devolução" };
+    const pontual = ehPontual(texto), panorama = !pontual && ehPanorama(texto);
+    let linhas: string[]; let links: string[];
+    const cab = `📊 ${visao === "faturamento" ? "Notas" : "Indicadores"} · ${periodo.rotulo} · vs ${periodo.anterior.rotulo}${recorteTxt ? ` · ${recorteTxt}` : ""}`;
+    if (visao === "faturamento") {
+      const nome: Record<string, string> = { emitir: "Emitir", emitir_comodato: "NF de Comodato", cancelar: "Cancelar", baixar_remessa: "Baixar remessa", devolucao: "Devolução", devolucao_remessa: "Devolução de remessa" };
       const fmtPrazo = (p: string | null) => p ? new Date(p).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "sem prazo";
-      titulo = "Notas abertas";
-      linhas.push(`🧾 Notas abertas: ${t.length} ${feraLink("/tarefas")}`);
-      for (const a of ["emitir", "cancelar", "devolucao"]) {
-        const g = t.filter((x) => x.acao === a); if (!g.length) continue;
-        linhas.push(`• ${nome[a]} (${g.length}): ${g.slice(0, 4).map((x) => `${x.empresa_nome ?? "?"} até ${fmtPrazo(x.prazo)}`).join("; ")}${g.length > 4 ? "…" : ""}`);
+      linhas = [`• Emitidas: ${cur.notasEmitidas} ${variacao(cur.notasEmitidas, prev.notasEmitidas)}`,
+        `• Canceladas/baixadas: ${cur.notasCanceladas} ${variacao(cur.notasCanceladas, prev.notasCanceladas)} · devolução: ${cur.notasDevolucao} ${variacao(cur.notasDevolucao, prev.notasDevolucao)}`,
+        `• Pendentes agora: ${dados.abertas.length}${vencidas ? ` (${vencidas} com prazo vencido)` : ""}`];
+      for (const a of Object.keys(nome)) {
+        const g = dados.abertas.filter((x) => x.acao === a); if (!g.length || linhas.length >= 6) continue;
+        linhas.push(`• ${nome[a]} (${g.length}): ${g.slice(0, 3).map((x) => `${x.empresa_nome ?? "?"} até ${fmtPrazo(x.prazo)}`).join("; ")}${g.length > 3 ? "…" : ""}`);
       }
-      linhas.push(`• Operações de amanhã sem nota: ${semNota.filter((s) => s.nota_status === "pendente").length}`);
-      barras = ["emitir", "cancelar", "devolucao"].map((a) => ({ rotulo: nome[a], valor: t.filter((x) => x.acao === a).length }));
+      links = [`Tarefas ${feraLink("/tarefas")}`];
     } else {
-      const [{ data: ag }, { data: pend }, { data: props }] = await Promise.all([
-        supabase.from("schedules").select("id, ocorrencia_codigo, title, scheduled_date, start_time, itens, material_status, prontidao").eq("organization_id", org)
-          .eq("assigned_to", u.user_id).in("scheduled_date", [hoje, amanha]).in("status", ["agendado", "confirmado", "em_atendimento"]).order("scheduled_date").order("start_time").limit(40),
-        supabase.from("schedules").select("ocorrencia_codigo, title").eq("organization_id", org).eq("assigned_to", u.user_id).eq("coleta_status", "pendente").limit(20),
-        supabase.from("proposals").select("title, status").eq("organization_id", org).in("status", ["rascunho", "enviada"]).or(`assigned_to.eq.${u.user_id},created_by.eq.${u.user_id}`).limit(20),
-      ]);
-      const vis = arr(ag), linha = (v: any) => `${String(v.start_time ?? "").slice(0, 5) || "--:--"} ${v.title}${v.ocorrencia_codigo ? ` #${v.ocorrencia_codigo}` : ""}`;
-      titulo = "Minha agenda";
-      for (const [dia, rot] of [[hoje, "Hoje"], [amanha, "Amanhã"]] as const) {
-        const d = vis.filter((v) => v.scheduled_date === dia);
-        linhas.push(`${rot} (${brDia(dia)}): ${d.length ? d.map(linha).join("; ") : "nada agendado"}`);
+      const chaves = visao === "gestor" ? ["operacoes", "comprovacao", "comercial", "operacao", "atendimento", "ranking"] : ["operacoes", "comprovacao", "comercial", "operacao"];
+      let escolhidas = chaves;
+      if (pontual) {
+        const t = foldTxt(texto), achados = new Set<string>();
+        for (const [re, k] of TOPICOS) if (re.test(t) && chaves.includes(k)) achados.add(k);
+        if (achados.size) escolhidas = chaves.filter((k) => achados.has(k));
       }
-      const levar = new Map<string, number>();
-      for (const v of vis.filter((x) => x.material_status === "pendente" || x.material_status === "separado")) for (const i of arr(v.itens)) levar.set(i.descricao, (levar.get(i.descricao) ?? 0) + (Number(String(i.quantidade).replace(",", ".")) || 0));
-      if (levar.size) linhas.push(`Levar: ${[...levar].map(([d, q]) => `${q}x ${d}`).join(", ")}`);
-      linhas.push(`Ocorrências com info pendente: ${arr(pend).length ? arr(pend).map((p) => `#${p.ocorrencia_codigo}`).join(", ") : "nenhuma"}`);
-      linhas.push(`Propostas abertas: ${arr(props).length}`);
-      linhas.push(`${feraLink("/hoje")} · ${feraLink("/propostas")}`);
-      barras = [{ rotulo: "Hoje", valor: vis.filter((v) => v.scheduled_date === hoje).length }, { rotulo: "Amanha", valor: vis.filter((v) => v.scheduled_date === amanha).length },
-        { rotulo: "Info pendente", valor: arr(pend).length }, { rotulo: "Propostas", valor: arr(props).length }];
+      linhas = escolhidas.map((k) => L[k]).filter(Boolean);
+      if (visao === "campo" && !pontual) {
+        const pend = dados.schedules.filter((s) => s.coleta_status === "pendente").map((s) => `#${s.ocorrencia_codigo ?? s.id.slice(0, 6)}`);
+        linhas.push(`• Pendências: ${pend.length ? `info pendente ${pend.slice(0, 4).join(", ")}` : "nenhuma ocorrência com info pendente"}${cur.manutAtrasadas ? ` · ${cur.manutAtrasadas} manutenções atrasadas` : ""}`);
+      }
+      links = visao === "gestor"
+        ? [`Agenda ${feraLink("/agenda")}`, `Leads ${feraLink("/leads")}`, `Propostas ${feraLink("/propostas")}`, `Tarefas ${feraLink("/tarefas")}`, `Atendimentos ${feraLink("/atendimentos")}`]
+        : [`Hoje ${feraLink("/hoje")}`, `Propostas ${feraLink("/propostas")}`];
+      if (pontual) links = links.slice(0, 2);
     }
-    let imagem_enviada = false;
-    if (ehPanorama(texto)) {
+    // Short WhatsApp text: period, ≤6 highlights, links — lines share a fixed budget so links are never cut.
+    const fixo = [cab, ...rec.avisos.map((a) => `⚠️ ${a}`)], rodape = `🔗 ${links.join(" · ")}`, corpo = linhas.slice(0, 6);
+    const porLinha = Math.max(90, Math.floor((LIMITE_INDICADORES - fixo.join("\n").length - rodape.length - corpo.length - 2) / Math.max(1, corpo.length)));
+    const msg = [...fixo, ...corpo.map((s) => s.length > porLinha ? `${s.slice(0, porLinha - 1)}…` : s), rodape].join("\n");
+
+    let imagem_enviada = false, imagem: "boletim" | "grafico" | null = null;
+    if (panorama) {
+      const gerado = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", " às");
+      const titulo = visao === "gestor" ? "Indicadores da equipe" : visao === "faturamento" ? "Notas fiscais" : `Indicadores de ${primeiroNome({ user_id: u.user_id, name: u.nome })}`;
+      const card = (rotulo: string, a: number, b: number, sub?: string, unidade = "", inverter = false): BoletimCard =>
+        ({ rotulo, valor: `${a}${unidade === " pp" ? "%" : ""}`, sub, delta: variacao(a, b, unidade), inverter });
+      const boletim: BoletimDados = visao === "faturamento" ? {
+        titulo, periodo: periodo.rotulo, comparacao: periodo.anterior.rotulo, recorte: null, gerado,
+        cards: [card("Notas emitidas", cur.notasEmitidas, prev.notasEmitidas), card("Pendentes agora", dados.abertas.length, dados.abertas.length, vencidas ? `${vencidas} vencidas` : undefined, "", true),
+          card("Canceladas/baixadas", cur.notasCanceladas, prev.notasCanceladas), card("Devoluções", cur.notasDevolucao, prev.notasDevolucao)],
+        barras: { titulo: "Notas no período", itens: [{ rotulo: "Emitidas", valor: cur.notasEmitidas, cor: BRAND.verde }, { rotulo: "Devolução", valor: cur.notasDevolucao, cor: BRAND.agua },
+          { rotulo: "Canceladas", valor: cur.notasCanceladas, cor: BRAND.vermelho }, { rotulo: "Pendentes", valor: dados.abertas.length, cor: BRAND.ambar }] },
+        lista: { titulo: "Próximas a emitir", vazio: "Nenhuma nota pendente.", linhas: dados.abertas.slice(0, 4).map((t) => ({ nome: t.empresa_nome ?? "Sem empresa", valor: t.prazo ? `até ${ddmm(dataSp(t.prazo) ?? "")}` : "sem prazo" })) },
+      } : {
+        titulo, periodo: periodo.rotulo, comparacao: periodo.anterior.rotulo, recorte: recorteTxt, gerado,
+        cards: [card("Operações", cur.ops, prev.ops), card("Concluídas", pctConc, pctConcAnt, `${cur.concluidas} de ${cur.devidas}`, " pp"),
+          card("Leads novos", cur.leadsNovos, prev.leadsNovos), card("Propostas aceitas", cur.propAceitas, prev.propAceitas, cur.propAceitasValor ? brl(cur.propAceitasValor) : undefined)],
+        barras: { titulo: "Resultado das operações", itens: [{ rotulo: "Concluídas", valor: cur.concluidas, cor: BRAND.verde }, { rotulo: "Não realizadas", valor: cur.naoRealizadas, cor: BRAND.vermelho },
+          { rotulo: "Info pendente", valor: cur.infoPendente, cor: BRAND.ambar }, { rotulo: "Em aberto", valor: cur.abertas, cor: BRAND.agua }] },
+        lista: ranking.length
+          ? { titulo: "Ranking por vendedor", vazio: "", linhas: ranking.slice(0, 4).map((r) => ({ nome: `${r.nome} · ${r.ops} operações`, valor: `${r.concluidas} concl. · ${pct(r.noLocal, r.executadas)}% comprovadas` })) }
+          : { titulo: visao === "gestor" ? "Pendências" : "Suas pendências", vazio: "Nada pendente.", linhas: [
+            ...dados.schedules.filter((s) => s.coleta_status === "pendente").slice(0, 2).map((s) => ({ nome: `#${s.ocorrencia_codigo ?? ""} ${s.title ?? ""}`.trim(), valor: "info pendente" })),
+            ...(cur.manutAtrasadas ? [{ nome: "Manutenções atrasadas", valor: String(cur.manutAtrasadas) }] : []),
+            ...(cur.semCheckin ? [{ nome: "Operações sem check-in", valor: String(cur.semCheckin) }] : []),
+            ...(dados.abertas.length ? [{ nome: "Notas pendentes", valor: String(dados.abertas.length) }] : []),
+          ] },
+      };
+      let png: Uint8Array | null = null;
       try {
-        const png = await graficoPng(titulo, barras);
-        if (png) imagem_enviada = await enviarImagemEquipe(supabase, String(params.chat_id), png, titulo);
-      } catch { imagem_enviada = false; }
+        boletim.logo = await logoDataUri(supabase);
+        const { Resvg, fontes } = await carregarResvg();
+        png = renderizarBoletim(boletimSvg(boletim), Resvg, fontes);
+        imagem = "boletim";
+      } catch (e) {
+        console.warn("[mcp] boletim fallback", (e as Error)?.name ?? "ERR");
+        try { png = await graficoPng(titulo, boletim.barras.itens.map((i) => ({ rotulo: i.rotulo, valor: i.valor }))); imagem = png ? "grafico" : null; } catch { png = null; imagem = null; }
+      }
+      if (png) imagem_enviada = await enviarImagemEquipe(supabase, String(params.chat_id), png, `Boletim · ${periodo.rotulo}`);
+      if (!imagem_enviada) imagem = null;
     }
-    const msg = linhas.join("\n");
-    return ok({ visao, imagem_enviada, mensagem_para_equipe: msg.length > 1200 ? `${msg.slice(0, 1197)}...` : msg });
+    return ok({ visao, periodo: { inicio: periodo.inicio, fim: periodo.fim, rotulo: periodo.rotulo, anterior: periodo.anterior }, recorte: { consultor: rec.consultor?.name ?? null, cidade: rec.cidade, tipo: rec.tipoRotulo },
+      pontual, panorama, imagem_enviada, imagem,
+      numeros: { operacoes: cur.ops, concluidas: cur.concluidas, pct_concluidas: pctConc, nao_realizadas: cur.naoRealizadas, info_pendente: cur.infoPendente, no_local: cur.noLocal, fora_local: cur.fora,
+        sem_checkin: cur.semCheckin, leads_novos: cur.leadsNovos, propostas_aceitas: cur.propAceitas, notas_emitidas: cur.notasEmitidas, notas_pendentes: dados.abertas.length },
+      anterior: { operacoes: prev.ops, pct_concluidas: pctConcAnt, leads_novos: prev.leadsNovos, propostas_aceitas: prev.propAceitas, notas_emitidas: prev.notasEmitidas },
+      ranking: ranking.map((r) => ({ nome: r.nome, operacoes: r.ops, concluidas: r.concluidas, nao_realizadas: r.nao, pct_comprovadas: pct(r.noLocal, r.executadas) })),
+      mensagem_para_equipe: msg.length > LIMITE_INDICADORES ? `${msg.slice(0, LIMITE_INDICADORES - 3)}...` : msg });
   }, params);
 }
 

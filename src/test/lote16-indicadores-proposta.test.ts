@@ -57,8 +57,9 @@ describe("flora_equipe indicadores por papel", () => {
   it("gestor gets the management summary with links", async () => {
     const r = await harness("gestor").route({ chat_id: CHAT, acao: "indicadores", texto: "indicadores de hoje" });
     expect(r.data.visao).toBe("gestor");
-    expect(r.data.mensagem_para_equipe).toContain("Leads novos hoje: 1");
-    expect(r.data.mensagem_para_equipe).toContain("Amanhã sem nota/material: 1");
+    expect(r.data.mensagem_para_equipe).toContain("hoje (05/11)");
+    expect(r.data.mensagem_para_equipe).toContain("1 leads novos ▲1");
+    expect(r.data.mensagem_para_equipe).toContain("1 pendentes agora");
     expect(r.data.mensagem_para_equipe).toContain("https://fera.exudustech.com.br/propostas");
     expect(r.data.imagem_enviada).toBe(false);
   });
@@ -78,7 +79,7 @@ describe("flora_equipe indicadores por papel", () => {
     const r = await harness("gestor").route({ chat_id: CHAT, acao: "indicadores", texto: "como estamos na semana?" });
     expect(r.success).toBe(true);
     expect(r.data.imagem_enviada).toBe(false);
-    expect(r.data.mensagem_para_equipe).toContain("Semana");
+    expect(r.data.mensagem_para_equipe).toContain("esta semana (02/11 a 05/11)");
   });
   it("renders a valid PNG", async () => {
     const h = harness("gestor");
