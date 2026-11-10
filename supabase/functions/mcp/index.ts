@@ -2077,9 +2077,13 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   const odorWords = sigWords.filter((w) => ODOR_WORD.test(w));
   if (odorWords.length) {
     const others = sigWords.filter((w) => !ODOR_WORD.test(w) && !ODOR_CONTEXT_WORDS.has(w));
-    const namesOther = others.some((w) => products.some((p) => hasWord(foldProductText(p.name), w)));
-    const odorProducts = products.filter((p) => ODOR_CATEGORY.test(foldProductText(p.category)));
-    if (!namesOther && odorProducts.length) {
+    const isOdor = (p: Record<string, unknown>) => ODOR_CATEGORY.test(foldProductText(p.category));
+    const odorAll = products.filter(isOdor);
+    // "cheiro de lavanda": odor products naming the other words first; "sabonete perfumado": another product line wins.
+    const odorNamed = others.length ? odorAll.filter((p) => { const h = haystack(p); return others.every((w) => h.includes(w)); }) : [];
+    const namesOther = others.some((w) => products.some((p) => !isOdor(p) && haystack(p).includes(w)));
+    const odorProducts = odorNamed.length ? odorNamed : (namesOther ? [] : odorAll);
+    if (odorProducts.length) {
       const ekkoaFirst = [...odorProducts].sort((a, b) => Number(foldProductText(b.brand) === "ekkoa") - Number(foldProductText(a.brand) === "ekkoa"));
       const res = await respondFound("segmento", pickVaried(ekkoaFirst, 5), false);
       (res.data as Record<string, unknown>).linha_sugerida = "Aromatização e neutralização de odores (Ekkoa)";

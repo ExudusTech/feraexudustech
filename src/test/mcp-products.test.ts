@@ -207,10 +207,12 @@ describe("consultar_produto — smell synonyms go to aromatização/neutralizaç
     expect(r.data.encontrado).toBe(true);
     const ids = r.data.produtos.map((p: any) => p.id);
     expect(ids).not.toContain("bs"); expect(ids).not.toContain("cx");
-    expect(ids.slice(0, 2).sort()).toEqual(["ek1", "ek2"]);
+    expect(r.data.produtos.every((p: any) => /aromat|neutralizador/i.test(p.categoria))).toBe(true);
+    expect(r.data.produtos[0].marca).toBe("EKKOA");
   });
   it("a named product with a smell word keeps its own match", async () => {
     const r = await harness().route("consultar_produto", { termo: "sabonete perfumado" });
+    expect(r.data.produtos.map((p: any) => p.id)).toContain("sc");
     expect(r.data.produtos.map((p: any) => p.id)).not.toContain("ek1");
   });
 });
