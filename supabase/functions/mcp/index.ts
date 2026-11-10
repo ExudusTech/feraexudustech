@@ -1037,6 +1037,10 @@ const MSG_SEM_COBERTURA = "No momento não atendemos seu estado, mas podemos reg
 const MATRIZ_WHATSAPP = "(21) 99461-1073";
 const MATRIZ_ORIGEM = "Encaminhado à Matriz";
 const MATRIZ_ACAO = "chame transferir_para_humano com motivo MATRIZ";
+/** One Matriz alert per lead (chat) inside this window, whichever path forwards first. */
+const MATRIZ_DEDUP_MS = 24 * 60 * 60 * 1000;
+/** Symbol key: marks the server-side auto-forward; JSON callers cannot set it. */
+const AUTO_MATRIZ = Symbol("auto_matriz");
 /** Lead-facing Matriz message: never promises a Distribuidora visit and never pauses Flora. */
 function matrizMessage(cidade: unknown): string {
   const raw = typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/)[0].trim() : "";
@@ -2967,9 +2971,11 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     if (value === false) return fail(`${key} inválido`);
     fields[key] = value;
   }
+  // Internal flag set only by comEncaminhamentoMatriz (never read from caller input).
+  if ((params as Record<PropertyKey, unknown>)[AUTO_MATRIZ] === true) fields.__auto = "1";
   const urgencia = fields.urgencia && ["baixa", "media", "alta"].includes(fields.urgencia) ? fields.urgencia : "media";
   const supabase = getClient();
-  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo";
+  const leadSelect = "id, description, pessoa_id, contact_phone, canal_origem, instagram_handle, empresa_nome, company, contact_name, city, category, gptmaker_chat_id, assigned_to, vinculo, matriz_encaminhado_em";
 
   params = await currentEstablishment(supabase, params);
   const channel = resolveChannelFromChatId(fields.chat_id);
@@ -3124,35 +3130,74 @@ async function isMatrizHandoff(supabase: ReturnType<typeof getClient>, fields: R
 /** Forward a Matriz lead: lead with origin "Encaminhado à Matriz", timeline, alert to subscribers + gestores (and "matriz" users). */
 async function encaminharMatriz(supabase: ReturnType<typeof getClient>, params: Record<string, unknown>,
   fields: Record<string, string | null>, candidate: Record<string, unknown> | null, urgencia: string): Promise<McpResponse> {
-  const current = await resolveCurrentLead(supabase, params, candidate);
+  // Same chat already forwarded inside the window (e.g. by the coverage auto-forward, often without a
+  // company yet): reuse that lead and only fill its blanks, so a later transfer never duplicates it.
+  const company = productSearchText(params.empresa ?? params.empresa_nome);
+  const candidateCompany = candidate ? productSearchText(candidate.empresa_nome ?? candidate.company) : null;
+  const forwardedAt = typeof candidate?.matriz_encaminhado_em === "string" ? new Date(candidate.matriz_encaminhado_em).getTime() : NaN;
+  const reuse = !!candidate && Date.now() - forwardedAt < MATRIZ_DEDUP_MS && !["fechado_ganho", "fechado_perdido"].includes(String(candidate.stage))
+    && (!company || !candidateCompany || normalizedEstablishment(candidateCompany) === normalizedEstablishment(company));
+  const fill: Record<string, unknown> = {};
+  let current: { lead: any; pessoa: any; created: boolean; params: Record<string, unknown> };
+  if (reuse) {
+    const product = productSearchText(params.produto_interesse);
+    if (company && !candidateCompany) { fill.empresa_nome = company; fill.company = company; }
+    if (fields.cidade && !candidate.city) fill.city = fields.cidade;
+    if (product && !candidate.category) fill.category = product;
+    if (fields.nome_contato && !candidate.contact_name) fill.contact_name = fields.nome_contato;
+    current = { lead: { ...candidate, ...fill }, pessoa: null, created: false, params };
+  } else {
+    current = await resolveCurrentLead(supabase, params, candidate);
+  }
   const { lead, pessoa } = current;
   params = current.params;
   const leadId = String(lead.id);
   const cidade = fields.cidade ?? (typeof lead.city === "string" ? lead.city : null);
-  await supabase.from("leads").update({ origem_especifica: MATRIZ_ORIGEM, vinculo: "MATRIZ", updated_at: new Date().toISOString() })
-    .eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
   const interesse = productSearchText(params.produto_interesse);
-  queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
-    resumo: [MATRIZ_ORIGEM, cidade, interesse ? `Interesse: ${interesse}` : null, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
-
   const nowDate = new Date();
+  // Atomic claim per lead (one per chat): the first forwarding in MATRIZ_DEDUP_MS alerts; the
+  // server-side auto-forward and a later transferir_para_humano never duplicate the lead or the alert.
+  const marks = { ...fill, origem_especifica: MATRIZ_ORIGEM, vinculo: "MATRIZ", updated_at: nowDate.toISOString() };
+  let primeira: boolean | null = null;
+  try {
+    const cutoff = new Date(nowDate.getTime() - MATRIZ_DEDUP_MS).toISOString();
+    const { data: claimed, error } = await supabase.from("leads").update({ ...marks, matriz_encaminhado_em: nowDate.toISOString() })
+      .eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID)
+      .or(`matriz_encaminhado_em.is.null,matriz_encaminhado_em.lt.${cutoff}`).select("id");
+    if (!error) primeira = (Array.isArray(claimed) ? claimed : claimed ? [claimed] : []).length > 0;
+    else console.error("[encaminhar_matriz] claim failed", error.code ?? "");
+  } catch { console.error("[encaminhar_matriz] claim failed"); }
+  if (primeira !== true) {
+    await supabase.from("leads").update(marks).eq("id", leadId).eq("organization_id", NITSCLEAN_ORG_ID);
+  }
+  if (primeira !== false) {
+    queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+      resumo: [MATRIZ_ORIGEM, cidade, interesse ? `Interesse: ${interesse}` : null, timelineText(fields.resumo, 300)].filter(Boolean).join(". "), params });
+  } else if (fields.resumo && !fields.__auto) {
+    queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+      resumo: `Complemento do encaminhamento à Matriz: ${timelineText(fields.resumo, 300)}`, params });
+  }
+
   const service = await loadHumanService(supabase, nowDate);
   const emHorario = estaEmHorario(nowDate, service.config, service.closed, service.city);
   const proximo = proximoHorarioUtil(nowDate, service.config, service.closed, service.city);
   const holdAlert = !emHorario && !(urgencia === "alta" && service.urgentBypass);
-  let recent = false;
-  try {
-    const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
-      .eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId })
-      .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
-    recent = Array.isArray(data) && data.length > 0;
-  } catch { console.error("[solicitar_atendimento_humano] matriz dedup lookup failed"); }
-  if (!recent && holdAlert) {
+  let recent = primeira === false;
+  if (primeira === null) {
+    // Claim unavailable: fall back to the alert log (sent in the last 30 min or still queued).
     try {
       const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
-        .eq("status", "QUEUED").eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId }).limit(1);
+        .eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId })
+        .gte("sent_at", new Date(Date.now() - TRANSFER_DEDUP_MS).toISOString()).limit(1);
       recent = Array.isArray(data) && data.length > 0;
-    } catch { console.error("[solicitar_atendimento_humano] matriz queue lookup failed"); }
+    } catch { console.error("[solicitar_atendimento_humano] matriz dedup lookup failed"); }
+    if (!recent && holdAlert) {
+      try {
+        const { data } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID)
+          .eq("status", "QUEUED").eq("event_type", "lead_matriz").contains("payload", { lead_id: leadId }).limit(1);
+        recent = Array.isArray(data) && data.length > 0;
+      } catch { console.error("[solicitar_atendimento_humano] matriz queue lookup failed"); }
+    }
   }
   const channel = resolveChannelFromChatId(fields.chat_id);
   const whatsapp = channel?.canal === "WHATSAPP" ? channel.identificador
@@ -3170,10 +3215,45 @@ async function encaminharMatriz(supabase: ReturnType<typeof getClient>, params: 
   }
   const mensagem = matrizMessage(cidade);
   const res = ok({ solicitado: true, encaminhado_matriz: true, pausar_conversa: false, lead_id: leadId, lead_criado: current.created,
-    notificado, em_horario: emHorario, mensagem_para_lead: mensagem }, mensagem,
+    notificado, ja_encaminhado: primeira === false, em_horario: emHorario, mensagem_para_lead: mensagem }, mensagem,
     "Envie mensagem_para_lead e continue a conversa normalmente: não pause a Flora nem transfira o chat; a Matriz entra em contato.");
-  await logInteraction(supabase, "solicitar_atendimento_humano", params, res, leadId, channel?.canal, fields.interaction_id ?? undefined);
+  await logInteraction(supabase, fields.__auto ? "encaminhar_matriz_automatico" : "solicitar_atendimento_humano", params, res, leadId, channel?.canal, fields.interaction_id ?? undefined);
   return res;
+}
+
+/**
+ * Server-side Matriz forwarding: when a coverage tool resolves MATRIZ for a client chat, the lead,
+ * timeline and alert happen here, without depending on Flora calling transferir_para_humano.
+ * Never throws and never changes the tool's success; team chats are never turned into leads.
+ */
+async function comEncaminhamentoMatriz(res: McpResponse, params: Record<string, unknown>): Promise<McpResponse> {
+  const data = res.data as Record<string, unknown> | undefined;
+  if (!res.success || !data || data.vinculo !== "MATRIZ") return res;
+  if (typeof params.chat_id !== "string" || !params.chat_id.trim()) return res;
+  try {
+    if (await refuseTeamInClientFlow("transferir_para_humano", params)) return res;
+    const text = (v: unknown, max: number) => typeof v === "string" && v.trim() && v.trim().length <= max ? v.trim() : undefined;
+    const cidade = text(params.cidade, 120) ?? text(data.cidade, 120);
+    const nomeLocal = text(params.nome, 200);
+    const empresa = text(params.empresa, 500) ?? text(params.empresa_nome, 500)
+      ?? (nomeLocal && !genericBusinessType(nomeLocal, cidade ?? null) ? nomeLocal : undefined);
+    const handoff: Record<PropertyKey, unknown> = { chat_id: params.chat_id.trim(), motivo: "MATRIZ", urgencia: "media",
+      ...(cidade ? { cidade } : {}), ...(empresa ? { empresa } : {}) };
+    for (const [key, max] of [["nome_contato", 500], ["telefone", 30], ["produto_interesse", 500], ["resumo", 1000],
+      ["bairro", 120], ["cep", 20], ["interaction_id", 200], ["email", 200]] as const) {
+      const value = text(params[key], max);
+      if (value) handoff[key] = value;
+    }
+    handoff[AUTO_MATRIZ] = true;
+    const forwarded = await solicitarAtendimentoHumano(handoff as Record<string, unknown>);
+    const f = forwarded.data as Record<string, unknown> | undefined;
+    if (!forwarded.success || !f?.encaminhado_matriz) return res;
+    const acao = "Encaminhamento à Matriz já registrado no Fera (lead e aviso à gestão): envie mensagem_para_lead e continue a conversa sem pausar; não precisa chamar transferir_para_humano";
+    return { ...res, data: { ...data, encaminhado_matriz: true, lead_id: f.lead_id, notificado: f.notificado, proxima_acao: acao }, next_action_hint: acao };
+  } catch {
+    console.error("[encaminhar_matriz] auto forward failed");
+    return res;
+  }
 }
 
 // ─── Team assistant (read-only): what is pending now for a Fera user ───
@@ -6035,7 +6115,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
   if (teamRefusal) return teamRefusal;
   switch (method) {
     // Block 1
-    case "localizar_estabelecimento":    return withKnownContact(await localizarEstabelecimento(params), params.chat_id);
+    case "localizar_estabelecimento":    return withKnownContact(await comEncaminhamentoMatriz(await localizarEstabelecimento(params), params), params.chat_id);
     case "buscar_contato": {
       // Team is resolved first: staff are usually not contacts, so Flora must learn it even when no contact exists.
       const equipe = params.chat_id ? await teamInfo(params.chat_id) : null;
@@ -6048,8 +6128,8 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
       if (!found.success || !params.chat_id) return found;
       return { ...found, data: { ...(found.data as Record<string, unknown>), contexto_anterior: await previousContext(getClient(), params.chat_id), equipe: null } };
     }
-    case "verificar_cobertura_regiao":   return verificarCoberturaRegiao(params);
-    case "consultar_rota_consultor":     return consultarRotaConsultor(params);
+    case "verificar_cobertura_regiao":   return comEncaminhamentoMatriz(await verificarCoberturaRegiao(params), params);
+    case "consultar_rota_consultor":     return comEncaminhamentoMatriz(await consultarRotaConsultor(params), params);
     case "obter_promocao_vigente":       return obterPromocaoVigente(params);
     case "consultar_produto":            return withKnownContact(await consultarProduto(params), params.chat_id);
     // Block 2

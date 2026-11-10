@@ -7,7 +7,8 @@ vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T14
 const source = readFileSync("supabase/functions/mcp/index.ts", "utf8");
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const allEvents = ["agendamento_comercial", "agendamento_tecnico", "transferencia", "lead_matriz"];
-function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[]; roles?: any[]; coverageLog?: any[] } = {}) {
+function harness(options: { fetch?: any; logFailure?: boolean; configured?: boolean; recipients?: any[]; lead?: any; recent?: boolean; places?: any[]; profiles?: any[]; roles?: any[]; coverageLog?: any[]; store?: boolean } = {}) {
+  let stored: any = null;
   const recipients = options.recipients ?? [
     { id: "all", nome: "PH", whatsapp: "5521995367752", organization_id: org, ativo: true, eventos: allEvents },
     { id: "handoff", nome: "Comercial", whatsapp: "5521999999999", organization_id: org, ativo: true, eventos: ["transferencia"] },
@@ -29,7 +30,13 @@ function harness(options: { fetch?: any; logFailure?: boolean; configured?: bool
       if (table === "ekkoa_coverage_areas") data = [{ city: "Cabo Frio", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }, { city: "Armação dos Búzios", dia_semana: "6ª feira", horario_inicio: "13:30", horario_fim: "16:30" }];
       if (table === "notification_logs" && operation === "read") data = options.recent ? [{ id: "old" }] : [];
       if (table === "pessoas") data = operation === "read" ? null : { id: "pessoa", nome: value?.nome ?? "Contato", ...value };
-      if (table === "leads" && "lead" in options) data = operation === "read" ? options.lead : { id: "new-lead", ...value };
+      if (table === "leads" && options.store) {
+        if (operation === "insert") { stored = { id: "new-lead", stage: "novo", ...value }; data = stored; }
+        else if (operation === "update" && value?.matriz_encaminhado_em) {
+          if (stored?.matriz_encaminhado_em) data = []; else { Object.assign(stored, value); data = [stored]; }
+        } else if (operation === "update") { if (stored) Object.assign(stored, value); data = stored; }
+        else data = stored ? { ...stored } : null;
+      } else if (table === "leads" && "lead" in options) data = operation === "read" ? options.lead : { id: "new-lead", ...value };
       else if (table === "leads") data = { id: "lead", contact_name: "Contato", empresa_nome: "Empresa", contact_phone: "5521988888888", endereco: "Rua A, 10", bairro: "Centro", city: "Cabo Frio", zip_code: "28900000", regiao: "Cabo Frio", maps_url: "https://maps.google.com/example", category: "Produto", pessoa: null };
       if (table === "schedules") data = { id: "schedule", ...value };
       return { data, error: options.logFailure && table === "notification_logs" ? { message: "failed" } : null };
@@ -289,8 +296,67 @@ describe("Matriz handoff (Niterói case)", () => {
     expect(h.writes.filter((w: any) => w.table === "notification_logs").map((w: any) => w.value.destination)).toEqual(["5521995367752", "5521999999999"]);
   });
   it("verificar_cobertura_regiao MATRIZ tells Flora to call transferir_para_humano and returns the reference message", async () => {
-    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Niterói", estado: "RJ" });
+    const h = harness();
+    const r = await h.route("verificar_cobertura_regiao", { cidade: "Niterói", estado: "RJ" });
+    expect(h.writes.some((w: any) => w.table === "leads")).toBe(false); // no chat_id: nothing to forward
     expect(r.data).toMatchObject({ vinculo: "MATRIZ", proxima_acao: "chame transferir_para_humano com motivo MATRIZ", mensagem_para_lead: MSG });
     expect(r.next_action_hint).toContain("chame transferir_para_humano com motivo MATRIZ");
+  });
+
+  describe("server-side forwarding when coverage resolves MATRIZ (Flora skipped the transfer)", () => {
+    const leadWrites = (h: any, op: string) => h.writes.filter((w: any) => w.table === "leads" && w.operation === op);
+    const alerts = (h: any) => h.writes.filter((w: any) => w.table === "notification_logs");
+    it("localizar_estabelecimento in Niterói creates the Matriz lead, timeline and alert by itself", async () => {
+      const h = harness({ store: true, ...gestor });
+      vi.setSystemTime(new Date("2026-11-10T19:47:00Z"));
+      const r = await h.route("localizar_estabelecimento", { chat_id: wa, nome: "Clínica Icaraí", cidade: "Niterói", produto_interesse: "aromatização" }); await h.flush();
+      expect(r.success).toBe(true);
+      expect(r.data).toMatchObject({ vinculo: "MATRIZ", encaminhado_matriz: true, lead_id: "new-lead", notificado: true, mensagem_para_lead: MSG });
+      expect(r.next_action_hint).toContain("não precisa chamar transferir_para_humano");
+      expect(leadWrites(h, "insert")).toHaveLength(1);
+      expect(leadWrites(h, "insert")[0].value).toMatchObject({ city: "Niterói", empresa_nome: "Clínica Icaraí", category: "aromatização", gptmaker_chat_id: wa });
+      expect(leadWrites(h, "update").some((w: any) => w.value.origem_especifica === "Encaminhado à Matriz" && w.value.vinculo === "MATRIZ")).toBe(true);
+      expect(h.writes.some((w: any) => w.table === "atendimentos")).toBe(false);
+      expect(h.writes.find((w: any) => w.table === "lead_timeline").value.resumo).toContain("Encaminhado à Matriz. Niterói");
+      expect(alerts(h).map((w: any) => w.value.destination).sort()).toEqual(["5521995367752", "5522999990000"]);
+      expect(alerts(h).every((w: any) => w.value.event_type === "lead_matriz")).toBe(true);
+    });
+    it("verificar_cobertura_regiao forwards too, and a later transferir_para_humano reuses the lead without a second alert", async () => {
+      const h = harness({ store: true, ...gestor });
+      vi.setSystemTime(new Date("2026-11-10T19:47:00Z"));
+      const first = await h.route("verificar_cobertura_regiao", { chat_id: wa, cidade: "Niterói", estado: "RJ" }); await h.flush();
+      expect(first.data).toMatchObject({ encaminhado_matriz: true, notificado: true });
+      const r = await h.route("transferir_para_humano", { chat_id: wa, motivo: "MATRIZ", empresa: "Clínica Icaraí", cidade: "Niterói",
+        produto_interesse: "aromatização", resumo: "Quer aromatizar a recepção" }); await h.flush();
+      expect(r.data).toMatchObject({ encaminhado_matriz: true, lead_id: "new-lead", notificado: false, ja_encaminhado: true, lead_criado: false });
+      expect(leadWrites(h, "insert")).toHaveLength(1);
+      expect(alerts(h)).toHaveLength(2); // only the first forwarding's two recipients
+      // The transfer fills what the coverage check did not know.
+      expect(leadWrites(h, "update").some((w: any) => w.value.empresa_nome === "Clínica Icaraí" && w.value.category === "aromatização")).toBe(true);
+      const tl = h.writes.filter((w: any) => w.table === "lead_timeline").map((w: any) => w.value.resumo);
+      expect(tl).toHaveLength(2); expect(tl[1]).toContain("Complemento do encaminhamento à Matriz: Quer aromatizar a recepção");
+    });
+    it("calling the coverage tools again in the same chat never duplicates the lead or the alert", async () => {
+      const h = harness({ store: true, ...gestor });
+      vi.setSystemTime(new Date("2026-11-10T19:47:00Z"));
+      await h.route("localizar_estabelecimento", { chat_id: wa, nome: "Clínica Icaraí", cidade: "Niterói" }); await h.flush();
+      const again = await h.route("verificar_cobertura_regiao", { chat_id: wa, cidade: "Niterói" }); await h.flush();
+      expect(again.data).toMatchObject({ encaminhado_matriz: true, notificado: false });
+      expect(leadWrites(h, "insert")).toHaveLength(1); expect(alerts(h)).toHaveLength(2);
+      expect(h.writes.filter((w: any) => w.table === "lead_timeline")).toHaveLength(1);
+    });
+    it("a team member's chat is never turned into a Matriz lead", async () => {
+      const h = harness({ store: true, profiles: [{ user_id: "t1", name: "Equipe", phone: "5521987327216", is_active: true, organization_id: org }], roles: [{ user_id: "t1", role: "vendedor" }] });
+      const r = await h.route("verificar_cobertura_regiao", { chat_id: wa, cidade: "Niterói", estado: "RJ" }); await h.flush();
+      expect(r.data.vinculo).toBe("MATRIZ"); expect(r.data.encaminhado_matriz).toBeUndefined();
+      expect(leadWrites(h, "insert")).toHaveLength(0); expect(alerts(h)).toHaveLength(0);
+    });
+    it("Distribuidora and out-of-state results are not forwarded to the Matriz", async () => {
+      const h = harness({ store: true, ...gestor });
+      const cf = await h.route("verificar_cobertura_regiao", { chat_id: wa, cidade: "Cabo Frio" });
+      const sp = await h.route("verificar_cobertura_regiao", { chat_id: wa, cidade: "São Paulo", estado: "SP" }); await h.flush();
+      expect(cf.data.encaminhado_matriz).toBeUndefined(); expect(sp.data.encaminhado_matriz).toBeUndefined();
+      expect(alerts(h)).toHaveLength(0);
+    });
   });
 });

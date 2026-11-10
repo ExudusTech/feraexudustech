@@ -1,0 +1,2 @@
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS matriz_encaminhado_em timestamptz;
+COMMENT ON COLUMN public.leads.matriz_encaminhado_em IS 'Last Matriz forwarding (mcp); atomic claim so the lead_matriz alert fires once per chat/lead window.';

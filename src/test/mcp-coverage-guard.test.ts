@@ -112,13 +112,15 @@ describe("covered and Matriz cities", () => {
     expect(r.data.coberto).toBe(true);
     expect(r.data.proximas_datas.length).toBeGreaterThan(0);
   });
-  it.each(["Niterói", "Petrópolis"])("%s (RJ outside the Lagos) keeps the MATRIZ handoff without search or registration", async cidade => {
+  it.each(["Niterói", "Petrópolis"])("%s (RJ outside the Lagos) forwards to the MATRIZ server-side without search or out-of-coverage registration", async cidade => {
     const h = harness();
     const r = await h.route("localizar_estabelecimento", { nome: "Hotel Central", cidade, chat_id: CHAT });
-    expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ(cidade), proxima_acao: "chame transferir_para_humano com motivo MATRIZ" });
-    expect(r.next_action_hint).toContain("transferir_para_humano com motivo MATRIZ");
+    expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ(cidade), encaminhado_matriz: true });
+    expect(r.next_action_hint).toContain("não precisa chamar transferir_para_humano");
     expect(h.requests).toHaveLength(0);
-    expect(h.writes()).toHaveLength(0);
+    expect(JSON.stringify(h.writes())).not.toContain("SEM_COBERTURA");
+    const plain = await harness().route("localizar_estabelecimento", { nome: "Hotel Central", cidade });
+    expect(plain.data).toMatchObject({ proxima_acao: "chame transferir_para_humano com motivo MATRIZ" });
     const rota = await h.route("consultar_rota_consultor", { cidade });
     expect(rota.data).toMatchObject({ coberto: false, vinculo: "MATRIZ", opcoes_horario: [] });
   });
