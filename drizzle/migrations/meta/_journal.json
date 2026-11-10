@@ -344,6 +344,13 @@
       "when": 1794273091656,
       "tag": "0048_dados_demonstracao_ajustes",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794315141529,
+      "tag": "0049_historico_funil_propostas",
+      "breakpoints": true
     }
   ]
 }

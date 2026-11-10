@@ -3523,6 +3523,7 @@ export type Database = {
         Row: {
           address: string | null
           assigned_user_id: string | null
+          ativado_em: string | null
           city: string | null
           cnpj_situacao: string | null
           cnpj_verificado_em: string | null
@@ -3540,6 +3541,7 @@ export type Database = {
           localizacao_confirmada_em: string | null
           localizacao_origem: string | null
           longitude: number | null
+          marcos_estimados: boolean
           name: string
           notes: string | null
           organization_id: string
@@ -3558,6 +3560,7 @@ export type Database = {
         Insert: {
           address?: string | null
           assigned_user_id?: string | null
+          ativado_em?: string | null
           city?: string | null
           cnpj_situacao?: string | null
           cnpj_verificado_em?: string | null
@@ -3575,6 +3578,7 @@ export type Database = {
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
+          marcos_estimados?: boolean
           name: string
           notes?: string | null
           organization_id: string
@@ -3593,6 +3597,7 @@ export type Database = {
         Update: {
           address?: string | null
           assigned_user_id?: string | null
+          ativado_em?: string | null
           city?: string | null
           cnpj_situacao?: string | null
           cnpj_verificado_em?: string | null
@@ -3610,6 +3615,7 @@ export type Database = {
           localizacao_confirmada_em?: string | null
           localizacao_origem?: string | null
           longitude?: number | null
+          marcos_estimados?: boolean
           name?: string
           notes?: string | null
           organization_id?: string
@@ -3652,6 +3658,7 @@ export type Database = {
       comodatos: {
         Row: {
           aparelho_descricao: string | null
+          ativado_em: string | null
           cidade: string | null
           client_contact_id: string | null
           client_id: string | null
@@ -3671,6 +3678,7 @@ export type Database = {
           lead_id: string | null
           linha_produto: string | null
           localizacao_interna: string | null
+          marcos_estimados: boolean
           notes: string | null
           numero_contrato: string | null
           organization_id: string
@@ -3690,6 +3698,7 @@ export type Database = {
         }
         Insert: {
           aparelho_descricao?: string | null
+          ativado_em?: string | null
           cidade?: string | null
           client_contact_id?: string | null
           client_id?: string | null
@@ -3709,6 +3718,7 @@ export type Database = {
           lead_id?: string | null
           linha_produto?: string | null
           localizacao_interna?: string | null
+          marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
           organization_id: string
@@ -3728,6 +3738,7 @@ export type Database = {
         }
         Update: {
           aparelho_descricao?: string | null
+          ativado_em?: string | null
           cidade?: string | null
           client_contact_id?: string | null
           client_id?: string | null
@@ -3747,6 +3758,7 @@ export type Database = {
           lead_id?: string | null
           linha_produto?: string | null
           localizacao_interna?: string | null
+          marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
           organization_id?: string
@@ -5254,6 +5266,74 @@ export type Database = {
           },
         ]
       }
+      lead_stage_history: {
+        Row: {
+          created_at: string
+          estimado: boolean
+          etapa_anterior_id: string | null
+          etapa_nova_id: string | null
+          id: string
+          lead_id: string
+          mudou_em: string
+          mudou_por: string | null
+          organization_id: string
+          origem: string
+        }
+        Insert: {
+          created_at?: string
+          estimado?: boolean
+          etapa_anterior_id?: string | null
+          etapa_nova_id?: string | null
+          id?: string
+          lead_id: string
+          mudou_em?: string
+          mudou_por?: string | null
+          organization_id: string
+          origem?: string
+        }
+        Update: {
+          created_at?: string
+          estimado?: boolean
+          etapa_anterior_id?: string | null
+          etapa_nova_id?: string | null
+          id?: string
+          lead_id?: string
+          mudou_em?: string
+          mudou_por?: string | null
+          organization_id?: string
+          origem?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_stage_history_etapa_anterior_id_fkey"
+            columns: ["etapa_anterior_id"]
+            isOneToOne: false
+            referencedRelation: "lead_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_stage_history_etapa_nova_id_fkey"
+            columns: ["etapa_nova_id"]
+            isOneToOne: false
+            referencedRelation: "lead_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_stage_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_stage_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_stages: {
         Row: {
           ativo: boolean
@@ -5403,6 +5483,7 @@ export type Database = {
           localizacao_origem: string | null
           longitude: number | null
           maps_url: string | null
+          marcos_estimados: boolean
           organization_id: string
           origem_especifica: string | null
           pessoa_id: string | null
@@ -5416,6 +5497,8 @@ export type Database = {
           source: string | null
           stage: Database["public"]["Enums"]["lead_stage"]
           stage_id: string | null
+          teste_aprovado_em: string | null
+          teste_instalado_em: string | null
           title: string
           updated_at: string | null
           value: number | null
@@ -5459,6 +5542,7 @@ export type Database = {
           localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
+          marcos_estimados?: boolean
           organization_id: string
           origem_especifica?: string | null
           pessoa_id?: string | null
@@ -5472,6 +5556,8 @@ export type Database = {
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           stage_id?: string | null
+          teste_aprovado_em?: string | null
+          teste_instalado_em?: string | null
           title: string
           updated_at?: string | null
           value?: number | null
@@ -5515,6 +5601,7 @@ export type Database = {
           localizacao_origem?: string | null
           longitude?: number | null
           maps_url?: string | null
+          marcos_estimados?: boolean
           organization_id?: string
           origem_especifica?: string | null
           pessoa_id?: string | null
@@ -5528,6 +5615,8 @@ export type Database = {
           source?: string | null
           stage?: Database["public"]["Enums"]["lead_stage"]
           stage_id?: string | null
+          teste_aprovado_em?: string | null
+          teste_instalado_em?: string | null
           title?: string
           updated_at?: string | null
           value?: number | null
@@ -7125,19 +7214,77 @@ export type Database = {
           },
         ]
       }
+      proposal_status_history: {
+        Row: {
+          created_at: string
+          estimado: boolean
+          id: string
+          mudou_em: string
+          mudou_por: string | null
+          organization_id: string
+          origem: string
+          proposal_id: string
+          status_anterior: string | null
+          status_novo: string | null
+        }
+        Insert: {
+          created_at?: string
+          estimado?: boolean
+          id?: string
+          mudou_em?: string
+          mudou_por?: string | null
+          organization_id: string
+          origem?: string
+          proposal_id: string
+          status_anterior?: string | null
+          status_novo?: string | null
+        }
+        Update: {
+          created_at?: string
+          estimado?: boolean
+          id?: string
+          mudou_em?: string
+          mudou_por?: string | null
+          organization_id?: string
+          origem?: string
+          proposal_id?: string
+          status_anterior?: string | null
+          status_novo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_status_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_status_history_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       proposals: {
         Row: {
+          aceita_em: string | null
           assigned_to: string | null
+          ativado_em: string | null
           client_id: string | null
           created_at: string
           created_by: string
           description: string | null
           discount_percent: number | null
           discount_value: number | null
+          enviada_em: string | null
           final_value: number
           forma_pagamento: string | null
           id: string
           lead_id: string | null
+          marcos_estimados: boolean
           notes: string | null
           numero: number | null
           organization_id: string
@@ -7146,6 +7293,7 @@ export type Database = {
           pdf_path: string | null
           periodicidade_manutencao: string | null
           prazo_entrega: string | null
+          rejeitada_em: string | null
           status: string
           title: string
           total_value: number
@@ -7153,17 +7301,21 @@ export type Database = {
           valid_until: string | null
         }
         Insert: {
+          aceita_em?: string | null
           assigned_to?: string | null
+          ativado_em?: string | null
           client_id?: string | null
           created_at?: string
           created_by: string
           description?: string | null
           discount_percent?: number | null
           discount_value?: number | null
+          enviada_em?: string | null
           final_value?: number
           forma_pagamento?: string | null
           id?: string
           lead_id?: string | null
+          marcos_estimados?: boolean
           notes?: string | null
           numero?: number | null
           organization_id: string
@@ -7172,6 +7324,7 @@ export type Database = {
           pdf_path?: string | null
           periodicidade_manutencao?: string | null
           prazo_entrega?: string | null
+          rejeitada_em?: string | null
           status?: string
           title: string
           total_value?: number
@@ -7179,17 +7332,21 @@ export type Database = {
           valid_until?: string | null
         }
         Update: {
+          aceita_em?: string | null
           assigned_to?: string | null
+          ativado_em?: string | null
           client_id?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
           discount_percent?: number | null
           discount_value?: number | null
+          enviada_em?: string | null
           final_value?: number
           forma_pagamento?: string | null
           id?: string
           lead_id?: string | null
+          marcos_estimados?: boolean
           notes?: string | null
           numero?: number | null
           organization_id?: string
@@ -7198,6 +7355,7 @@ export type Database = {
           pdf_path?: string | null
           periodicidade_manutencao?: string | null
           prazo_entrega?: string | null
+          rejeitada_em?: string | null
           status?: string
           title?: string
           total_value?: number
@@ -8116,6 +8274,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      historico_autor: { Args: never; Returns: string }
+      historico_origem: { Args: never; Returns: string }
       is_consultor_tecnico: { Args: { _user_id: string }; Returns: boolean }
       is_faturamento: { Args: { _user_id: string }; Returns: boolean }
       is_financeiro: { Args: { _user_id: string }; Returns: boolean }
