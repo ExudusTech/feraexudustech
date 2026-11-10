@@ -5591,6 +5591,7 @@ export type Database = {
           longitude: number | null
           maps_url: string | null
           marcos_estimados: boolean
+          matriz_encaminhado_em: string | null
           organization_id: string
           origem_especifica: string | null
           pessoa_id: string | null
@@ -5650,6 +5651,7 @@ export type Database = {
           longitude?: number | null
           maps_url?: string | null
           marcos_estimados?: boolean
+          matriz_encaminhado_em?: string | null
           organization_id: string
           origem_especifica?: string | null
           pessoa_id?: string | null
@@ -5709,6 +5711,7 @@ export type Database = {
           longitude?: number | null
           maps_url?: string | null
           marcos_estimados?: boolean
+          matriz_encaminhado_em?: string | null
           organization_id?: string
           origem_especifica?: string | null
           pessoa_id?: string | null
