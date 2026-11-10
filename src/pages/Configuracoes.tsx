@@ -31,6 +31,8 @@ const PLAN_LABELS: Record<string, string> = {
 
 export default function Configuracoes() {
   const { isAdmin, role, isSuperAdmin } = usePermissions();
+  const { roles: rolesEtq = [] } = usePermissions() as any;
+  const gestorEtiquetas = (rolesEtq as string[]).some((r) => ["admin", "gestor", "super_admin"].includes(r));
   const { data: org, isLoading } = useOrganization();
   const updateOrg = useUpdateOrganization();
 
