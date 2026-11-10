@@ -31,6 +31,12 @@ export default function ProposalPdfActions({ proposal, falta, beforeGenerate }: 
     setGerado(data); qc.invalidateQueries({ queryKey: ["proposals"] });
     toast({ title: "PDF gerado" });
   };
+  // Sharing with the client marks a draft as "enviada"; the database stamps enviada_em the first time.
+  const marcarEnviada = async () => {
+    if (proposal.status !== "rascunho") return;
+    const { error } = await supabase.from("proposals").update({ status: "enviada" }).eq("id", proposal.id).eq("status", "rascunho");
+    if (!error) qc.invalidateQueries({ queryKey: ["proposals"] });
+  };
   const msg = gerado ? `Olá! Segue a proposta comercial Nº ${gerado.numero} da NitsClean para ${gerado.cliente}: ${gerado.url}` : "";
   const wa = gerado ? `https://wa.me/${waNumber(gerado.contato?.telefone)}?text=${encodeURIComponent(msg)}` : "";
   const mail = gerado ? `mailto:${gerado.contato?.email ?? ""}?subject=${encodeURIComponent(`Proposta comercial Nº ${gerado.numero} — NitsClean`)}&body=${encodeURIComponent(msg)}` : "";
@@ -45,10 +51,10 @@ export default function ProposalPdfActions({ proposal, falta, beforeGenerate }: 
         </Button>
       ) : (
         <>
-          <Button type="button" className="w-full" asChild><a href={wa} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4 mr-1" />Enviar ao cliente</a></Button>
+          <Button type="button" className="w-full" asChild><a href={wa} target="_blank" rel="noreferrer" onClick={() => { void marcarEnviada(); }}><MessageCircle className="h-4 w-4 mr-1" />Enviar ao cliente</a></Button>
           <div className="grid grid-cols-2 gap-2">
             <Button type="button" size="sm" variant="outline" asChild><a href={gerado.url} target="_blank" rel="noreferrer">Abrir PDF</a></Button>
-            <Button type="button" size="sm" variant="outline" asChild><a href={mail}><Mail className="h-4 w-4 mr-1" />E-mail</a></Button>
+            <Button type="button" size="sm" variant="outline" asChild><a href={mail} onClick={() => { void marcarEnviada(); }}><Mail className="h-4 w-4 mr-1" />E-mail</a></Button>
           </div>
         </>
       )}
