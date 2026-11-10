@@ -93,3 +93,7 @@
 - [ ] Regra geral: material que sai exige nota anexada
 - [x] Lotes 13/14 correções 05/11
 - [x] Lote 15 ocorrências e coleta por áudio
+## Inventário + Etiqueta QR (10/11)
+- [x] Filtros por cima do mapa (z-index Leaflet)
+- [ ] Inventário: stock_movements, Ajustar estoque, aba Estoque por família (reservados/disponível/teste/instalados/refis), base↔estoque por trigger, demo de estoque + desfazer
+- [ ] Etiqueta QR: número no comodato (único/org), leitor (BarcodeDetector + fallback + digitar), /q/<numero> logado/público→WhatsApp Flora, PDF de etiquetas com faixa registrada, busca/número na Base instalada, separação, ações na ocorrência, demo 900001+, testes, publicar
