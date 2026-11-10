@@ -26,7 +26,7 @@ function useDadosFunil() {
       const [st, ls, hs, ps, pf, ar] = await Promise.all([
         supabase.from("lead_stages").select("id, nome, ordem, tipo, chave").eq("organization_id", org!),
         supabase.from("leads").select("id, created_at, category, city, canal_origem, created_by_flora, assigned_to, levantamento, teste_instalado_em, teste_aprovado_em").eq("organization_id", org!).limit(5000),
-        supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em, estimado").eq("organization_id", org!).order("mudou_em").limit(20000),
+        supabase.from("lead_stage_history").select("lead_id, etapa_anterior_id, etapa_nova_id, mudou_em").eq("organization_id", org!).order("mudou_em").limit(20000),
         supabase.from("proposals").select("id, lead_id, client_id, status, created_at, enviada_em, aceita_em, rejeitada_em, ativado_em").eq("organization_id", org!).limit(5000),
         supabase.from("profiles").select("user_id, name").eq("organization_id", org!).limit(300),
         supabase.from("ekkoa_coverage_areas").select("name, city").eq("organization_id", org!).eq("is_active", true).limit(200),
@@ -70,8 +70,7 @@ export default function TempoFunilCard() {
     const jan = { inicio: inicio.toISOString(), fim: new Date(fim.getTime() + 60_000).toISOString() };
     const etapas = temposPorEtapa(data.etapas, data.historico, jan);
     const grupos = ciclosPorRecorte(data.leads, data.historico, data.propostas, recorte, jan);
-    return { etapas, lenta: etapaMaisDemorada(etapas), ciclos: ciclos(data.leads, data.historico, data.propostas, jan), grupos, rank: rankingDecisao(grupos),
-      estimados: etapas.reduce((s, e) => s + e.estimados, 0) };
+    return { etapas, lenta: etapaMaisDemorada(etapas), ciclos: ciclos(data.leads, data.historico, data.propostas, jan), grupos, rank: rankingDecisao(grupos) };
   }, [data, dias, recorte]);
   const maxMediana = Math.max(1, ...(r?.etapas ?? []).map((e) => e.mediana ?? 0));
 
@@ -121,7 +120,6 @@ export default function TempoFunilCard() {
                   </li>
                 ))}
               </ul>
-              {r.estimados > 0 && <p className="text-xs text-muted-foreground">{r.estimados} intervalos foram reconstruídos de dados antigos (estimados).</p>}
             </div>
 
             <div className="space-y-2">

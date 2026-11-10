@@ -3,7 +3,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import {
-  ciclos, ciclosPorRecorte, diasEntre, estatDias, etapaMaisDemorada, faixaPorte, fmtDias, rankingDecisao, temposPorEtapa,
+  ciclos, ciclosPorRecorte, diasEntre, FT_RECUSA_GESTAO, podeVerTempoFunil, estatDias, etapaMaisDemorada, faixaPorte, fmtDias, rankingDecisao, temposPorEtapa,
   type FtEtapa, type FtLead, type FtMudanca, type FtProposta,
 } from "@/lib/funil-tempos";
 
@@ -16,7 +16,7 @@ const hist: FtMudanca[] = [
   { lead_id: "a", etapa_nova_id: "novo", mudou_em: d(1) }, { lead_id: "a", etapa_anterior_id: "novo", etapa_nova_id: "qual", mudou_em: d(3) },
   { lead_id: "a", etapa_anterior_id: "qual", etapa_nova_id: "prop", mudou_em: d(4) }, { lead_id: "a", etapa_anterior_id: "prop", etapa_nova_id: "ganho", mudou_em: d(14) },
   { lead_id: "b", etapa_nova_id: "novo", mudou_em: d(2) }, { lead_id: "b", etapa_anterior_id: "novo", etapa_nova_id: "qual", mudou_em: d(6) },
-  { lead_id: "b", etapa_anterior_id: "qual", etapa_nova_id: "prop", mudou_em: d(8), estimado: true },
+  { lead_id: "b", etapa_anterior_id: "qual", etapa_nova_id: "prop", mudou_em: d(8) },
   { lead_id: "c", etapa_nova_id: "novo", mudou_em: d(5) },
 ];
 const leads: FtLead[] = [
@@ -46,7 +46,8 @@ describe("tempo do funil (helpers puros)", () => {
     const t = temposPorEtapa(etapas, hist);
     const novo = t.find((x) => x.etapa_id === "novo")!, qual = t.find((x) => x.etapa_id === "qual")!, prop = t.find((x) => x.etapa_id === "prop")!;
     expect([novo.n, novo.mediana, novo.parados]).toEqual([2, 3, 1]); // a: 2 days, b: 4 days; c still in Novo
-    expect([qual.n, qual.mediana, qual.estimados]).toEqual([2, 1.5, 1]); // a: 1 day, b: 2 days (estimated end)
+    expect([qual.n, qual.mediana]).toEqual([2, 1.5]); // a: 1 day, b: 2 days
+    expect(qual).not.toHaveProperty("estimados");
     expect([prop.n, prop.mediana, prop.parados]).toEqual([1, 10, 1]);
     expect(t.some((x) => x.etapa_id === "ganho")).toBe(false);
     expect(etapaMaisDemorada(t)?.nome).toBe("Proposta enviada");
@@ -74,6 +75,19 @@ describe("tempo do funil (helpers puros)", () => {
   });
 });
 
+describe("tempo do funil é assunto de gestão", () => {
+  it("only gestor, super_admin and admin may see funnel timing", () => {
+    expect(podeVerTempoFunil(["gestor"])).toBe(true);
+    expect(podeVerTempoFunil(["super_admin"])).toBe(true);
+    expect(podeVerTempoFunil(["admin"])).toBe(true);
+    expect(podeVerTempoFunil(["vendedor", "gestor"])).toBe(true);
+    for (const r of ["vendedor", "consultor_tecnico", "faturamento", "financeiro", "operacional", "user", "visitante"]) expect(podeVerTempoFunil([r])).toBe(false);
+    expect(podeVerTempoFunil([])).toBe(false);
+    expect(podeVerTempoFunil(null)).toBe(false);
+    expect(FT_RECUSA_GESTAO).toBe("Essa informação é da gestão; peça ao Arilson.");
+  });
+});
+
 describe("mcp embeds the same helpers", () => {
   it("block is identical to the shared file", () => {
     const bloco = (s: string) => s.slice(s.indexOf("// BEGIN funil-tempos"), s.indexOf("// END funil-tempos"));
@@ -85,12 +99,14 @@ describe("mcp embeds the same helpers", () => {
 // Flora Equipe questions over the same tables (Tuesday 10/11/2026, São Paulo).
 vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-10T14:00:00Z"));
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
-const PH = "5522999990002", MARCOS = "5522999990001";
+const PH = "5522999990002", MARCOS = "5522999990001", TECNICO = "5522999990003", FATURA = "5522999990004", GESTORA = "5522999990005";
 function harness() {
   const n = (dia: number) => new Date(Date.UTC(2026, 10, dia, 13)).toISOString();
   const tables: Record<string, any[]> = {
-    profiles: [{ user_id: "u1", name: "Marcos Serafim", phone: MARCOS, organization_id: org, is_active: true }, { user_id: "u2", name: "PH Nascimento", phone: PH, organization_id: org, is_active: true }],
-    user_roles: [{ user_id: "u1", role: "vendedor" }, { user_id: "u2", role: "super_admin" }],
+    profiles: [{ user_id: "u1", name: "Marcos Serafim", phone: MARCOS, organization_id: org, is_active: true }, { user_id: "u2", name: "PH Nascimento", phone: PH, organization_id: org, is_active: true },
+      { user_id: "u3", name: "Tiago Técnico", phone: TECNICO, organization_id: org, is_active: true }, { user_id: "u4", name: "Fátima Faturamento", phone: FATURA, organization_id: org, is_active: true },
+      { user_id: "u5", name: "Gisele Gestora", phone: GESTORA, organization_id: org, is_active: true }],
+    user_roles: [{ user_id: "u1", role: "vendedor" }, { user_id: "u2", role: "super_admin" }, { user_id: "u3", role: "consultor_tecnico" }, { user_id: "u4", role: "faturamento" }, { user_id: "u5", role: "gestor" }],
     ekkoa_coverage_areas: [{ organization_id: org, is_active: true, name: "Búzios", city: "Armação dos Búzios" }, { organization_id: org, is_active: true, name: "Cabo Frio", city: "Cabo Frio" }],
     lead_stages: etapas.map((e) => ({ ...e, organization_id: org })),
     leads: [
@@ -150,13 +166,30 @@ describe("Flora Equipe — perguntas de tempo", () => {
     expect(r.data.mais_lento).toBe("Hotel/Pousada");
     expect(r.data.mensagem_para_equipe).toContain("Segmento que fecha mais rápido: Restaurante/Bar 5 dias");
   });
-  it("seller only sees own leads; period in the text is respected", async () => {
-    const r = await ask(MARCOS, "em que etapa os leads do PH mais demoram este mês?");
+  it("period in the text is respected", async () => {
+    const r = await ask(GESTORA, "em que etapa os leads do Marcos mais demoram este mês?");
     expect(r.data.periodo.rotulo).toContain("novembro/2026");
     expect(r.data.recorte.consultor).toBe("Marcos Serafim");
     expect(r.data.etapa_mais_demorada).toMatchObject({ nome: "Proposta enviada", n: 1, mediana_dias: 7 });
-    expect(r.data.mensagem_para_equipe).toContain("Você vê só os seus números.");
   });
+  it("gestor gets the numbers", async () => {
+    const r = await ask(GESTORA, "qual segmento fecha mais rápido?");
+    expect(r.data.recusado).toBeUndefined();
+    expect(r.data.mais_rapido).toBe("Restaurante/Bar");
+  });
+  for (const [papel, fone] of [["vendedor", MARCOS], ["consultor_tecnico", TECNICO], ["faturamento", FATURA]] as const) {
+    for (const pergunta of ["em que etapa os leads mais demoram?", "quanto tempo do aceite até ativar?", "qual segmento fecha mais rápido?", "tempo do funil do mês"]) {
+      it(`${papel} is refused with no numbers: "${pergunta}"`, async () => {
+        const r = await ask(fone, pergunta);
+        expect(r.data.recusado).toBe(true);
+        expect(r.data.mensagem_para_equipe).toBe("Essa informação é da gestão; peça ao Arilson.");
+        expect(r.data.mensagem_para_equipe).not.toMatch(/\d/);
+        expect(r.data).not.toHaveProperty("ciclos");
+        expect(r.data).not.toHaveProperty("etapa_mais_demorada");
+        expect(r.data.imagem_enviada).toBe(false);
+      });
+    }
+  }
   it("'tempo do funil do mês' is a panorama (image attempted)", async () => {
     const r = await ask(PH, "tempo do funil do mês");
     expect(r.data.panorama).toBe(true);

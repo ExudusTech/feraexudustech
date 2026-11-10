@@ -13,6 +13,8 @@ import { useOperations } from "@/hooks/use-operations";
 import { exportToExcel, exportToPDF } from "@/lib/export-utils";
 import { format } from "date-fns";
 import TempoFunilCard from "@/components/relatorios/TempoFunilCard";
+import { usePermissions } from "@/hooks/use-permissions";
+import { podeVerTempoFunil } from "@/lib/funil-tempos";
 
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -26,6 +28,8 @@ function formatDate(d: string | null) {
 export default function Relatorios() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const { roles, isSuperAdmin } = usePermissions();
+  const veTempoFunil = isSuperAdmin || podeVerTempoFunil(roles);
 
   const { data: clients = [] } = useClients();
   const { data: transactions = [] } = useFinancialTransactions();
@@ -99,7 +103,7 @@ export default function Relatorios() {
 
   return (
     <AppLayout title="Relatórios" subtitle="Análises e exportação de dados">
-      <TempoFunilCard />
+      {veTempoFunil && <TempoFunilCard />}
       <Tabs defaultValue="clientes" onValueChange={() => { setSearch(""); setStatusFilter("todos"); }}>
         <TabsList className="mb-4">
           <TabsTrigger value="clientes"><Users className="h-4 w-4 mr-1" /> Clientes</TabsTrigger>
