@@ -176,7 +176,7 @@ export function planejarHistorico(hoje: string, plano: PlanoDatas): HistoricoDem
       proposta: { status: "enviada", passos: [{ status: "rascunho", em: h(-7) }, { status: "enviada", em: h(-6, "16:00") }] },
       perdido: { status: "rejeitada", passos: [{ status: "rascunho", em: h(-15) }, { status: "enviada", em: h(-14, "16:00") }, { status: "rejeitada", em: h(-7) }] },
     },
-    teste: { cliente: { instalado_em: r(-15, "11:00"), aprovado_em: r(0, "15:00") }, em_teste: { instalado_em: h(-5, "11:00") }, teste: { instalado_em: h(-4) } },
+    teste: { cliente: { instalado_em: r(-15, "11:00"), aprovado_em: r(0, "15:00") }, em_teste: { instalado_em: h(-5, "11:00") } },
     ativacao_cliente: r(7, "10:00"), teste_cliente_inicio: addDias(pr, -15),
   };
 }
