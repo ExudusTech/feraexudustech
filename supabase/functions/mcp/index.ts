@@ -4279,28 +4279,54 @@ async function visitaEmAndamento(supabase: ReturnType<typeof getClient>, u: Team
   return (data as ScheduleRow | null) ?? null;
 }
 
+/** Same Haversine as _shared/visit-exec.ts (mcp cannot import it in the test harness). */
+function metrosEntre(a: [number, number], b: [number, number]): number {
+  const r = 6_371_000, rad = (d: number) => d * Math.PI / 180;
+  const h = Math.sin(rad(b[0] - a[0]) / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(rad(b[1] - a[1]) / 2) ** 2;
+  return Math.round(2 * r * Math.asin(Math.sqrt(h)));
+}
+function destinoVisita(s: any): [number, number] | null {
+  return s.latitude != null ? [s.latitude, s.longitude] : s.clients?.latitude != null ? [s.clients.latitude, s.clients.longitude]
+    : s.leads?.latitude != null ? [s.leads.latitude, s.leads.longitude] : null;
+}
+/** Minutes a WhatsApp location keeps releasing the app check-in (same value as WA_LOCALIZACAO_MIN in _shared/visit-exec.ts). */
+const WA_LOCALIZACAO_MIN = 30;
+
 async function registrarLocalizacaoCheckin(params: Record<string, unknown>): Promise<McpResponse> {
   return withTeam(async (u, supabase) => {
     const lat = Number(params.latitude), lng = Number(params.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return fail("Localização inválida");
-    const s = await visitaEmAndamento(supabase, u);
-    if (!s) return fail("Você não tem visita em andamento. Inicie a visita no Fera primeiro.", "Abra o Fera em Hoje e toque em Iniciar");
-    const dest = s.latitude != null ? [s.latitude, s.longitude] : s.clients?.latitude != null ? [s.clients.latitude, s.clients.longitude]
-      : s.leads?.latitude != null ? [s.leads.latitude, s.leads.longitude] : null;
     const { data: org } = await supabase.from("organizations").select("raio_checkin_m").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
     const raio = Number((org as any)?.raio_checkin_m ?? 300) || 300;
-    let distancia: number | null = null;
-    if (dest) {
-      const r = 6_371_000, rad = (d: number) => d * Math.PI / 180;
-      const a = Math.sin(rad(dest[0] - lat) / 2) ** 2 + Math.cos(rad(lat)) * Math.cos(rad(dest[0])) * Math.sin(rad(dest[1] - lng) / 2) ** 2;
-      distancia = Math.round(2 * r * Math.asin(Math.sqrt(a)));
+    const s = await visitaEmAndamento(supabase, u);
+    if (s) {
+      const dest = destinoVisita(s);
+      const distancia = dest ? metrosEntre([lat, lng], dest) : null;
+      const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
+        fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
+        localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
+      if (error) return fail(dbFail("registrar localização", error));
+      return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
+        link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente` : "Localização registrada (cliente sem coordenadas)");
     }
-    const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
-      fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
-      localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
+    // 11/11: no GPS in the app blocks technical check-ins; the WhatsApp location stands in for it on today's open visit nearest to the consultant.
+    const { data: abertas } = await supabase.from("schedules").select("id, title, start_time, latitude, longitude, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude)")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id).eq("scheduled_date", spToday()).in("status", ["agendado", "confirmado"]).order("start_time").limit(20);
+    const lista = ((abertas ?? []) as any[]).map((v) => { const d = destinoVisita(v); return { v, dist: d ? metrosEntre([lat, lng], d) : null }; });
+    if (!lista.length) return fail("Você não tem visita para iniciar hoje.", "Confira sua agenda no Fera");
+    const alvo = lista.filter((x) => x.dist !== null).sort((a, b) => a.dist! - b.dist!)[0] ?? lista[0];
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("schedules").update({ wa_latitude: lat, wa_longitude: lng, wa_localizacao_em: now, wa_localizacao_por: u.user_id })
+      .eq("id", alvo.v.id).eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id);
     if (error) return fail(dbFail("registrar localização", error));
-    return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
-      link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente` : "Localização registrada (cliente sem coordenadas)");
+    const cliente = alvo.v.clients?.name ?? alvo.v.leads?.empresa_nome ?? alvo.v.leads?.company ?? alvo.v.title ?? "cliente";
+    const liberado = alvo.dist === null || alvo.dist <= raio;
+    const msg = alvo.dist === null
+      ? `Localização recebida para ${cliente} (endereço sem coordenadas). Volte ao Fera e toque em Iniciar nos próximos ${WA_LOCALIZACAO_MIN} min.`
+      : liberado ? `Localização recebida: você está a ${distanciaTexto(alvo.dist)} de ${cliente}. Check-in liberado: volte ao Fera e toque em Iniciar nos próximos ${WA_LOCALIZACAO_MIN} min.`
+      : `Você está a ${distanciaTexto(alvo.dist)} de ${cliente}. O check-in só é liberado no local (até ${distanciaTexto(raio)}). Chegue ao cliente e envie a localização de novo.`;
+    return ok({ codigo: visitCode(alvo.v.id), distancia_m: alvo.dist, dentro_do_raio: alvo.dist !== null && alvo.dist <= raio, checkin_liberado: liberado,
+      destino_sem_coordenadas: alvo.dist === null, validade_minutos: WA_LOCALIZACAO_MIN, link: feraLink(`/agenda?agendamento=${alvo.v.id}`) }, msg);
   }, params, isField);
 }
 
@@ -6096,7 +6122,7 @@ const TEAM_MANIFEST = [
   { name: "consultar_cliente_ou_lead", description: "EQUIPE: resumo de cliente/lead (contatos, último histórico, pontos instalados, próxima visita, link). Vendedor/consultor vê só a própria carteira.", parameters: { type: "object", required: ["chat_id", "termo"], properties: { ...CHAT, termo: { type: "string", description: "Nome da empresa" } } } },
   { name: "criar_lead_equipe", description: "EQUIPE: cria lead (empresa + cidade + 1 contato) em nome do usuário.", parameters: { type: "object", required: ["chat_id", "empresa", "cidade", "contato_nome"], properties: { ...CHAT, empresa: { type: "string" }, cidade: { type: "string" }, endereco: { type: "string" }, cnpj: { type: "string" }, contato_nome: { type: "string" }, contato_telefone: { type: "string" }, cargo: { type: "string" } } } },
   { name: "agendar_visita_equipe", description: "EQUIPE: agenda visita com as mesmas validações do Fera (cliente obrigatório fora da comercial, CNPJ quando há nota, conflito, feriado, agenda Google). Vendedor só visita comercial.", parameters: { type: "object", required: ["chat_id", "tipo", "data", "horario"], properties: { ...CHAT, tipo: { type: "string", enum: TEAM_TYPES }, data: { type: "string" }, horario: { type: "string", description: "HH:MM" }, client_id: { type: "string" }, lead_id: { type: "string" }, operacao_material: { type: "string", enum: ["instalacao_teste", "instalacao_definitiva", "entrega", "substituicao", "manutencao_reposicao"] }, itens: { type: "array", items: { type: "object", properties: { descricao: { type: "string" }, quantidade: { type: "string" } } } }, consultor_id: { type: "string", description: "Só gestor" }, observacao: { type: "string" } } } },
-  { name: "registrar_localizacao_checkin", description: "EQUIPE: plano B quando o GPS do app falha — grava a localização enviada no WhatsApp no check-in da visita em andamento do próprio usuário.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" } } } },
+  { name: "registrar_localizacao_checkin", description: "EQUIPE: plano B quando o GPS do app falha — com visita em andamento grava a localização no check-in; antes do check-in, libera o Iniciar no app (30 min) se a localização estiver dentro do raio da visita de hoje mais próxima.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" } } } },
   { name: "registrar_nota_visita", description: "EQUIPE: nota da visita em andamento a partir da transcrição do áudio. 1ª chamada devolve resumo + codigo_confirmacao (NÃO grava); só depois do 'sim' chame com confirmar=true e o mesmo texto.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, proximo_passo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, empresa: { type: "string", description: "Sem visita aberta: estabelecimento visitado" }, cidade: { type: "string", description: "Sem visita aberta: cidade" } } } },
   { name: "assumir_atendimento", description: "EQUIPE: assume um atendimento (código #A-…).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
   { name: "resolver_atendimento", description: "EQUIPE: resolve um atendimento com resolução e resultado.", parameters: { type: "object", required: ["chat_id", "codigo", "resolucao", "resultado"], properties: { ...CHAT, codigo: { type: "string" }, resolucao: { type: "string" }, resultado: { type: "string", enum: RESULTADOS_ATENDIMENTO } } } },
