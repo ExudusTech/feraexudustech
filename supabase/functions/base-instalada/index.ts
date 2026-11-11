@@ -2,7 +2,10 @@
 // maintenance_schedule (replacement work orders and urgent requests). No parallel tables.
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { acaoRevisitaErro, avaliacaoErro, ESTADO_LABEL, MANUTENCOES_ACEITAS, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo } from "../_shared/base-instalada.ts";
+import { acaoRevisitaErro, avaliacaoErro, enderecoImportado, ESTADO_LABEL, MANUTENCOES_ACEITAS, OCORRENCIA_ATIVACAO, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo, type ImportRow } from "../_shared/base-instalada.ts";
+import { addDias, maxPorDiaValido, planejarAtivacoes, type LinhaAtivacao } from "../_shared/ativacao.ts";
+import { googleOcupado } from "../_shared/google-calendar.ts";
+import { geocodeClient } from "../_shared/geocode.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
@@ -14,7 +17,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
-const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "material_separado",
+const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "importar_previa", "material_separado",
+  "ativacao_previa", "ativacao_criar",
   "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
@@ -44,7 +48,7 @@ Deno.serve(async (req) => {
   // Visit the caller may execute (assigned consultant or manager).
   const loadVisit = async (id: unknown) => {
     if (!UUID.test(String(id ?? ""))) return null;
-    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, operacao_material, clients(name, latitude), leads(empresa_nome, company)").eq("id", id).maybeSingle();
+    const { data: s } = await caller.from("schedules").select("id, organization_id, status, assigned_to, created_by, client_id, lead_id, operacao_material, ocorrencia_tipo, clients(name, latitude), leads(empresa_nome, company)").eq("id", id).maybeSingle();
     if (!s) return null;
     if (!privileged && s.assigned_to !== user.id && !(s.assigned_to === null && s.created_by === user.id)) return null;
     return s as any;
@@ -132,7 +136,9 @@ Deno.serve(async (req) => {
       // Test installation (or still a lead): the device stays EM_TESTE on the lead; the conversion trigger moves it to the client.
       const { data, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, product_id: disp?.id ?? null,
         refil_product_id: refil?.id ?? null, quantidade: qtd, foto_path: foto, localizacao_interna: txt(b.localizacao_interna, 120), notes: txt(b.observacao, 500) || null,
-        cidade: c?.city ?? null, estado: (c as any)?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s), origem: "campo", ocorrencia_schedule_id: s.id,
+        cidade: c?.city ?? null, estado: (c as any)?.state ?? null, endereco_instalacao: (c as any)?.address ?? null, status: statusPontoNovo(s),
+        // Activation of the existing base: the device was already at the client (no stock, invoice or billing task).
+        origem: s.ocorrencia_tipo === OCORRENCIA_ATIVACAO && s.client_id ? "base_existente" : "campo", ocorrencia_schedule_id: s.id,
         periodicidade_manut: "mensal", data_inicio: new Date().toISOString().slice(0, 10), created_by: user.id }).select("id").single();
       if (error) { console.error("[base-instalada] ponto", error.code); return json({ error: "Não foi possível salvar o ponto" }, 400); }
       // The new point leaves already evaluated (estado + checks + the same photo), so closing is never blocked by a hidden step.
@@ -250,24 +256,91 @@ Deno.serve(async (req) => {
         { pedido_id: ped.id }, { immediate: true, extraUserIds: quem ? [quem] : [] }));
       return json({ ok: true });
     }
+    case "importar_previa":
     case "importar": {
+      // Preview and save share the same parsing, so what the manager approved is what gets written.
       if (!privileged) return json({ error: "Só o gestor pode importar" }, 403);
-      const rows = Array.isArray(b.rows) ? b.rows.slice(0, 500) : [];
-      const { data: existentes } = await admin.from("clients").select("name, city").eq("organization_id", org);
+      const rows = Array.isArray(b.rows) ? b.rows.slice(0, 500).filter((r: unknown) => r && typeof r === "object" && !Array.isArray(r)) : [];
+      if (!rows.length) return json({ error: "A planilha não tem linhas" }, 400);
+      const { data: existentes } = await admin.from("clients").select("id, name, city, document").eq("organization_id", org).limit(5000);
       const parsed = parseImportRows(rows, existentes ?? []);
+      if (b.action === "importar_previa") return json({ ok: true, linhas: parsed, novos: parsed.filter((r) => !r.erro).length });
       const { data: users } = await admin.from("profiles").select("user_id, name").eq("organization_id", org).eq("is_active", true);
-      let criados = 0;
+      let criados = 0; const ids: string[] = [];
       for (const r of parsed) {
         if (r.erro) continue;
         const cons = r.consultor ? (users ?? []).find((u: any) => (u.name ?? "").toLowerCase().includes(r.consultor!.toLowerCase())) : null;
-        const { data: c } = await admin.from("clients").insert({ organization_id: org, name: r.cliente, company: r.cliente, city: r.cidade, status: "active",
-          created_by: user.id, assigned_user_id: cons?.user_id ?? null }).select("id").single();
-        if (!c) continue;
-        await admin.from("planos_manutencao").insert({ organization_id: org, client_id: c.id, frequencia: r.frequencia, dia_semana: r.dia_semana,
+        const { data: c, error } = await admin.from("clients").insert({ organization_id: org, name: r.cliente, company: r.cliente, razao_social: r.razao_social ?? null,
+          document: r.cnpj ?? null, address: enderecoImportado(r), city: r.cidade, state: "RJ", zip_code: r.cep ?? null, phone: r.telefone ?? null, email: r.email ?? null,
+          ramo_atuacao: r.segmento ?? null, status: "active", origem: "base_existente", created_by: user.id, assigned_user_id: cons?.user_id ?? null }).select("id").single();
+        if (error || !c) { console.error("[base-instalada] importar", error?.code); r.erro = "Não foi possível gravar"; continue; }
+        criados++; ids.push(c.id);
+        if (r.contato || r.telefone || r.email) await contatoImportado(admin, org, c.id, r, user.id);
+        if (r.frequencia) await admin.from("planos_manutencao").insert({ organization_id: org, client_id: c.id, frequencia: r.frequencia, dia_semana: r.dia_semana,
           consultor_id: cons?.user_id ?? null, created_by: user.id });
-        criados++;
       }
-      return json({ ok: true, criados, linhas: parsed });
+      // Coordinates from the address in the background (bounded); the 15-min scheduler retries whatever is left.
+      bg((async () => { for (const id of ids.slice(0, 200)) await geocodeClient(admin, id).catch(() => null); })());
+      return json({ ok: true, criados, client_ids: ids, linhas: parsed });
+    }
+    case "ativacao_previa":
+    case "ativacao_criar": {
+      if (!privileged) return json({ error: "Só o gestor pode gerar visitas de ativação" }, 403);
+      const ids = Array.isArray(b.client_ids) ? [...new Set(b.client_ids.filter((x: unknown) => UUID.test(String(x))))].slice(0, 300) as string[] : [];
+      if (!ids.length) return json({ error: "Escolha os clientes" }, 400);
+      const consultorId = uuidOrNull(b.consultor_id);
+      if (!consultorId) return json({ error: "Escolha o consultor" }, 400);
+      const { data: cons } = await admin.from("profiles").select("user_id, name").eq("organization_id", org).eq("user_id", consultorId).eq("is_active", true).maybeSingle();
+      if (!cons) return json({ error: "Consultor não encontrado nesta organização" }, 404);
+      const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
+      const desde = /^\d{4}-\d{2}-\d{2}$/.test(b.desde ?? "") && b.desde >= hoje ? b.desde : addDias(hoje, 1);
+      const max = maxPorDiaValido(b.max_por_dia);
+      // Clients read with the caller's own access first.
+      const { data: cls } = await caller.from("clients").select("id, name, city, zip_code, address, latitude, longitude, organization_id").in("id", ids);
+      const clientes = (cls ?? []).filter((c: any) => c.organization_id === org);
+      const [{ data: pts }, { data: abertas }, { data: areas }] = await Promise.all([
+        admin.from("comodatos").select("client_id").eq("organization_id", org).in("client_id", clientes.map((c: any) => c.id)).in("status", ["ATIVO", "EM_TESTE", "RETIRADO"]),
+        admin.from("schedules").select("client_id, scheduled_date").eq("organization_id", org).eq("ocorrencia_tipo", OCORRENCIA_ATIVACAO).in("client_id", clientes.map((c: any) => c.id))
+          .in("status", ["agendado", "confirmado", "em_atendimento"]),
+        admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end, horario_inicio, horario_fim").eq("organization_id", org).eq("is_active", true),
+      ]);
+      const comAparelho = new Set((pts ?? []).map((p: any) => p.client_id));
+      const aberta = new Map((abertas ?? []).map((a: any) => [a.client_id, a.scheduled_date]));
+      const fora: LinhaAtivacao[] = [];
+      const elegiveis = clientes.filter((c: any) => {
+        const base = { client_id: c.id, nome: c.name, cidade: c.city ?? null, regiao: null };
+        if (comAparelho.has(c.id)) { fora.push({ ...base, erro: "Já tem aparelhos cadastrados" }); return false; }
+        if (aberta.has(c.id)) { fora.push({ ...base, erro: `Já tem ativação marcada (${String(aberta.get(c.id)).split("-").reverse().join("/")})` }); return false; }
+        return true;
+      });
+      const ate = addDias(desde, 95);
+      const [{ data: ag }, { data: feriados }, google] = await Promise.all([
+        admin.from("schedules").select("scheduled_date, start_time, end_time, ocorrencia_tipo").eq("organization_id", org).eq("assigned_to", consultorId)
+          .gte("scheduled_date", desde).lte("scheduled_date", ate).in("status", ["agendado", "confirmado", "em_atendimento"]),
+        admin.from("holidays").select("date, city").or(`organization_id.is.null,organization_id.eq.${org}`).gte("date", desde).lte("date", ate),
+        googleOcupado(admin, org, desde, ate),
+      ]);
+      const existentesDia: Record<string, number> = {};
+      for (const x of ag ?? []) if (x.ocorrencia_tipo === OCORRENCIA_ATIVACAO) existentesDia[x.scheduled_date] = (existentesDia[x.scheduled_date] ?? 0) + 1;
+      const plano = planejarAtivacoes({ clientes: elegiveis.map((c: any) => ({ id: c.id, nome: c.name, cidade: c.city, cep: c.zip_code })), areas: areas ?? [], desde, maxPorDia: max,
+        ocupados: (ag ?? []).filter((x: any) => x.start_time).map((x: any) => ({ data: x.scheduled_date, inicio: String(x.start_time).slice(0, 5), fim: x.end_time ? String(x.end_time).slice(0, 5) : null })),
+        ativacoesExistentes: existentesDia, google, feriados: feriados ?? [] });
+      const linhas = [...plano, ...fora];
+      if (b.action === "ativacao_previa") return json({ ok: true, linhas, consultor: cons.name, desde, max_por_dia: max });
+      let criadas = 0;
+      for (const l of plano) {
+        if (l.erro || !l.data) continue;
+        const c: any = clientes.find((x: any) => x.id === l.client_id);
+        const { data: novo, error } = await admin.from("schedules").insert({ organization_id: org, client_id: l.client_id, title: `Ativação da base — ${l.nome}`,
+          scheduled_date: l.data, start_time: l.hora, end_time: l.fim, duracao_min: 60, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO",
+          ocorrencia_tipo: OCORRENCIA_ATIVACAO, source: "ativacao", assigned_to: consultorId, created_by: user.id, confirmacao_status: "nao_aplicavel",
+          location: [c?.address, c?.city].filter(Boolean).join(", ") || null, zip_code: c?.zip_code ?? null, latitude: c?.latitude ?? null, longitude: c?.longitude ?? null,
+          description: "Cadastrar os pontos e aparelhos já instalados: escanear a etiqueta, escolher o aparelho e tirar a foto. Não sai do estoque e não tem nota." })
+          .select("id, ocorrencia_codigo").single();
+        if (error) { console.error("[base-instalada] ativacao", error.code); l.erro = "Não foi possível criar"; continue; }
+        Object.assign(l, { schedule_id: novo.id, codigo: novo.ocorrencia_codigo }); criadas++;
+      }
+      return json({ ok: true, criadas, linhas, consultor: cons.name });
     }
   }
   return json({ error: "Requisição inválida" }, 400);
