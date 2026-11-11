@@ -112,3 +112,11 @@
 - [x] verificar_cobertura_regiao MATRIZ orienta transferir_para_humano
 - [x] consultar_produto: cheiro/perfume/cheiroso/odor/fragrância → aromatização Ekkoa
 - [ ] Ajustar a intenção no GPT Maker para não pausar a conversa no caso MATRIZ (blocked: configuração do PH no GPT Maker)
+## Ordem A — Ativação da base instalada (11/11, Fase 1 a partir de 16/11)
+- [ ] 1) Importar carteira: colunas do gestor, CNPJ opcional, dedupe CNPJ ou nome+cidade (aliases), geocodificação, prévia antes de gravar
+- [ ] 2) "Gerar visitas de ativação" (gestor): clientes sem aparelhos, consultor escolhido, próximo dia de rota, sem feriado/bloqueio/conflito, máx. N/dia (padrão 8), prévia
+- [ ] 3) Ativação "já instalado": escanear + aparelho + foto → ATIVO origem base existente, sem estoque/nota/faturamento; ao encerrar periodicidade 7/15/30/60 e próxima manutenção no dia de rota
+- [ ] 4) Foto obrigatória em todo ponto avaliado (inclusive 🟢)
+- [ ] 5) Check-in fora do raio só na visita comercial; demais bloqueados para todos, aviso ao gestor com distância; distâncias em km/m
+- [ ] 6) Demo: cliente base existente sem aparelhos com OS de ativação hoje/amanhã
+- [ ] Testes, publicar funções e app
