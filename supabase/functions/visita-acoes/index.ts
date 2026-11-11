@@ -103,7 +103,7 @@ async function gestores(admin: any, org: string): Promise<string[]> {
   const ids = (perfis ?? []).map((p: any) => p.user_id);
   if (!ids.length) return [];
   const { data: rs } = await admin.from("user_roles").select("user_id").in("user_id", ids).eq("role", "gestor");
-  return [...new Set((rs ?? []).map((r: any) => r.user_id as string))];
+  return [...new Set<string>((rs ?? []).map((r: any) => String(r.user_id)))];
 }
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
