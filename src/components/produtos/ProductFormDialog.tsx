@@ -20,6 +20,7 @@ import { useProductImageUrls } from "@/hooks/use-product-images";
 import { toast } from "@/hooks/use-toast";
 import { DISPONIBILIDADE_LABEL, imageDimensions, podeEnviarFotoCliente, removeProductImage, uploadProductImage, type Disponibilidade } from "@/lib/product-images";
 import { useDispenserFamilies } from "@/hooks/use-dispenser-families";
+import FotosReferencia from "@/components/produtos/FotosReferencia";
 
 
 interface Props {
@@ -51,7 +52,7 @@ const CATEGORY_FIELDS: Record<string, { key: string; label: string; type: string
 const empty = {
   name: "", description: "", sku: "", category: "", brand: "", fornecedor: "", unit: "un",
   price: "", cost: "", stock: "0", min_stock: "0", is_active: true, disponibilidade: "estoque" as Disponibilidade,
-  is_dispenser: false, dispenser_family_id: "", pode_enviar_foto_cliente: false,
+  is_dispenser: false, dispenser_family_id: "", pode_enviar_foto_cliente: false, codigo_fabricante: "",
 };
 
 export default function ProductFormDialog({ open, onOpenChange, product }: Props) {
@@ -82,7 +83,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
         min_stock: String(product.min_stock), is_active: product.is_active,
         disponibilidade: (product.disponibilidade ?? (product.is_active ? "estoque" : "descontinuado")) as Disponibilidade,
         is_dispenser: !!product.is_dispenser, dispenser_family_id: product.dispenser_family_id || "",
-        pode_enviar_foto_cliente: !!product.pode_enviar_foto_cliente,
+        pode_enviar_foto_cliente: !!product.pode_enviar_foto_cliente, codigo_fabricante: product.codigo_fabricante || "",
       });
       setCompatible(product.compatible_dispenser_families || []);
 
@@ -138,6 +139,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
       dispenser_family_id: form.is_dispenser ? (form.dispenser_family_id || null) : null,
       compatible_dispenser_families: form.is_dispenser ? [] : compatible,
       pode_enviar_foto_cliente: form.pode_enviar_foto_cliente,
+      codigo_fabricante: form.codigo_fabricante.trim().slice(0, 80) || null,
     };
 
     if (isEdit) await update.mutateAsync({ id: product!.id, ...payload });
@@ -252,6 +254,18 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
             </div>
 
             {form.is_dispenser ? (
+              <div className="space-y-3">
+              <div>
+                <Label htmlFor="codigo-fabricante">Código do fabricante / modelo</Label>
+                <Input id="codigo-fabricante" value={form.codigo_fabricante} maxLength={80} onChange={(e) => set("codigo_fabricante", e.target.value)} placeholder="Como vem na plaqueta (ex.: KC-7890)" />
+              </div>
+              <div className="space-y-1">
+                <Label>Fotos de referência</Label>
+                <p className="text-xs text-muted-foreground">Até 3 fotos para reconhecer o aparelho no cliente.</p>
+                {isEdit && user?.organization_id
+                  ? <FotosReferencia key={product!.id} orgId={user.organization_id} product={product!} canEdit={canEditImage} />
+                  : <p className="text-xs text-muted-foreground">Salve o produto para adicionar as fotos.</p>}
+              </div>
               <div>
                 <Label>Família do dispenser</Label>
                 <Select
@@ -264,6 +278,7 @@ export default function ProductFormDialog({ open, onOpenChange, product }: Props
                     {families.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
               </div>
             ) : (
               <div>

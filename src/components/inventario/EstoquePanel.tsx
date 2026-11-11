@@ -24,6 +24,8 @@ import { ajusteErro, contagemBase, deltaAjuste, disponivel, emAlerta, reservasEs
 import { formatEtiqueta } from "@/lib/etiquetas";
 import { OPERACAO_LABEL, type OperacaoMaterial } from "@/lib/prontidao";
 import { cn } from "@/lib/utils";
+import { useProductImageUrls } from "@/hooks/use-product-images";
+import { fotoPrincipal, listaFotosRef } from "@/lib/fotos-referencia";
 
 /** Stock tab: devices (dispensers) by family with stock, reserved, available, in test and installed; manager adjustments with history. */
 export default function EstoquePanel() {
@@ -61,6 +63,7 @@ export default function EstoquePanel() {
       return { p, reservados: r?.reservados ?? 0, reservas: r?.linhas ?? [], disp, em_teste: b?.em_teste ?? 0, instalados: b?.instalados ?? 0, alerta: emAlerta(disp, p.min_stock) };
     });
   }, [data, dispensers, hoje]);
+  const { data: fotoUrls = {} } = useProductImageUrls(dispensers.flatMap((p) => [...listaFotosRef(p.fotos_referencia).map((f) => f.path), p.image_url]));
   const marcas = [...new Set(dispensers.map((p) => p.brand).filter(Boolean) as string[])].sort();
   const visiveis = linhas.filter((l) => (familia === "all" || (familia === "sem" ? !l.p.dispenser_family_id : l.p.dispenser_family_id === familia))
     && (marca === "all" || l.p.brand === marca) && (!soAlerta || l.alerta));
@@ -90,10 +93,19 @@ export default function EstoquePanel() {
               return (
                 <Card key={l.p.id} className={cn(l.alerta && "border-warning")}><CardContent className="p-3 space-y-2">
                   <div className="flex items-start gap-2">
+                    {(() => { const f = fotoPrincipal(l.p); return f && fotoUrls[f]
+                      ? <img src={fotoUrls[f]} alt="" loading="lazy" className="h-12 w-12 rounded border object-cover shrink-0" /> : null; })()}
                     <div className="flex-1 min-w-0"><p className="font-medium text-sm break-words">{l.p.name}</p>
+                      {l.p.codigo_fabricante && <p className="text-xs break-words">Modelo: {l.p.codigo_fabricante}</p>}
                       <p className="text-xs text-muted-foreground">{[l.p.brand, l.p.sku].filter(Boolean).join(" · ") || "—"} · mínimo {l.p.min_stock}</p></div>
                     {l.alerta && <Badge variant="outline" className="border-warning text-warning gap-1 shrink-0"><AlertTriangle className="h-3 w-3" />Alerta</Badge>}
                   </div>
+                  {listaFotosRef(l.p.fotos_referencia).length > 1 && <div className="flex gap-2">
+                    {listaFotosRef(l.p.fotos_referencia).map((f) => fotoUrls[f.path] && (
+                      <a key={f.key} href={fotoUrls[f.path]} target="_blank" rel="noopener noreferrer" className="text-center">
+                        <img src={fotoUrls[f.path]} alt={`${l.p.name} — ${f.label}`} loading="lazy" className="h-16 w-16 rounded border object-cover" />
+                        <span className="block text-[10px] text-muted-foreground">{f.label}</span></a>))}
+                  </div>}
                   <div className="grid grid-cols-3 gap-2 text-center text-xs">
                     {[["Em estoque", l.p.stock], ["Reservados", l.reservados], ["Disponível", l.disp], ["Em teste", l.em_teste], ["Instalados", l.instalados]].map(([k, v]) => (
                       <div key={k as string} className={cn("rounded border p-1.5", k === "Disponível" && l.alerta && "border-warning text-warning")}><p className="text-muted-foreground">{k}</p><p className="text-base font-semibold">{v}</p></div>))}

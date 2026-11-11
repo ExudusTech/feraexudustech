@@ -30,7 +30,7 @@ export default function Aparelho() {
     queryKey: ["aparelho", user?.organization_id, n], enabled: !!user?.organization_id && !!n,
     queryFn: async () => {
       const sb = supabase as any;
-      const { data: c } = await sb.from("comodatos").select("id, status, client_id, lead_id, product_id, refil_product_id, localizacao_interna, ultima_manutencao, proxima_manutencao, estado_atual, data_inicio, ativado_em, clients(name, city), leads(empresa_nome, company, city), produto:products!comodatos_product_id_fkey(name), refil:products!comodatos_refil_product_id_fkey(name)")
+      const { data: c } = await sb.from("comodatos").select("id, status, client_id, lead_id, product_id, refil_product_id, localizacao_interna, ultima_manutencao, proxima_manutencao, estado_atual, data_inicio, ativado_em, numero_serie, foto_plaqueta_path, clients(name, city), leads(empresa_nome, company, city), produto:products!comodatos_product_id_fkey(name), refil:products!comodatos_refil_product_id_fkey(name)")
         .eq("organization_id", user!.organization_id).eq("etiqueta_numero", n).maybeSingle();
       if (!c) return { c: null, eventos: [], abertas: [] };
       const [ev, mov, ab] = await Promise.all([
@@ -72,6 +72,11 @@ export default function Aparelho() {
             <p className="flex gap-1"><Package className="h-4 w-4 mt-0.5 shrink-0" /><span><span className="text-muted-foreground block text-xs">Aparelho</span>{c.produto?.name ?? "—"}{c.refil?.name && ` + ${c.refil.name}`}</span></p>
             <p className="flex gap-1"><Wrench className="h-4 w-4 mt-0.5 shrink-0" /><span><span className="text-muted-foreground block text-xs">Manutenção</span>Última {dataBR(c.ultima_manutencao)} · Próxima {dataBR(c.proxima_manutencao)}</span></p>
             <p><span className="text-muted-foreground block text-xs">Ativado em</span>{dataBR(c.ativado_em ?? c.data_inicio)}</p>
+            {(c.numero_serie || c.foto_plaqueta_path) && <p><span className="text-muted-foreground block text-xs">Nº de série</span>{c.numero_serie ?? "—"}
+              {c.foto_plaqueta_path && <Button variant="link" className="h-auto p-0 ml-2" onClick={async () => {
+                const { data: u } = await supabase.storage.from("visit-photos").createSignedUrl(c.foto_plaqueta_path, 300);
+                if (u?.signedUrl) window.open(u.signedUrl, "_blank", "noopener");
+              }}>Ver foto da plaqueta</Button>}</p>}
           </CardContent></Card>
           <Card><CardHeader className="pb-2"><CardTitle className="text-base">Ações</CardTitle></CardHeader><CardContent className="space-y-2">
             {aberta ? <>

@@ -1,2 +1,3 @@
 # visita-acoes rules
 - Off-site check-in is allowed only for commercial visits (permiteCheckinForaDoLocal in _shared/visit-exec.ts); every other type is refused server-side for every role and alerts managers, and every evaluated point carries a photo (avaliacaoErro), so field records are verifiable.
+- Without app GPS, check-in falls back to the location the same consultant sent to Flora (schedules.wa_*, written by mcp registrar_localizacao_checkin on today's nearest open visit) for WA_LOCALIZACAO_MIN, still judged against the radius, so technical visits stay blocked off-site but a WhatsApp location is a verifiable way in.

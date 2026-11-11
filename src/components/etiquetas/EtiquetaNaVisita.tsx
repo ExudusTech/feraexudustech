@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Loader2, QrCode, X } from "lucide-react";
+import { Camera, ImageIcon, Loader2, QrCode, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,7 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { useProducts } from "@/hooks/use-products";
+import { useProducts, type Product } from "@/hooks/use-products";
+import { useProductImageUrls } from "@/hooks/use-product-images";
+import { fotoPrincipal } from "@/lib/fotos-referencia";
+import { cn } from "@/lib/utils";
 import { baseAction, uploadVisitPhoto } from "@/lib/base-instalada";
 import { ACAO_ETIQUETA_LABEL, formatEtiqueta, type AcaoEtiqueta } from "@/lib/etiquetas";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
@@ -25,6 +28,31 @@ function Foto({ label, busy, onFile }: { label: string; busy: boolean; onFile: (
   );
 }
 
+/** Device choice with the model's reference thumbnail next to each option, so the consultant picks the one on the wall. */
+function AparelhoPicker({ itens, value, onChange }: { itens: Product[]; value: string; onChange: (id: string) => void }) {
+  const { data: urls = {} } = useProductImageUrls(itens.map(fotoPrincipal));
+  const [q, setQ] = useState("");
+  const termo = q.trim().toLowerCase();
+  const lista = termo ? itens.filter((p) => [p.name, p.codigo_fabricante, p.brand, p.sku].some((v) => v?.toLowerCase().includes(termo))) : itens;
+  return (
+    <div className="space-y-1">
+      <Label>Aparelho</Label>
+      {itens.length > 6 && <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome ou modelo" aria-label="Buscar aparelho" />}
+      <div role="radiogroup" aria-label="Aparelho" className="max-h-72 overflow-y-auto space-y-1">
+        {!lista.length && <p className="text-xs text-muted-foreground">Nenhum aparelho encontrado.</p>}
+        {lista.map((p) => { const f = fotoPrincipal(p); const sel = value === p.id; return (
+          <button key={p.id} type="button" role="radio" aria-checked={sel} onClick={() => onChange(p.id)}
+            className={cn("flex w-full items-center gap-2 rounded-md border p-1.5 text-left min-h-14", sel && "border-primary bg-primary/10")}>
+            <span className="h-12 w-12 shrink-0 rounded border bg-muted flex items-center justify-center overflow-hidden">
+              {f && urls[f] ? <img src={urls[f]} alt="" loading="lazy" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-muted-foreground" />}</span>
+            <span className="min-w-0 text-sm"><span className="block font-medium break-words">{p.name}</span>
+              {(p.codigo_fabricante || p.brand) && <span className="block text-xs text-muted-foreground break-words">{[p.codigo_fabricante, p.brand].filter(Boolean).join(" · ")}</span>}</span>
+          </button>); })}
+      </div>
+    </div>
+  );
+}
+
 /** "Escanear etiqueta" inside an open occurrence: the scan resolves the action for that device (install, evaluate, move, remove, replace). */
 export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, numeroInicial, onChanged, onAvaliar }: Props) {
   const qc = useQueryClient();
@@ -34,7 +62,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
   const [info, setInfo] = useState<Info | null>(null);
   const [acao, setAcao] = useState<AcaoEtiqueta | null>(null);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState<{ local: string; previsto: string; produto: string; foto?: string; motivo: string; novo?: number; vincular: string }>({ local: "", previsto: "", produto: "", motivo: "", vincular: "" });
+  const [f, setF] = useState<{ local: string; previsto: string; produto: string; foto?: string; motivo: string; novo?: number; vincular: string; serie?: string; plaqueta?: string }>({ local: "", previsto: "", produto: "", motivo: "", vincular: "" });
   const { data: pontos = [], refetch } = useQuery({
     queryKey: ["etiqueta-pontos", scheduleId], enabled: !!(clientId || leadId),
     queryFn: async () => {
@@ -58,12 +86,14 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
     qc.invalidateQueries({ queryKey: ["checklist", scheduleId] }); qc.invalidateQueries({ queryKey: ["aparelho"] }); qc.invalidateQueries({ queryKey: ["estoque"] });
   };
   const foto = (file: File) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setF((x) => ({ ...x, foto: path })); });
+  const fotoPlaqueta = (file: File) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setF((x) => ({ ...x, plaqueta: path })); });
   const ap = info?.aparelho;
   const executar = () => run(async () => {
     if (!info) return;
     const n = info.numero;
     if (acao === "instalar") {
-      await baseAction({ action: "etiqueta_instalar", schedule_id: scheduleId, numero: n, comodato_id: f.previsto || undefined, localizacao_interna: f.local, foto_path: f.foto, product_id: f.produto || undefined });
+      await baseAction({ action: "etiqueta_instalar", schedule_id: scheduleId, numero: n, comodato_id: f.previsto || undefined, localizacao_interna: f.local, foto_path: f.foto, product_id: f.produto || undefined,
+        numero_serie: f.serie?.trim() || undefined, foto_plaqueta_path: f.plaqueta });
       pronto(info.ativacao ? `Aparelho nº ${formatEtiqueta(n)} ativado` : `Aparelho nº ${formatEtiqueta(n)} instalado`);
     } else if (acao === "vincular") {
       await baseAction({ action: "etiqueta_vincular", schedule_id: scheduleId, numero: n, comodato_id: f.vincular });
@@ -128,11 +158,13 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
                 {previstos.map((p) => <SelectItem key={p.id} value={p.id}>Previsto: {p.localizacao_interna || "Ponto"}{p.quantidade !== "1" ? ` (${p.quantidade}x)` : ""}</SelectItem>)}</SelectContent>
             </Select>}
             <Input value={f.local} onChange={(e) => setF({ ...f, local: e.target.value })} placeholder="Local interno (ex.: Banheiro feminino)" maxLength={120} />
-            {!ap?.product_id && <Select value={f.produto} onValueChange={(v) => setF({ ...f, produto: v })}>
-              <SelectTrigger aria-label="Aparelho"><SelectValue placeholder="Aparelho / dispenser" /></SelectTrigger>
-              <SelectContent>{dispensers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-            </Select>}
+            {!ap?.product_id && <AparelhoPicker itens={dispensers} value={f.produto} onChange={(v) => setF((x) => ({ ...x, produto: v }))} />}
             <Foto label={f.foto ? "Foto ✓" : "Foto do aparelho instalado"} busy={busy} onFile={foto} />
+            {info.ativacao && <div className="space-y-2 rounded-md border border-dashed p-2">
+              <p className="text-xs text-muted-foreground">Opcional</p>
+              <Foto label={f.plaqueta ? "Foto da plaqueta ✓" : "Foto da plaqueta"} busy={busy} onFile={fotoPlaqueta} />
+              <Input value={f.serie ?? ""} onChange={(e) => setF({ ...f, serie: e.target.value })} placeholder="Nº de série" aria-label="Nº de série" maxLength={60} />
+            </div>}
             {info.ativacao && <p className="text-xs text-muted-foreground">Fica ativo como "base existente": não sai do estoque, sem nota e sem faturamento.</p>}
           </div>}
           {acao === "vincular" && <div className="space-y-1">

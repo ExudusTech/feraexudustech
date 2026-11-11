@@ -3674,6 +3674,7 @@ export type Database = {
           etiqueta_numero: number | null
           fabricante: string | null
           foto_path: string | null
+          foto_plaqueta_path: string | null
           id: string
           inventory_item_id: string | null
           lead_id: string | null
@@ -3682,6 +3683,7 @@ export type Database = {
           marcos_estimados: boolean
           notes: string | null
           numero_contrato: string | null
+          numero_serie: string | null
           ocorrencia_schedule_id: string | null
           organization_id: string
           origem: string
@@ -3718,6 +3720,7 @@ export type Database = {
           etiqueta_numero?: number | null
           fabricante?: string | null
           foto_path?: string | null
+          foto_plaqueta_path?: string | null
           id?: string
           inventory_item_id?: string | null
           lead_id?: string | null
@@ -3726,6 +3729,7 @@ export type Database = {
           marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
+          numero_serie?: string | null
           ocorrencia_schedule_id?: string | null
           organization_id: string
           origem?: string
@@ -3762,6 +3766,7 @@ export type Database = {
           etiqueta_numero?: number | null
           fabricante?: string | null
           foto_path?: string | null
+          foto_plaqueta_path?: string | null
           id?: string
           inventory_item_id?: string | null
           lead_id?: string | null
@@ -3770,6 +3775,7 @@ export type Database = {
           marcos_estimados?: boolean
           notes?: string | null
           numero_contrato?: string | null
+          numero_serie?: string | null
           ocorrencia_schedule_id?: string | null
           organization_id?: string
           origem?: string
@@ -7102,6 +7108,7 @@ export type Database = {
         Row: {
           brand: string | null
           category: string | null
+          codigo_fabricante: string | null
           compatible_dispenser_families: string[]
           cost: number | null
           created_at: string
@@ -7111,6 +7118,7 @@ export type Database = {
           disponibilidade: string
           disponivel_comodato: boolean | null
           fornecedor: string | null
+          fotos_referencia: Json
           id: string
           image_url: string | null
           is_active: boolean
@@ -7130,6 +7138,7 @@ export type Database = {
         Insert: {
           brand?: string | null
           category?: string | null
+          codigo_fabricante?: string | null
           compatible_dispenser_families?: string[]
           cost?: number | null
           created_at?: string
@@ -7139,6 +7148,7 @@ export type Database = {
           disponibilidade?: string
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
+          fotos_referencia?: Json
           id?: string
           image_url?: string | null
           is_active?: boolean
@@ -7158,6 +7168,7 @@ export type Database = {
         Update: {
           brand?: string | null
           category?: string | null
+          codigo_fabricante?: string | null
           compatible_dispenser_families?: string[]
           cost?: number | null
           created_at?: string
@@ -7167,6 +7178,7 @@ export type Database = {
           disponibilidade?: string
           disponivel_comodato?: boolean | null
           fornecedor?: string | null
+          fotos_referencia?: Json
           id?: string
           image_url?: string | null
           is_active?: boolean
@@ -8055,6 +8067,10 @@ export type Database = {
           tipo_nota: string | null
           title: string
           updated_at: string | null
+          wa_latitude: number | null
+          wa_localizacao_em: string | null
+          wa_localizacao_por: string | null
+          wa_longitude: number | null
           zip_code: string | null
         }
         Insert: {
@@ -8126,6 +8142,10 @@ export type Database = {
           tipo_nota?: string | null
           title: string
           updated_at?: string | null
+          wa_latitude?: number | null
+          wa_localizacao_em?: string | null
+          wa_localizacao_por?: string | null
+          wa_longitude?: number | null
           zip_code?: string | null
         }
         Update: {
@@ -8197,6 +8217,10 @@ export type Database = {
           tipo_nota?: string | null
           title?: string
           updated_at?: string | null
+          wa_latitude?: number | null
+          wa_localizacao_em?: string | null
+          wa_localizacao_por?: string | null
+          wa_longitude?: number | null
           zip_code?: string | null
         }
         Relationships: [

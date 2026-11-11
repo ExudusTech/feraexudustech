@@ -500,6 +500,9 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
       const foto = txt(b.foto_path, 300);
       if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
+      // Optional nameplate photo and serial number of the installed device (no OCR); kept when not sent.
+      const plaqueta = txt(b.foto_plaqueta_path, 300), serie = txt(b.numero_serie, 60);
+      if (!fotoOk(s, plaqueta)) return json({ error: "Foto da plaqueta inválida" }, 400);
       const c = await porNumero(n);
       if (c && !(c.status === "ENCERRADO" || (["SEPARADO", "PREVISTO"].includes(c.status) && doLocal(s, c))))
         return c.status === "SEPARADO" || !doLocal(s, c) ? usado(n) : json({ error: "Este aparelho já está instalado" }, 409);
@@ -519,7 +522,8 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       const campos = { client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id, status, product_id: prod, refil_product_id: refil, localizacao_interna: local,
         foto_path: foto, ocorrencia_schedule_id: s.id, reserva_os_id: null, retirada_schedule_id: null, data_inicio: hoje, data_fim: null, quantidade: "1",
         cidade: end?.city ?? null, estado: (end as any)?.state ?? null, endereco_instalacao: (end as any)?.address ?? null,
-        estado_atual: "verde", ultima_avaliacao_em: new Date().toISOString(), periodicidade_manut: previsto?.periodicidade_manut ?? c?.periodicidade_manut ?? "mensal" };
+        estado_atual: "verde", ultima_avaliacao_em: new Date().toISOString(), periodicidade_manut: previsto?.periodicidade_manut ?? c?.periodicidade_manut ?? "mensal",
+        ...(serie ? { numero_serie: serie } : {}), ...(plaqueta ? { foto_plaqueta_path: plaqueta } : {}) };
       let id: string;
       if (c) {
         // A stock device installed again enters normal stock accounting.
