@@ -1,0 +1,14 @@
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS fotos_referencia jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS codigo_fabricante text;
+ALTER TABLE public.products ADD CONSTRAINT products_fotos_referencia_slots CHECK (jsonb_typeof(fotos_referencia) = 'object' AND (fotos_referencia - ARRAY['frente','lado','plaqueta']) = '{}'::jsonb);
+ALTER TABLE public.products ADD CONSTRAINT products_codigo_fabricante_len CHECK (codigo_fabricante IS NULL OR char_length(codigo_fabricante) <= 80);
+COMMENT ON COLUMN public.products.fotos_referencia IS 'Reference photos of a dispenser model: {frente, lado, plaqueta} -> storage path in product-images';
+COMMENT ON COLUMN public.products.codigo_fabricante IS 'Manufacturer code / model as printed on the device';
+ALTER TABLE public.comodatos ADD COLUMN IF NOT EXISTS numero_serie text;
+ALTER TABLE public.comodatos ADD COLUMN IF NOT EXISTS foto_plaqueta_path text;
+ALTER TABLE public.comodatos ADD CONSTRAINT comodatos_numero_serie_len CHECK (numero_serie IS NULL OR char_length(numero_serie) <= 60);
+ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS wa_latitude double precision;
+ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS wa_longitude double precision;
+ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS wa_localizacao_em timestamptz;
+ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS wa_localizacao_por uuid;
+COMMENT ON COLUMN public.schedules.wa_latitude IS 'Location sent by the assigned consultant on WhatsApp (Flora) before check-in; used only when the app has no GPS';

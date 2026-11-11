@@ -407,6 +407,13 @@
       "when": 1794413729457,
       "tag": "0057_ativacao_base_existente",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1794416583137,
+      "tag": "0058_fotos_referencia_aparelho_serie",
+      "breakpoints": true
     }
   ]
 }
