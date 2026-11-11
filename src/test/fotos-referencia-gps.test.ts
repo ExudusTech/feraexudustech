@@ -104,6 +104,9 @@ describe("mcp registrar_localizacao_checkin antes do check-in", () => {
     expect(r.data).toMatchObject({ checkin_liberado: false, dentro_do_raio: false });
     expect(r.message).toContain("só é liberado no local");
   });
+  it("mcp uses the same 30-minute window as the app check-in", () => {
+    expect(source).toContain(`const WA_LOCALIZACAO_MIN = ${WA_LOCALIZACAO_MIN};`);
+  });
   it("no visit today: refuses", async () => {
     const t = base(-22.9); t.schedules[0].scheduled_date = "2026-11-12";
     const r = await harness(t).route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9, longitude: -42.0 });
