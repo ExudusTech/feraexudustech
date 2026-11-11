@@ -27,6 +27,8 @@ export interface Product {
   is_dispenser: boolean;
   dispenser_family_id: string | null;
   compatible_dispenser_families: string[];
+  fotos_referencia?: Record<string, string> | null;
+  codigo_fabricante?: string | null;
 
   created_by: string;
   created_at: string;
@@ -59,6 +61,7 @@ export function useCreateProduct() {
         is_dispenser: input.is_dispenser ?? false,
         dispenser_family_id: input.dispenser_family_id ?? null,
         compatible_dispenser_families: input.compatible_dispenser_families ?? [],
+        codigo_fabricante: input.codigo_fabricante ?? null,
         organization_id: user.organization_id, created_by: user.id,
       }).select().single();
 
