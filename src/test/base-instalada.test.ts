@@ -46,13 +46,14 @@ describe("checklist", () => {
   it("não encerra com ponto ativo sem avaliação", () => {
     expect(pontosPendentes([{ id: "a" }, { id: "b" }, { id: "c", status: "RETIRADO" }], ["a"])).toEqual(["b"]);
   });
-  it("exige foto em amarelo e vermelho, não em verde", () => {
-    expect(avaliacaoErro({ estado: "verde" })).toBeNull();
+  it("exige foto em toda avaliação, inclusive verde (Ordem A)", () => {
+    expect(avaliacaoErro({ estado: "verde" })).toMatch(/foto/);
+    expect(avaliacaoErro({ estado: "verde", foto_path: "x" })).toBeNull();
     expect(avaliacaoErro({ estado: "amarelo" })).toMatch(/foto/);
     expect(avaliacaoErro({ estado: "vermelho", foto_path: "x" })).toBeNull();
   });
   it("precisa substituir exige o item", () => {
-    expect(avaliacaoErro({ estado: "verde", precisa_substituir: true, item: "" })).toMatch(/item/);
+    expect(avaliacaoErro({ estado: "verde", foto_path: "x", precisa_substituir: true, item: "" })).toMatch(/item/);
   });
   it("novo ponto exige local e foto", () => {
     expect(pontoErro({ localizacao_interna: "Cozinha" })).toMatch(/foto/);
@@ -84,9 +85,9 @@ describe("importação", () => {
     ], [{ name: "Pousada W", city: "Arraial" }]);
     expect(r[0].erro).toBeUndefined();
     expect(r[0]).toMatchObject({ frequencia: "quinzenal", dia_semana: 2 });
-    expect(r[1].erro).toBe("Cliente duplicado");
+    expect(r[1].erro).toBe("Repetido na planilha");
     expect(r[2].erro).toBe("Cidade vazia");
     expect(r[3].erro).toBe("Frequência inválida");
-    expect(r[4].erro).toBe("Cliente duplicado");
+    expect(r[4].erro).toBe("Cliente já cadastrado");
   });
 });
