@@ -129,7 +129,7 @@ export default function FieldOpsPanel() {
                 {points.map((c) => (
                   <CircleMarker key={c.schedule_id} center={[c.latitude, c.longitude]} radius={9}
                     pathOptions={{ color: c.fora_do_raio ? "hsl(var(--destructive))" : c.destino_sem_coordenadas ? "hsl(var(--warning))" : "hsl(var(--primary))" }} eventHandlers={{ click: () => setSelected(c.schedule_id) }}>
-                    <Tooltip>{names.get(c.user_id) ?? ""} · {todayList.find((s) => s.id === c.schedule_id)?.title}{c.distancia_m != null ? ` · ${c.distancia_m} m` : c.destino_sem_coordenadas ? " · local do cliente sem coordenadas" : ""}</Tooltip>
+                    <Tooltip>{names.get(c.user_id) ?? ""} · {todayList.find((s) => s.id === c.schedule_id)?.title}{c.distancia_m != null ? ` · ${formatDistancia(c.distancia_m)}` : c.destino_sem_coordenadas ? " · local do cliente sem coordenadas" : ""}</Tooltip>
                   </CircleMarker>
                 ))}
               </MapContainer>
