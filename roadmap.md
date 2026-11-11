@@ -121,3 +121,9 @@
 - [x] 6) Demo: cliente base existente sem aparelhos com OS de ativação hoje/amanhã
 - [x] Testes, publicar funções e app
 - [ ] Conferir logado: importar planilha real, gerar ativações e ativar um aparelho no celular (blocked: sem sessão do PH no ambiente)
+## Fotos de referência + GPS pelo WhatsApp (11/11)
+- [x] 1) Aparelho: até 3 fotos de referência (Frente, Lado, Plaqueta/código) com troca/remoção + código do fabricante/modelo; ficha do produto e card do Estoque
+- [x] 2) Ativação: miniatura ao lado de cada aparelho; foto da plaqueta e nº de série opcionais (sem OCR/IA)
+- [x] 3) GPS: localização pelo WhatsApp da Flora libera o check-in dentro do raio; mensagem de bloqueio orienta
+- [x] Testes, publicar funções e app
+- [ ] Conferir logado no celular: tirar as fotos do aparelho e ativar com localização pelo WhatsApp (blocked: sem sessão do PH no ambiente)
