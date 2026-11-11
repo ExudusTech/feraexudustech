@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
-import { RESULT_LABEL, STATUS_LABEL, lateMinutes } from "@/lib/visit-exec";
+import { RESULT_LABEL, STATUS_LABEL, formatDistancia, lateMinutes } from "@/lib/visit-exec";
 import EmergencyRequests from "@/components/dashboard/EmergencyRequests";
 import { fieldMetrics, matchesFilter, type OpsFilter } from "@/lib/field-ops";
 
