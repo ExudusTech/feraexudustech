@@ -259,7 +259,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
             {bloqueioLocal && <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
               <p className="text-destructive">{bloqueioLocal}</p>
               {/WhatsApp da Flora/.test(bloqueioLocal) && <Button asChild variant="outline" className="w-full min-h-11">
-                <a href={waLink(waNumero(WHATSAPP_PADRAO), "Minha localização para o check-in")} target="_blank" rel="noopener noreferrer"><MapPin className="h-4 w-4" />Enviar localização pelo WhatsApp da Flora</a></Button>}
+                <a href={waLink(waNumero(WHATSAPP_PADRAO) ?? "5522992668769", "Minha localização para o check-in")} target="_blank" rel="noopener noreferrer"><MapPin className="h-4 w-4" />Enviar localização pelo WhatsApp da Flora</a></Button>}
             </div>}
             {sx.exige_nota && sx.nota_status !== "anexada" && (sx.checkin_liberado_em
               ? <p className="text-sm text-warning">Check-in liberado sem nota pelo gestor: {sx.checkin_liberacao_motivo}</p>
