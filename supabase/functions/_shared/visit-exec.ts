@@ -59,8 +59,21 @@ export function permiteCheckinForaDoLocal(type?: string | null, subtype?: string
 }
 export function checkinBloqueadoMensagem(distancia: number | null, tipo: string): string {
   return distancia === null
-    ? `Check-in bloqueado: sem a sua localização não dá para confirmar que você está no cliente. ${tipo} só começa no local — ative a localização e tente de novo.`
+    ? `Check-in bloqueado: sem a sua localização não dá para confirmar que você está no cliente. ${tipo} só começa no local — ative a localização e tente de novo. Sem GPS? Envie sua localização pelo WhatsApp da Flora e toque em Iniciar de novo.`
     : `Check-in bloqueado: você está a ${formatDistancia(distancia)} do endereço do cliente. ${tipo} só começa no local — chegue ao cliente e tente de novo.`;
+}
+
+/** Minutes a location sent to Flora on WhatsApp keeps standing in for the app GPS (mcp embeds the same value). */
+export const WA_LOCALIZACAO_MIN = 30;
+export interface WaLocalizacao { wa_latitude?: number | null; wa_longitude?: number | null; wa_localizacao_em?: string | null; wa_localizacao_por?: string | null }
+/** WhatsApp location of this visit, usable only by the same consultant within WA_LOCALIZACAO_MIN; null otherwise. */
+export function posicaoWhatsapp(s: WaLocalizacao, userId: string, now: number = Date.now()): { lat: number; lng: number } | null {
+  const lat = s.wa_latitude, lng = s.wa_longitude;
+  if (typeof lat !== "number" || typeof lng !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (!s.wa_localizacao_por || s.wa_localizacao_por !== userId || !s.wa_localizacao_em) return null;
+  const t = Date.parse(s.wa_localizacao_em);
+  if (!Number.isFinite(t) || now - t > WA_LOCALIZACAO_MIN * 60_000 || t - now > 60_000) return null;
+  return { lat, lng };
 }
 
 export function durationMinutes(checkin: string | Date, checkout: string | Date): number {
