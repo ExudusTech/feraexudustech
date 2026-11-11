@@ -1,11 +1,11 @@
 // Lote 15: occurrence types and audio-collection draft rules. Pure (no Deno/npm imports) so vitest, screens and functions share it.
 
-export const OCORRENCIA_TIPOS = ["primeira_visita", "instalacao_teste", "venda_direta", "manutencao_preventiva", "chamado_corretivo", "entrega", "substituicao", "coleta_devolucao"] as const;
+export const OCORRENCIA_TIPOS = ["primeira_visita", "instalacao_teste", "venda_direta", "manutencao_preventiva", "chamado_corretivo", "entrega", "substituicao", "coleta_devolucao", "ativacao_base"] as const;
 export type OcorrenciaTipo = typeof OCORRENCIA_TIPOS[number];
 export const OCORRENCIA_LABEL: Record<OcorrenciaTipo, string> = {
   primeira_visita: "Primeira visita comercial", instalacao_teste: "Instalação de teste", venda_direta: "Venda direta / ativação",
   manutencao_preventiva: "Manutenção preventiva", chamado_corretivo: "Chamado corretivo", entrega: "Entrega",
-  substituicao: "Substituição", coleta_devolucao: "Coleta de devolução",
+  substituicao: "Substituição", coleta_devolucao: "Coleta de devolução", ativacao_base: "Ativação da base",
 };
 /** Types where the commercial collection (contact, points, pains, next steps) is mandatory before closing. */
 export const TIPOS_COM_COLETA: OcorrenciaTipo[] = ["primeira_visita", "venda_direta", "instalacao_teste"];
