@@ -17,10 +17,10 @@ import { useComodatos } from "@/hooks/use-comodatos";
 import type { Schedule } from "@/hooks/use-schedules";
 import {
   CONFIRMACAO_LABEL, ITEM_OPTIONS, NAO_REALIZADO_LABEL, NEXT_LABEL, RESULT_LABEL, STATUS_LABEL, getPosition, isTechnical,
-  requiresPhoto, visitAction, VisitActionError,
+  requiresPhoto, visitAction, VisitActionError, formatDistancia, permiteCheckinForaDoLocal,
 } from "@/lib/visit-exec";
 import { clearDraft, faltasDetalhadas, readDraft, writeDraft, type FaltaAlvo } from "@/lib/visit-draft";
-import { FREQ_LABEL, FREQ_RAPIDAS } from "@/lib/base-instalada";
+import { FREQ_LABEL, FREQ_RAPIDAS, PERIODICIDADES_ATIVACAO } from "@/lib/base-instalada";
 import { serviceKind } from "@/lib/service-kind";
 import { spDate, sugestaoTermino } from "@/lib/visit-exec";
 import LevantamentoComercial from "@/components/agenda/LevantamentoComercial";
@@ -97,7 +97,12 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const [testeCnpj, setTesteCnpj] = useState<CnpjStatus>({ ok: false });
   const createSchedule = useCreateSchedule();
   const comColeta = !tecnico && exigeColeta((s as any)?.ocorrencia_tipo);
-  const proximoEfetivo = comColeta ? "coleta" : usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
+  const ehAtivacao = (s as any)?.ocorrencia_tipo === "ativacao_base" && !!s?.client_id;
+  const [periodicidade, setPeriodicidade] = useState<number | null>(null);
+  useEffect(() => { setPeriodicidade(null); }, [s?.id]);
+  const foraPermitido = permiteCheckinForaDoLocal(s?.schedule_type, s?.schedule_subtype, (s as any)?.ocorrencia_tipo);
+  const [bloqueioLocal, setBloqueioLocal] = useState<string | null>(null);
+  const proximoEfetivo = comColeta ? "coleta" : ehAtivacao ? (periodicidade ? "plano" : "") : usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
   const [pts, setPts] = useState({ pending: 0, total: 0 });
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
   const [askLoc, setAskLoc] = useState(false); const [registroAberto, setRegistroAberto] = useState(false);
@@ -136,8 +141,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     const reusable = lastLocation && (!lastLocation.position || Date.now() - lastLocation.position.timestamp <= RECENT_POSITION_MS);
     const location = !retry && reusable ? lastLocation : await getPosition();
     const pos = location.position;
-    setLastLocation(location);
-    if (!pos) {
+    setLastLocation(location); setBloqueioLocal(null);
+    // Only a commercial visit may start off-site with a justification; the others go straight to the server, which blocks and alerts the manager.
+    if (!pos && foraPermitido) {
       setAskReason("Sem posição disponível: escreva uma justificativa para iniciar.");
       if (retry || justificativa.trim().length < 3) return;
     } else if (retry) { setAskReason(null); }
@@ -146,8 +152,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       setStatus("em_atendimento"); done();
       // Destination without coordinates: offer this position as the client/lead address (consultant confirms).
       if ((s.client_id || s.lead_id) && pos && r.destino_sem_coordenadas) setAskLoc(true);
-      toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${r.distancia_m} m do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
+      toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${formatDistancia(r.distancia_m)} do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
     } catch (e) {
+      if (e instanceof VisitActionError && e.data?.bloqueado_local) { setAskReason(null); setBloqueioLocal(e.message); return; }
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
       if (e instanceof VisitActionError && e.data?.bloqueado_nota) { setBloqueioNota(e.message); return; }
       throw e;
@@ -169,7 +176,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const checkout = () => run(async () => {
     const ehTeste = !comColeta && proximo === "teste";
     const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: comColeta ? undefined : proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, resultado_teste: pedeTeste ? resTeste : undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, termino: outroDia ? termino : undefined });
+      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, resultado_teste: pedeTeste ? resTeste : undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, periodicidade_dias: ehAtivacao ? periodicidade : undefined, termino: outroDia ? termino : undefined });
     if (ehTeste) {
       await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
         end_time: null, schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", client_id: s!.client_id, lead_id: s!.lead_id,
@@ -180,6 +187,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     const rt = (r as any).teste as { resultado?: string; proposta_id?: string | null } | null | undefined;
     if (rt?.resultado === "reprovado") toast({ title: "Faturamento vai emitir a NF de Devolução", description: "O aparelho volta ao estoque quando a nota for anexada." });
     if (rt?.resultado === "aprovado") { onOpenChange(false); navigate(rt.proposta_id ? `/propostas?abrir=${rt.proposta_id}` : "/propostas?nova=1"); return; }
+    const pm = (r as any).proxima_manutencao as { data: string; hora: string; dias: number } | null | undefined;
+    if (pm) { toast({ title: "Ativação encerrada", description: `Próxima manutenção: ${pm.data.split("-").reverse().join("/")} às ${pm.hora} (a cada ${pm.dias} dias)` }); return; }
     const cp = (r as any).coleta_pendente as string[] | undefined;
     toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
   });
@@ -236,7 +245,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {exec?.checkin && (
           <p className="text-sm">Check-in {new Date(exec.checkin.checkin_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-            {exec.checkin.distancia_m !== null ? ` · ${exec.checkin.distancia_m} m do endereço` : exec.checkin.latitude == null ? " · sem localização" : ""}
+            {exec.checkin.distancia_m !== null ? ` · ${formatDistancia(exec.checkin.distancia_m)} do endereço` : exec.checkin.latitude == null ? " · sem localização" : ""}
             {exec.checkin.geolocation_error && <span className="block text-muted-foreground">{locationErrorMessage(exec.checkin.geolocation_error)}</span>}
             {exec.checkin.fora_do_raio && <Badge variant="destructive" className="ml-2">Fora do local</Badge>}
             {exec.checkin.destino_sem_coordenadas && exec.checkin.latitude != null && <Badge variant="outline" className="ml-2 border-warning text-warning">Local do cliente sem coordenadas</Badge>}
@@ -245,7 +254,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {(status === "agendado" || status === "confirmado") && (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.</p>
+            <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.{!foraPermitido && " Este tipo de visita só começa no local do cliente."}</p>
+            {bloqueioLocal && <p role="alert" className="rounded-md border border-destructive p-2 text-sm text-destructive">{bloqueioLocal}</p>}
             {sx.exige_nota && sx.nota_status !== "anexada" && (sx.checkin_liberado_em
               ? <p className="text-sm text-warning">Check-in liberado sem nota pelo gestor: {sx.checkin_liberacao_motivo}</p>
               : <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
@@ -338,7 +348,11 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
               <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
               {!comColeta && <div id="visita-proximo" className="space-y-2 scroll-mt-4">
                 <Label>Próximo passo</Label>
-                {usaPlano ? (plano ? (
+                {ehAtivacao ? (<>
+                  <p className="text-xs text-muted-foreground">De quanto em quanto tempo voltar a este cliente? A próxima manutenção é marcada no dia de rota da região.</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{PERIODICIDADES_ATIVACAO.map((d) => (
+                    <Button key={d} type="button" variant={periodicidade === d ? "default" : "outline"} className="min-h-12" onClick={() => setPeriodicidade(d)}>{d} dias</Button>))}</div>
+                </>) : usaPlano ? (plano ? (
                   <p className="text-sm">Próxima visita do plano ({FREQ_LABEL[plano.frequencia] ?? plano.frequencia}){plano.proxima && `: ${plano.proxima.split("-").reverse().join("/")}`}. Nada a escolher.</p>
                 ) : (<>
                   <p className="text-xs text-muted-foreground">Este cliente ainda não tem plano. De quanto em quanto tempo voltar?</p>

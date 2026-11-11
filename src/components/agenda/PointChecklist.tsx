@@ -30,6 +30,16 @@ function PhotoButton({ label, busy, onFile }: { label: string; busy: boolean; on
   );
 }
 
+/** One-tap "OK": the button is the camera; choosing the photo saves the evaluation. */
+function OkFoto({ label, aria, busy, onFile, className }: { label: string; aria: string; busy: boolean; onFile: (f: File) => void; className?: string }) {
+  return (
+    <Button asChild size="sm" variant="outline" className={cn("min-h-11 shrink-0 h-auto whitespace-normal", className)} disabled={busy}>
+      <label className="cursor-pointer" aria-label={aria}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}{label}
+        <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) onFile(f); }} /></label>
+    </Button>
+  );
+}
+
 /** Maintenance checklist: one card per installed point, plus "add point". Closing requires every point evaluated. */
 export default function PointChecklist({ scheduleId, orgId, clientId, leadId, onPendingChange }: Props) {
   const qc = useQueryClient();
@@ -65,14 +75,20 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
     toast({ title: "Não foi salvo ainda", description: e instanceof Error ? e.message : "Tente de novo. O que você preencheu foi mantido.", variant: "destructive" }); } finally { setBusy(false); } };
   const startEval = (id: string) => { setOpen(id); setF({ manut: [], subst: false, item: "", itemId: "", qtd: "1", urg: false, obs: "", resolver: [] }); };
 
-  const salvar = (id: string, over: Partial<typeof f> = {}) => run(async () => {
+  const salvar = (id: string, over: Partial<typeof f> = {}) => run(() => gravar(id, over));
+  // 🟢 OK still one tap: it opens the camera, and the photo (mandatory for every evaluated point) saves the evaluation.
+  const okComFoto = (id: string, file: File, over: Partial<typeof f>) => run(async () => {
+    const path = await uploadVisitPhoto(orgId, scheduleId, file);
+    await gravar(id, { ...over, estado: "verde", subst: false, foto: path });
+  });
+  const gravar = async (id: string, over: Partial<typeof f> = {}) => {
     const v = { ...f, ...over };
     const r = await baseAction<{ pedido_id: string | null }>({ action: "avaliar", schedule_id: scheduleId, comodato_id: id, estado: v.estado,
       manutencoes: v.estado !== "verde" && v.acao === "consertado" ? [...v.manut, "consertado"] : v.manut, acao: v.estado === "verde" ? undefined : v.acao,
       precisa_substituir: v.subst, item_product_id: v.subst ? v.itemId || undefined : undefined, item_descricao: v.item, quantidade: v.qtd, urgente: v.subst && v.urg, foto_path: v.foto, observacao: v.obs, resolver_ocorrencias: v.resolver });
     setOpen(null); clearDraft(`pt-aval:${scheduleId}`); refetch(); qc.invalidateQueries({ queryKey: ["ocorrencias"] });
     toast({ title: "Ponto avaliado", description: r.pedido_id ? "Pedido de visita emergencial enviado ao gestor" : undefined });
-  });
+  };
   const criar = () => run(async () => {
     await baseAction({ action: "ponto_novo", schedule_id: scheduleId, localizacao_interna: novo!.local, product_id: novo!.disp || undefined,
       refil_product_id: novo!.refil || undefined, quantidade: novo!.qtd, foto_path: novo!.foto, observacao: novo!.obs, estado: novo!.estado, manutencoes: novo!.manut ?? [] });
@@ -104,8 +120,8 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
               <span className="flex-1 text-sm">{p.etiqueta_numero && <span className="mr-1 rounded bg-muted px-1 font-mono text-xs">nº {formatEtiqueta(p.etiqueta_numero)}</span>}<strong>{p.localizacao_interna || "Ponto"}</strong> — {nameOf(p.product_id) ?? "Dispenser"}{nameOf(p.refil_product_id) && ` + ${nameOf(p.refil_product_id)}`}{p.quantidade && p.quantidade !== "1" && ` (${p.quantidade}x)`}</span>
               {av && <Badge className={ESTADO_CLASS[av.estado]}>{ESTADO_LABEL[av.estado]}</Badge>}
             </button>
-            {!av && <Button type="button" size="sm" variant="outline" className="min-h-11 shrink-0" disabled={busy} aria-label={`OK: ${p.localizacao_interna || "ponto"}`}
-              onClick={() => salvar(p.id, { estado: "verde", subst: false, foto: undefined, manut: [], obs: "", resolver: [] })}>🟢 OK</Button>}
+            {!av && <OkFoto label="🟢 OK + foto" aria={`OK com foto: ${p.localizacao_interna || "ponto"}`} busy={busy}
+              onFile={(file) => okComFoto(p.id, file, { manut: [], obs: "", resolver: [] })} />}
             </div>
             {ocs.length > 0 && <p className="text-xs text-warning">Levar: {ocs.map((o) => `${o.quantidade}x ${o.item_descricao}`).join(", ")}</p>}
             {open === p.id && (
@@ -116,11 +132,13 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
                 {ocs.length > 0 && <div className="space-y-1">{ocs.map((o) => (
                   <label key={o.id} className="flex items-center gap-2 text-sm"><Checkbox checked={f.resolver.includes(o.id)}
                     onCheckedChange={(v) => setF({ ...f, resolver: v ? [...f.resolver, o.id] : f.resolver.filter((x) => x !== o.id) })} />Resolvido: {o.quantidade}x {o.item_descricao}</label>))}</div>}
-                <div className="grid grid-cols-3 gap-2">{(["verde", "amarelo", "vermelho"] as const).map((e) => (
+                <div className="grid grid-cols-3 gap-2">
+                  <OkFoto label="🟢 OK + foto" aria={`OK com foto: ${p.localizacao_interna || "ponto"}`} busy={busy} className="min-h-12" onFile={(file) => okComFoto(p.id, file, {})} />
+                  {(["amarelo", "vermelho"] as const).map((e) => (
                   <Button key={e} type="button" variant="outline" disabled={busy} className={cn("min-h-12 h-auto whitespace-normal", f.estado === e && ESTADO_CLASS[e])}
-                    onClick={() => e === "verde" ? salvar(p.id, { estado: "verde", subst: false, foto: undefined }) : setF({ ...f, estado: e, itemId: f.itemId || p.product_id || "", item: f.item || nameOf(p.product_id) || "" })}>
-                    {e === "verde" ? "🟢 OK" : e === "amarelo" ? "🟡 Atenção" : "🔴 Defeito"}</Button>))}</div>
-                <p className="text-xs text-muted-foreground">🟢 OK salva na hora. 🟡/🔴 pedem foto e o que foi feito.</p>
+                    onClick={() => setF({ ...f, estado: e, itemId: f.itemId || p.product_id || "", item: f.item || nameOf(p.product_id) || "" })}>
+                    {e === "amarelo" ? "🟡 Atenção" : "🔴 Defeito"}</Button>))}</div>
+                <p className="text-xs text-muted-foreground">Toda avaliação tem uma foto do ponto. 🟢 OK abre a câmera e salva com a foto; 🟡/🔴 pedem também o que foi feito.</p>
                 {f.estado && f.estado !== "verde" && <>
                   <Label>O que foi feito?</Label>
                   <div className="grid grid-cols-2 gap-2">

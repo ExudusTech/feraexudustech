@@ -2,7 +2,7 @@
 // Records are written through the real tables (triggers number occurrences, create billing tasks, contacts and conversions);
 // every created id is registered in demo_registros, and apagar_cenario_demo removes exactly that set and its children.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, NITSCLEAN_ORG_ID, planejarDatas, planejarHistorico, planoEstoqueDemo, precoDe, telefonesDemo,
+import { addDias, areaDaCidade, CIDADES, CIDADES_DEMO, cnpjDemo, demoNome, escolherPares, horaNaJanela, NITSCLEAN_ORG_ID, planejarDatas, planejarHistorico, planoEstoqueDemo, precoDe, telefonesDemo,
   type AreaDemo, type ParDemo, type ProdutoDemo, type VisitaPlano } from "../_shared/demo-cenario.ts";
 import { pendenciasColeta, resumoColeta, type RascunhoColeta } from "../_shared/coleta.ts";
 import { ETIQUETA_DEMO_INICIO } from "../_shared/etiquetas.ts";
@@ -307,6 +307,21 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
     resumo: "Cliente pediu para falar com um consultor (demonstração).", urgencia: "media", status: "aberto", aberto_em: abertoEm, relogio_inicia_em: abertoEm, alerta_nivel: "verde" }, "criar atendimento");
   await admin.from("leads").update({ precisa_humano: true }).eq("id", leads.atendimento.id);
 
+  // Ordem A: existing-base client without devices, with its "Ativação da base" occurrence today (or the next route day of its city).
+  const pb = plano.hoje_agendada;
+  const cb = CIDADES_DEMO[pb.cidade] ?? CIDADES_DEMO["Cabo Frio"];
+  const nomeBase = demoNome("Lanchonete Sabor da Praia");
+  const endBase = `Rua Demonstração, 500 — ${cb.bairro}`;
+  const latB = cb.lat - 0.0031, lngB = cb.lng + 0.0024;
+  const baseId = await ins("clients", { organization_id: org, name: nomeBase, company: nomeBase, city: pb.cidade, address: endBase, zip_code: cb.cep, latitude: latB, longitude: lngB,
+    localizacao_origem: "google", status: "active", origem: "base_existente", ramo_atuacao: "Lanchonete", phone: fones[LEADS.length] ?? null, created_by: phId, assigned_user_id: campoId,
+    notes: "Cliente da base já instalada (demonstração): aparelhos ainda não cadastrados no Fera." }, "criar cliente da base existente");
+  const horaAtiv = horaNaJanela(areaDaCidade(areas, pb.cidade), 2);
+  await ins("schedules", { organization_id: org, client_id: baseId, title: `Ativação da base — ${nomeBase}`, scheduled_date: pb.data, start_time: horaAtiv, end_time: maisHora(horaAtiv, 60),
+    duracao_min: 60, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", ocorrencia_tipo: "ativacao_base", source: "ativacao", assigned_to: campoId,
+    created_by: phId, location: `${endBase}, ${pb.cidade}`, zip_code: cb.cep, latitude: latB, longitude: lngB, confirmacao_status: "nao_aplicavel",
+    description: "Cadastrar os pontos e aparelhos já instalados: escanear a etiqueta, escolher o aparelho e tirar a foto. Não sai do estoque e não tem nota." }, "criar ativação da base");
+
   // Funnel history spread over the last weeks (replaces the "everything happened now" rows the triggers wrote),
   // plus a sent and a rejected proposal, so Relatórios → Tempo do funil and Flora Equipe have coherent times.
   const hist = planejarHistorico(hoje, plano);
@@ -369,6 +384,6 @@ async function criarCenario(admin: Admin, caller: Admin, org: string, phId: stri
 
   return {
     leads: LEADS.length, cliente: leads.cliente.nome,
-    datas: { ontem: plano.ontem_concluida.data, hoje: plano.hoje_andamento.data, amanha: plano.amanha_teste.data, manutencao_atrasada: atrasada.data },
+    datas: { ontem: plano.ontem_concluida.data, hoje: plano.hoje_andamento.data, amanha: plano.amanha_teste.data, manutencao_atrasada: atrasada.data, ativacao_base: pb.data },
   };
 }

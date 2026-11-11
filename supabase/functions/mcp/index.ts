@@ -4265,6 +4265,14 @@ async function agendarVisitaEquipe(params: Record<string, unknown>): Promise<Mcp
   }, params, isField);
 }
 
+/** Same rule as formatDistancia in _shared/visit-exec.ts: below 1 km in meters, then km ("312 km"). */
+function distanciaTexto(m: number): string {
+  const v = Math.max(0, Math.round(m));
+  if (v < 1000) return `${v} m`;
+  const km = v / 1000;
+  return km < 10 ? `${km.toFixed(1).replace(".", ",")} km` : `${Math.round(km)} km`;
+}
+
 async function visitaEmAndamento(supabase: ReturnType<typeof getClient>, u: TeamUser): Promise<ScheduleRow | null> {
   const { data } = await supabase.from("schedules").select("id, organization_id, lead_id, client_id, latitude, longitude, title, notes, clients(name, latitude, longitude), leads(latitude, longitude, pessoa_id)")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id).eq("status", "em_atendimento").order("checkin_em", { ascending: false }).limit(1).maybeSingle();
@@ -4292,7 +4300,7 @@ async function registrarLocalizacaoCheckin(params: Record<string, unknown>): Pro
       localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
     if (error) return fail(dbFail("registrar localização", error));
     return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
-      link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distancia} m do cliente` : "Localização registrada (cliente sem coordenadas)");
+      link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente` : "Localização registrada (cliente sem coordenadas)");
   }, params, isField);
 }
 
@@ -4787,7 +4795,7 @@ function resolverPeriodo(texto: unknown, hoje: string = spToday()): Periodo {
 interface PerfilEquipe { user_id: string; name: string | null }
 interface Recorte { consultor: PerfilEquipe | null; cidade: string | null; tipos: string[] | null; tipoRotulo: string | null; avisos: string[] }
 const TIPO_OPERACAO_LABEL: Record<string, string> = { primeira_visita: "1ª visita", instalacao_teste: "Instalação de teste", venda_direta: "Venda direta",
-  manutencao_preventiva: "Manutenção", chamado_corretivo: "Corretiva", entrega: "Entrega", substituicao: "Substituição", coleta_devolucao: "Coleta/devolução",
+  manutencao_preventiva: "Manutenção", chamado_corretivo: "Corretiva", entrega: "Entrega", substituicao: "Substituição", coleta_devolucao: "Coleta/devolução", ativacao_base: "Ativação da base",
   visita_tecnica: "Visita técnica", visita_comercial: "Visita comercial", outro: "Outras" };
 const TIPOS_RECORTE: Array<[RegExp, string[], string]> = [
   [/corretiv|chamado/, ["chamado_corretivo"], "corretivas"],

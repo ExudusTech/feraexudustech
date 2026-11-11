@@ -400,6 +400,13 @@
       "when": 1794348239231,
       "tag": "0056_leads_matriz_encaminhado_em",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1794413729457,
+      "tag": "0057_ativacao_base_existente",
+      "breakpoints": true
     }
   ]
 }

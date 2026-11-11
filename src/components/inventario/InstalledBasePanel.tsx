@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { Download, Upload, QrCode, Search } from "lucide-react";
+import { CalendarPlus, Download, Upload, QrCode, Search } from "lucide-react";
+import { AtivacaoDialog, ImportarCarteiraDialog } from "@/components/inventario/AtivacaoBase";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
@@ -20,7 +21,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
 import { exportToExcel } from "@/lib/export-utils";
 import ClientBaseDialog from "@/components/crm/ClientBaseDialog";
-import { baseAction, ESTADO_CLASS, ESTADO_HEX, ESTADO_LABEL, piorEstado, type ImportRow } from "@/lib/base-instalada";
+import { ESTADO_CLASS, ESTADO_HEX, ESTADO_LABEL, piorEstado } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 
 type Card = "clientes" | "pontos" | "alerta" | "atrasados" | "ocorrencias";
@@ -52,6 +53,7 @@ export default function InstalledBasePanel() {
   const [card, setCard] = useState<Card | null>(null);
   const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [ativOpen, setAtivOpen] = useState(false); const [ativIds, setAtivIds] = useState<string[] | undefined>(undefined);
   const navigate = useNavigate();
   const [busca, setBusca] = useState(""); const [scan, setScan] = useState(false);
   const abrirNumero = (n: number | null) => { if (n) navigate(`/aparelho/${formatEtiqueta(n)}`); else toast({ title: "Digite o número da etiqueta", variant: "destructive" }); };
@@ -109,6 +111,7 @@ export default function InstalledBasePanel() {
           Estado: r.pior ? ESTADO_LABEL[r.pior] : "", Etiquetas: r.etiquetas.map(formatEtiqueta).join(", "), "Manutenção atrasada": r.atrasado ? "Sim" : "Não", "Itens a levar": r.ocorrencias })), "base-instalada")}>
           <Download className="h-4 w-4 mr-2" />Exportar</Button>
         {isManager && <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar clientes</Button>}
+        {isManager && <Button variant="outline" onClick={() => { setAtivIds(undefined); setAtivOpen(true); }}><CalendarPlus className="h-4 w-4 mr-2" />Gerar visitas de ativação</Button>}
       </div>
       <div className="h-[360px] rounded-lg overflow-hidden border">
         <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
@@ -136,45 +139,9 @@ export default function InstalledBasePanel() {
         </Table>
       </div>
       <ClientBaseDialog client={open} open={!!open} onOpenChange={(o) => !o && setOpen(null)} />
-      <ImportDialog open={importOpen} onOpenChange={setImportOpen} onDone={() => { qc.invalidateQueries({ queryKey: ["installed-base"] }); qc.invalidateQueries({ queryKey: ["clients"] }); }} />
+      <ImportarCarteiraDialog open={importOpen} onOpenChange={setImportOpen} onDone={() => { qc.invalidateQueries({ queryKey: ["installed-base"] }); qc.invalidateQueries({ queryKey: ["clients"] }); qc.invalidateQueries({ queryKey: ["ativacao-candidatos"] }); }}
+        onAtivar={(ids) => { setImportOpen(false); setAtivIds(ids); setAtivOpen(true); }} />
+      <AtivacaoDialog open={ativOpen} onOpenChange={setAtivOpen} preselecionados={ativIds} />
     </div>
-  );
-}
-
-function ImportDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [result, setResult] = useState<{ criados: number; linhas: ImportRow[] } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const read = async (file: File) => {
-    const ExcelJS = (await import("exceljs")).default;
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await file.arrayBuffer());
-    const ws = wb.worksheets[0];
-    const head: string[] = [];
-    const out: Record<string, unknown>[] = [];
-    ws?.eachRow((row, n) => {
-      const vals = (row.values as unknown[]).slice(1).map((v) => (v && typeof v === "object" && "text" in (v as any) ? (v as any).text : v));
-      if (n === 1) vals.forEach((v) => head.push(String(v ?? "")));
-      else out.push(Object.fromEntries(head.map((h, i) => [h, vals[i] ?? ""])));
-    });
-    setRows(out.slice(0, 500)); setResult(null);
-  };
-  const enviar = async () => {
-    setBusy(true);
-    try { const r = await baseAction<{ criados: number; linhas: ImportRow[] }>({ action: "importar", rows }); setResult(r); onDone(); toast({ title: `${r.criados} cliente(s) importado(s)` }); }
-    catch (e) { toast({ title: "Atenção", description: e instanceof Error ? e.message : "Erro", variant: "destructive" }); } finally { setBusy(false); }
-  };
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Importar clientes ativos</DialogTitle>
-          <DialogDescription>Planilha .xlsx com as colunas: Cliente, Cidade, Frequência (semanal, quinzenal, mensal), Dia (ex.: terça) e, opcional, Consultor. Os pontos são cadastrados nas visitas.</DialogDescription></DialogHeader>
-        <input type="file" accept=".xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) read(f).catch(() => toast({ title: "Não foi possível ler a planilha", variant: "destructive" })); }} />
-        {rows.length > 0 && !result && <p className="text-sm">{rows.length} linha(s) lidas.</p>}
-        {result && <div className="max-h-64 overflow-y-auto text-sm space-y-1">{result.linhas.map((l, i) => (
-          <p key={i} className={l.erro ? "text-destructive" : ""}>{l.cliente || "—"} · {l.cidade || "—"} {l.erro ? `— ${l.erro}` : "✓"}</p>))}</div>}
-        <Button disabled={busy || !rows.length || !!result} onClick={enviar}>Importar</Button>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -41,9 +41,28 @@ export function areaDoCliente<T extends AreaRota>(areas: T[], cep?: string | nul
       .sort((x, y) => (Number(x.e) - Number(x.s)) - (Number(y.e) - Number(y.s)))[0];
     if (hit) return hit.a;
   }
-  const norm = (v?: string | null) => (v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const c = norm(city);
-  return c ? areas.find((a) => norm(a.city) === c) ?? null : null;
+  const c = cidadeChave(city);
+  return c ? areas.find((a) => cidadeChave(a.city) === c) ?? null : null;
+}
+
+// City aliases (same table as mcp's CITY_ALIASES): folded alias → folded official name, plus the official spelling.
+const CIDADE_ALIAS: Record<string, string> = {
+  "buzios": "armacao dos buzios", "armacao de buzios": "armacao dos buzios", "armacao buzios": "armacao dos buzios",
+  "cabo": "cabo frio", "sao pedro": "sao pedro da aldeia", "s pedro da aldeia": "sao pedro da aldeia",
+  "arraial": "arraial do cabo", "iguaba": "iguaba grande", "ostras": "rio das ostras",
+};
+const CIDADE_OFICIAL: Record<string, string> = {
+  "armacao dos buzios": "Armação dos Búzios", "cabo frio": "Cabo Frio", "sao pedro da aldeia": "São Pedro da Aldeia",
+  "arraial do cabo": "Arraial do Cabo", "iguaba grande": "Iguaba Grande", "rio das ostras": "Rio das Ostras",
+};
+const foldCidade = (v?: string | null) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+  .replace(/\s*(?:[-/,–]\s*|\s)rj\s*$/, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+/** Comparable city key: "Búzios/RJ" and "Armação dos Búzios" → "armacao dos buzios". */
+export function cidadeChave(v?: string | null): string { const f = foldCidade(v); return CIDADE_ALIAS[f] ?? f; }
+/** Official spelling for a known alias ("Buzios" → "Armação dos Búzios"); other cities keep what was typed (without "/RJ"). */
+export function cidadeOficial(v?: string | null): string {
+  const k = cidadeChave(v);
+  return CIDADE_OFICIAL[k] ?? String(v ?? "").replace(/\s*(?:[-/,–]\s*|\s)RJ\s*$/i, "").trim();
 }
 
 /** First open route day on/after `from`: on a route weekday (any Mon–Sat without a route) and not blocked (holiday / Google all-day). */
@@ -84,10 +103,10 @@ export function proximaVisitaPlano(p: Plano, today: string, rota: number[] = [],
 
 export interface AvaliacaoInput { estado?: string; foto_path?: string | null; precisa_substituir?: boolean; item?: string | null }
 
-/** Error text for an invalid point evaluation, or null. Photo required when yellow/red. */
+/** Error text for an invalid point evaluation, or null. Ordem A (11/11): one photo for EVERY evaluated point, 🟢 included. */
 export function avaliacaoErro(a: AvaliacaoInput): string | null {
   if (!ESTADOS.includes(a.estado as Estado)) return "Escolha o estado do ponto";
-  if (a.estado !== "verde" && !a.foto_path) return "Tire uma foto do ponto em atenção ou ruim";
+  if (!a.foto_path) return "Tire a foto do ponto (obrigatória em toda avaliação)";
   if (a.precisa_substituir && !(a.item ?? "").trim()) return "Informe o item a levar para substituir";
   return null;
 }
@@ -156,27 +175,111 @@ export function podeGravarLocalizacao(existente: { latitude?: number | null } | 
   return confirmado === true;
 }
 
-export interface ImportRow { cliente: string; cidade: string; frequencia: string; dia_semana: number | null; consultor?: string; erro?: string }
+export interface ImportRow {
+  cliente: string; cidade: string; razao_social?: string; cnpj?: string; endereco?: string; bairro?: string; cep?: string;
+  contato?: string; telefone?: string; email?: string; segmento?: string;
+  frequencia: string; dia_semana: number | null; consultor?: string;
+  /** Address good enough for geocoding (street or CEP); otherwise the location comes from the first check-in. */
+  geocodificavel?: boolean; erro?: string; avisos?: string[]; duplicado_de?: string;
+}
 const norm = (s: unknown) => String(s ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const normHead = (s: unknown) => norm(s).replace(/[^a-z0-9]+/g, " ").trim();
+const digitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+/** CNPJ check digits (same rule as cnpj_valido in the database). */
+export function cnpjOk(v: unknown): boolean {
+  const d = digitos(v);
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const calc = (len: number) => {
+    const w = len === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const r = w.reduce((a, wi, i) => a + Number(d[i]) * wi, 0) % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return calc(12) === Number(d[12]) && calc(13) === Number(d[13]);
+}
+/** Spreadsheet header → field. Specific names first, so "Nome do contato" is the contact and not the client. */
+const COLUNAS: [keyof ImportRow | "dia", string[]][] = [
+  ["contato", ["nome do contato", "contato", "responsavel"]], ["razao_social", ["razao social", "razao"]], ["email", ["e mail", "email"]],
+  ["telefone", ["telefone", "celular", "whatsapp", "fone", "tel"]], ["cnpj", ["cnpj", "cpf cnpj", "documento"]], ["cep", ["cep"]], ["bairro", ["bairro"]],
+  ["cidade", ["cidade", "municipio"]], ["endereco", ["endereco", "logradouro", "rua"]], ["segmento", ["segmento", "ramo", "categoria"]],
+  ["frequencia", ["freq"]], ["dia", ["dia"]], ["consultor", ["consultor", "vendedor"]], ["cliente", ["cliente", "nome", "estabelecimento", "empresa", "fantasia"]],
+];
+function mapaColunas(headers: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const h of headers) {
+    const n = normHead(h);
+    const hit = COLUNAS.find(([campo, al]) => !out.has(campo) && al.some((a) => n === a || n.startsWith(`${a} `) || n.startsWith(a)));
+    if (hit) out.set(hit[0], h);
+  }
+  return out;
+}
 
-/** Validates spreadsheet rows (cliente, cidade, frequência, dia); flags duplicates by name+city within the file and vs. existing clients. */
-export function parseImportRows(rows: Record<string, unknown>[], existentes: { name: string; city: string | null }[]): ImportRow[] {
-  const seen = new Set(existentes.map((c) => `${norm(c.name)}|${norm(c.city)}`));
+/**
+ * Manager's client sheet (Ordem A): name/razão social, CNPJ (optional), address, bairro, city, CEP, contact, phone, e-mail, segment (optional);
+ * legacy Frequência/Dia/Consultor still create a maintenance plan. Duplicates by valid CNPJ or name + city (city aliases), in the file and vs. existing clients.
+ */
+export function parseImportRows(rows: Record<string, unknown>[], existentes: { id?: string; name: string; city: string | null; document?: string | null }[]): ImportRow[] {
+  const porCnpj = new Map<string, string>(); const porNome = new Map<string, string>();
+  for (const c of existentes) {
+    const d = digitos(c.document); if (d.length === 14) porCnpj.set(d, c.id ?? "existente");
+    porNome.set(`${norm(c.name)}|${cidadeChave(c.city)}`, c.id ?? "existente");
+  }
+  const vistosCnpj = new Set<string>(); const vistosNome = new Set<string>();
   return rows.map((r) => {
-    const get = (k: string) => { const key = Object.keys(r).find((x) => norm(x).startsWith(k)); return key ? r[key] : ""; };
-    const cliente = String(get("cliente") ?? "").trim(); const cidade = String(get("cidade") ?? "").trim();
-    const f = norm(get("freq")); const diaTxt = norm(get("dia"));
-    const frequencia = FREQUENCIAS.find((x) => f.startsWith(x.slice(0, 4))) ?? "";
+    const cols = mapaColunas(Object.keys(r));
+    const get = (k: string) => { const key = cols.get(k); return key ? String(r[key] ?? "").trim() : ""; };
+    const avisos: string[] = [];
+    const razao = get("razao_social");
+    const cliente = (get("cliente") || razao).replace(/\s+/g, " ").slice(0, 160);
+    const cidadeTxt = get("cidade");
+    const cidade = cidadeTxt ? cidadeOficial(cidadeTxt).slice(0, 80) : "";
+    let cnpj: string | undefined = digitos(get("cnpj")) || undefined;
+    if (cnpj && !cnpjOk(cnpj)) { avisos.push("CNPJ inválido: importado sem CNPJ"); cnpj = undefined; }
+    const telDig = digitos(get("telefone")).replace(/^55(?=\d{10,11}$)/, "");
+    const telefone = telDig.length === 10 || telDig.length === 11 ? telDig : undefined;
+    if (get("telefone") && !telefone) avisos.push("Telefone inválido: não importado");
+    const emailTxt = get("email").toLowerCase();
+    const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTxt) ? emailTxt.slice(0, 160) : undefined;
+    if (emailTxt && !email) avisos.push("E-mail inválido: não importado");
+    const cepDig = digitos(get("cep"));
+    const cep = cepDig.length === 8 ? `${cepDig.slice(0, 5)}-${cepDig.slice(5)}` : undefined;
+    if (get("cep") && !cep) avisos.push("CEP inválido");
+    const endereco = get("endereco").slice(0, 240) || undefined; const bairro = get("bairro").slice(0, 80) || undefined;
+    const geocodificavel = !!(endereco || cep);
+    if (!geocodificavel) avisos.push("Sem endereço/CEP: a localização vem do primeiro check-in");
+    const fTxt = norm(get("frequencia")); const diaTxt = norm(get("dia"));
+    const frequencia = fTxt ? FREQUENCIAS.find((x) => fTxt.startsWith(x.slice(0, 4))) ?? "" : "";
     const idx = DIAS_SEMANA.findIndex((d) => diaTxt && norm(d).startsWith(diaTxt.slice(0, 3)));
-    const row: ImportRow = { cliente, cidade, frequencia, dia_semana: idx >= 0 ? idx : null, consultor: String(get("consultor") ?? "").trim() || undefined };
-    const key = `${norm(cliente)}|${norm(cidade)}`;
+    const row: ImportRow = { cliente, cidade, frequencia, dia_semana: idx >= 0 ? idx : null, consultor: get("consultor") || undefined,
+      razao_social: razao.slice(0, 200) || undefined, cnpj, endereco, bairro, cep, contato: get("contato").slice(0, 120) || undefined, telefone, email,
+      segmento: get("segmento").slice(0, 80) || undefined, geocodificavel };
+    const chave = `${norm(cliente)}|${cidadeChave(cidade)}`;
     if (cliente.length < 2) row.erro = "Cliente sem nome";
     else if (!cidade) row.erro = "Cidade vazia";
-    else if (!frequencia) row.erro = "Frequência inválida";
-    else if (seen.has(key)) row.erro = "Cliente duplicado";
-    if (!row.erro) seen.add(key);
+    else if (fTxt && !frequencia) row.erro = "Frequência inválida";
+    else if ((cnpj && porCnpj.has(cnpj)) || porNome.has(chave)) { row.erro = "Cliente já cadastrado"; row.duplicado_de = (cnpj && porCnpj.get(cnpj)) || porNome.get(chave); }
+    else if ((cnpj && vistosCnpj.has(cnpj)) || vistosNome.has(chave)) row.erro = "Repetido na planilha";
+    if (!row.erro) { vistosNome.add(chave); if (cnpj) vistosCnpj.add(cnpj); }
+    if (avisos.length) row.avisos = avisos;
     return row;
   });
+}
+
+/** Address line stored on the client: street + bairro (clients have no bairro column). */
+export function enderecoImportado(r: Pick<ImportRow, "endereco" | "bairro">): string | null {
+  return [r.endereco, r.bairro].filter(Boolean).join(" — ") || null;
+}
+
+// ─── Ordem A: activation of the existing base ───────────────────────────────────────────────────────────────────────────
+export const OCORRENCIA_ATIVACAO = "ativacao_base";
+/** Periodicity asked when closing an activation (days). */
+export const PERIODICIDADES_ATIVACAO = [7, 15, 30, 60] as const;
+/** Plan + point periodicity for the chosen interval (60 days = custom plan, bimonthly points). */
+export function periodicidadeAtivacao(dias: number): { frequencia: Frequencia; intervalo_dias: number | null; periodicidade_manut: string } | null {
+  if (dias === 7) return { frequencia: "semanal", intervalo_dias: null, periodicidade_manut: "semanal" };
+  if (dias === 15) return { frequencia: "quinzenal", intervalo_dias: null, periodicidade_manut: "quinzenal" };
+  if (dias === 30) return { frequencia: "mensal", intervalo_dias: null, periodicidade_manut: "mensal" };
+  if (dias === 60) return { frequencia: "personalizada", intervalo_dias: 60, periodicidade_manut: "bimestral" };
+  return null;
 }
 
 export function ocorrenciaUrgenteMessage(v: { cliente: string; consultor: string; local: string; item: string; pedidoId: string }): string {
