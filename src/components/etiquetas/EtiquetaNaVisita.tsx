@@ -13,7 +13,7 @@ import { baseAction, uploadVisitPhoto } from "@/lib/base-instalada";
 import { ACAO_ETIQUETA_LABEL, formatEtiqueta, type AcaoEtiqueta } from "@/lib/etiquetas";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
 
-interface Info { numero: number; aparelho: { id: string; status: string; status_label: string; local: string | null; aparelho: string | null; cliente: string | null; deste_local: boolean; product_id: string | null } | null; acoes: AcaoEtiqueta[]; aviso: string | null }
+interface Info { ativacao?: boolean; numero: number; aparelho: { id: string; status: string; status_label: string; local: string | null; aparelho: string | null; cliente: string | null; deste_local: boolean; product_id: string | null } | null; acoes: AcaoEtiqueta[]; aviso: string | null }
 interface Props { scheduleId: string; orgId: string; clientId?: string | null; leadId?: string | null; numeroInicial?: number | null; onChanged?: () => void; onAvaliar?: (comodatoId: string) => void }
 
 function Foto({ label, busy, onFile }: { label: string; busy: boolean; onFile: (f: File) => void }) {
@@ -64,7 +64,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
     const n = info.numero;
     if (acao === "instalar") {
       await baseAction({ action: "etiqueta_instalar", schedule_id: scheduleId, numero: n, comodato_id: f.previsto || undefined, localizacao_interna: f.local, foto_path: f.foto, product_id: f.produto || undefined });
-      pronto(`Aparelho nº ${formatEtiqueta(n)} instalado`);
+      pronto(info.ativacao ? `Aparelho nº ${formatEtiqueta(n)} ativado` : `Aparelho nº ${formatEtiqueta(n)} instalado`);
     } else if (acao === "vincular") {
       await baseAction({ action: "etiqueta_vincular", schedule_id: scheduleId, numero: n, comodato_id: f.vincular });
       pronto(`Etiqueta nº ${formatEtiqueta(n)} ligada ao aparelho`);
@@ -79,9 +79,11 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
       pronto(`Substituído pelo aparelho nº ${formatEtiqueta(f.novo!)}`);
     }
   });
-  const okRapido = () => run(async () => {
+  // Every evaluated point needs a photo (Ordem A): the OK button opens the camera and saves with it.
+  const okRapido = (file: File) => run(async () => {
     if (!ap) return;
-    await baseAction({ action: "avaliar", schedule_id: scheduleId, comodato_id: ap.id, estado: "verde", manutencoes: [] });
+    const path = await uploadVisitPhoto(orgId, scheduleId, file);
+    await baseAction({ action: "avaliar", schedule_id: scheduleId, comodato_id: ap.id, estado: "verde", manutencoes: [], foto_path: path });
     pronto(`Aparelho nº ${formatEtiqueta(info!.numero)}: OK`);
   });
   const falta = acao === "instalar" ? (!f.foto ? "Tire a foto do aparelho instalado" : !(f.local.trim() || f.previsto) ? "Informe o local ou escolha o ponto previsto"
@@ -109,13 +111,13 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
           {info.aviso && <p className="text-xs text-warning">{info.aviso}</p>}
           {!acao && <div className="grid gap-2 sm:grid-cols-2">
             {info.acoes.includes("avaliar") && ap && <>
-              <Button type="button" className="min-h-11" disabled={busy} onClick={okRapido}>🟢 OK (um toque)</Button>
+              <Foto label="🟢 OK + foto" busy={busy} onFile={okRapido} />
               <Button type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={() => { onAvaliar?.(ap.id); setInfo(null); }}>🟡/🔴 Avaliar com foto</Button></>}
             {info.acoes.filter((a) => a !== "avaliar").map((a) => (
               <Button key={a} type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={() => {
                 setAcao(a); setF((x) => ({ ...x, local: a === "instalar" ? ap?.local ?? "" : "", produto: ap?.product_id ?? "" }));
                 if (a === "substituir") setScan("novo");
-              }}>{ACAO_ETIQUETA_LABEL[a]}</Button>))}
+              }}>{a === "instalar" && info.ativacao ? "Ativar aparelho já instalado" : ACAO_ETIQUETA_LABEL[a]}</Button>))}
           </div>}
           {acao === "instalar" && <div className="space-y-2">
             {previstos.length > 0 && <Select value={f.previsto || "novo"} onValueChange={(v) => {
@@ -131,6 +133,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
               <SelectContent>{dispensers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
             </Select>}
             <Foto label={f.foto ? "Foto ✓" : "Foto do aparelho instalado"} busy={busy} onFile={foto} />
+            {info.ativacao && <p className="text-xs text-muted-foreground">Fica ativo como "base existente": não sai do estoque, sem nota e sem faturamento.</p>}
           </div>}
           {acao === "vincular" && <div className="space-y-1">
             {!semNumero.length && <p className="text-xs text-muted-foreground">Nenhum aparelho instalado sem número neste cliente.</p>}
