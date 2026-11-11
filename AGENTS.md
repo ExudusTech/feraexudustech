@@ -38,3 +38,4 @@
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
 - Mobile (390px) never scrolls sideways: lists use .table-cards (index.css; data-card/data-label cells), dialogs render full-screen, side-by-side fields stack; below md a bottom nav replaces the side menu, installability is manifest-only.
 - EM_TESTE devices change status only when their billing tasks (comodato_ids) conclude, so stock follows invoices.
+- Off-site check-in is allowed only for commercial visits (permiteCheckinForaDoLocal in _shared/visit-exec.ts); every other type is refused server-side for every role and alerts managers, and every evaluated point carries a photo (avaliacaoErro), so field records are verifiable.
