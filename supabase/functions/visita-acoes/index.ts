@@ -2,7 +2,8 @@
 // The schedule is read with the caller's own access first; only the assigned consultant (or a manager) can act.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  checkinAlertMessage, checkoutMessage, durationMinutes, evaluateCheckin, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
+  checkinAlertMessage, checkinBloqueadoAlertMessage, checkinBloqueadoMensagem, checkoutMessage, durationMinutes, evaluateCheckin, formatDistancia, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
+  permiteCheckinForaDoLocal,
   NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
 import { areaDoCliente, FREQ_RAPIDAS, parseDiaSemana, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
@@ -41,6 +42,15 @@ async function fecharTeste(admin: any, s: any, resultado: string, emTeste: any[]
   if (error) console.error("[visita-acoes] devolucao_remessa", error.code);
   await timeline("visita", "Teste não aprovado: retirar aparelho — NF de Devolução de Simples Remessa enviada ao faturamento");
   return { resultado, devolucao_tarefa: t?.id ?? null };
+}
+
+/** Active managers of the organization (blocked check-ins always reach them, subscribed or not). */
+async function gestores(admin: any, org: string): Promise<string[]> {
+  const { data: perfis } = await admin.from("profiles").select("user_id").eq("organization_id", org).eq("is_active", true);
+  const ids = (perfis ?? []).map((p: any) => p.user_id);
+  if (!ids.length) return [];
+  const { data: rs } = await admin.from("user_roles").select("user_id").in("user_id", ids).eq("role", "gestor");
+  return [...new Set((rs ?? []).map((r: any) => r.user_id as string))];
 }
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
@@ -177,9 +187,17 @@ Deno.serve(async (req) => {
       // Older clients send sem_permissao for every failure; never infer denial from that flag.
       const geolocation_error = b.geolocation_error ?? (pos ? null : "UNKNOWN");
       const ev = evaluateCheckin(pos, target, Number(org?.raio_checkin_m ?? 300) || 300, geolocation_error);
+      // Ordem A (11/11): off-site (or unverifiable) check-in is allowed only on a commercial visit; every other type is blocked for every role.
+      if (ev.precisa_justificativa && !permiteCheckinForaDoLocal(s.schedule_type, s.schedule_subtype, (s as any).ocorrencia_tipo)) {
+        const tipoTxt = (s as any).ocorrencia_tipo === "ativacao_base" ? "A ativação da base" : `A visita de ${tipo.toLowerCase()}`;
+        bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinBloqueadoAlertMessage({ ...info, distancia: ev.distancia_m, geolocation_error: pos ? null : geolocation_error }),
+          { schedule_id: s.id, bloqueado: true }, { immediate: true, dedupeKey: "schedule_id", extraUserIds: await gestores(admin, s.organization_id) }));
+        await timeline("visita", `Check-in bloqueado (${consultor}): ${ev.distancia_m !== null ? `a ${formatDistancia(ev.distancia_m)} do endereço` : `sem localização (${geolocation_error})`}`);
+        return json({ error: checkinBloqueadoMensagem(ev.distancia_m, tipoTxt), bloqueado_local: true, distancia_m: ev.distancia_m, distancia: formatDistancia(ev.distancia_m) || null }, 423);
+      }
       const justificativa = txt(b.justificativa, 300);
       if (ev.precisa_justificativa && justificativa.length < 3) {
-        return json({ error: !pos ? "Sem localização: escreva uma justificativa" : `Você está a ${ev.distancia_m} m do endereço: escreva uma justificativa`,
+        return json({ error: !pos ? "Sem localização: escreva uma justificativa" : `Você está a ${formatDistancia(ev.distancia_m)} do endereço: escreva uma justificativa`,
           precisa_justificativa: true, distancia_m: ev.distancia_m }, 422);
       }
       const now = new Date().toISOString();
@@ -188,7 +206,7 @@ Deno.serve(async (req) => {
         fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, destino_sem_coordenadas: ev.destino_sem_coordenadas, geolocation_error, justificativa: justificativa || null });
       if (e1) { console.error("[visita-acoes] checkin", e1.code); return json({ error: e1.code === "23505" ? "Check-in já registrado" : "Não foi possível iniciar" }, 400); }
       await admin.from("schedules").update({ status: "em_atendimento", checkin_em: now }).eq("id", s.id);
-      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${ev.distancia_m} m do endereço` : !pos ? ` sem localização (${geolocation_error})` : ev.destino_sem_coordenadas ? " (local do cliente sem coordenadas — distância não verificada)" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
+      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${formatDistancia(ev.distancia_m)} do endereço` : !pos ? ` sem localização (${geolocation_error})` : ev.destino_sem_coordenadas ? " (local do cliente sem coordenadas — distância não verificada)" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
       if (ev.precisa_justificativa) {
         bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa, geolocation_error }),
           { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id" }));
