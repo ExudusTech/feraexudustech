@@ -78,3 +78,22 @@ export function floraSplit(events: GEvent[]): { blocks: DayBlock[]; busy: BusySl
       end_at: new Date(ev.end!.dateTime!).toISOString() }));
   return { blocks, busy };
 }
+
+/** Flora calendar timed busy between two São Paulo dates (READ-ONLY GET), falling back to the synced google_calendar_busy cache. */
+// deno-lint-ignore no-explicit-any
+export async function googleOcupado(admin: any, orgId: string, from: string, to: string): Promise<{ start: number; end: number }[]> {
+  const timeMin = new Date(`${from}T00:00:00-03:00`).toISOString(), timeMax = new Date(Date.parse(`${to}T00:00:00-03:00`) + 86_400_000).toISOString();
+  try {
+    // deno-lint-ignore no-explicit-any
+    const env = (globalThis as any).Deno?.env;
+    const lovableKey = env?.get("LOVABLE_API_KEY"), connKey = env?.get("GOOGLE_CALENDAR_API_KEY");
+    if (!lovableKey || !connKey) throw new Error("cfg");
+    const evs = await listEvents(FLORA_CALENDAR_ID, timeMin, timeMax, { lovableKey, connKey });
+    return evs.filter((e) => e.status !== "cancelled" && e.transparency !== "transparent" && e.start?.dateTime && e.end?.dateTime)
+      .map((e) => ({ start: Date.parse(e.start!.dateTime!), end: Date.parse(e.end!.dateTime!) }));
+  } catch {
+    const { data } = await admin.from("google_calendar_busy").select("start_at, end_at").eq("organization_id", orgId).lt("start_at", timeMax).gt("end_at", timeMin);
+    // deno-lint-ignore no-explicit-any
+    return (data ?? []).map((r: any) => ({ start: Date.parse(r.start_at), end: Date.parse(r.end_at) }));
+  }
+}
