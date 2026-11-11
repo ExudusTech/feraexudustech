@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
         if (r.erro) continue;
         const cons = r.consultor ? (users ?? []).find((u: any) => (u.name ?? "").toLowerCase().includes(r.consultor!.toLowerCase())) : null;
         const { data: c, error } = await admin.from("clients").insert({ organization_id: org, name: r.cliente, company: r.cliente, razao_social: r.razao_social ?? null,
-          document: r.cnpj ?? null, address: enderecoImportado(r), city: r.cidade, state: "RJ", zip_code: r.cep ?? null, phone: r.telefone ?? null, email: r.email ?? null,
+          document: r.cnpj ?? null, address: enderecoImportado(r), city: r.cidade, zip_code: r.cep ?? null, phone: r.telefone ?? null, email: r.email ?? null,
           ramo_atuacao: r.segmento ?? null, status: "active", origem: "base_existente", created_by: user.id, assigned_user_id: cons?.user_id ?? null }).select("id").single();
         if (error || !c) { console.error("[base-instalada] importar", error?.code); r.erro = "Não foi possível gravar"; continue; }
         criados++; ids.push(c.id);
@@ -346,6 +346,26 @@ Deno.serve(async (req) => {
   return json({ error: "Requisição inválida" }, 400);
 });
 
+/** Spreadsheet contact → tenant person (reused by phone) linked as the client's primary contact (empresa_contatos). */
+// deno-lint-ignore no-explicit-any
+async function contatoImportado(admin: any, org: string, clientId: string, r: ImportRow, userId: string) {
+  try {
+    const fone = r.telefone ? `55${r.telefone}` : null;
+    let pessoaId: string | null = null;
+    if (fone) {
+      const { data: p } = await admin.from("pessoas").select("id").eq("organization_id", org).or(`whatsapp.eq.${fone},telefone.eq.${fone},telefone.eq.${r.telefone}`).limit(1).maybeSingle();
+      pessoaId = p?.id ?? null;
+    }
+    if (!pessoaId) {
+      const { data: p, error } = await admin.from("pessoas").insert({ organization_id: org, nome: r.contato || r.cliente, telefone: fone, whatsapp: fone, email: r.email ?? null }).select("id").single();
+      if (error) { console.error("[base-instalada] pessoa", error.code); return; }
+      pessoaId = p.id;
+    }
+    const { error } = await admin.from("empresa_contatos").insert({ organization_id: org, pessoa_id: pessoaId, client_id: clientId, is_primary: true, created_by: userId });
+    if (error) console.error("[base-instalada] contato", error.code);
+  } catch { console.error("[base-instalada] contato falhou"); }
+}
+
 // ─── Numbered QR labels (10/11) ─────────────────────────────────────────────────────────────────────────────────────────
 // The number belongs to the device (comodatos row) forever; linking happens by scanning at separation or inside the open occurrence.
 const ETQ = "id, organization_id, client_id, lead_id, product_id, refil_product_id, status, quantidade, localizacao_interna, etiqueta_numero, ocorrencia_schedule_id, reserva_os_id, periodicidade_manut, proxima_manutencao, ultima_manutencao, linha_produto, fabricante, dispenser_family_id, cidade, estado, endereco_instalacao, aparelho_descricao, notes";
@@ -401,8 +421,13 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       else if (c?.lead_id) { const { data: l } = await admin.from("leads").select("empresa_nome, company, title").eq("id", c.lead_id).maybeSingle(); cliente = l?.empresa_nome ?? l?.company ?? l?.title ?? null; }
       const ap = c ? { id: c.id, status: c.status, status_label: STATUS_APARELHO_LABEL[c.status] ?? c.status, local: c.localizacao_interna, product_id: c.product_id,
         aparelho: c.product_id ? await nome(c.product_id) : c.aparelho_descricao, cliente, deste_local: deste } : null;
-      const { acoes, aviso } = s ? acoesEtiqueta(s.operacao_material, c ? { status: c.status, deste_local: deste } : null) : { acoes: [], aviso: undefined };
-      return json({ ok: true, numero: n, aparelho: ap, acoes, aviso: aviso ?? null });
+      let { acoes, aviso } = s ? acoesEtiqueta(s.operacao_material, c ? { status: c.status, deste_local: deste } : null) : { acoes: [] as ReturnType<typeof acoesEtiqueta>["acoes"], aviso: undefined as string | undefined };
+      // Activation of the existing base: a free label goes on a device already at the client; stock devices are not installed here.
+      if (s?.ocorrencia_tipo === OCORRENCIA_ATIVACAO && s.client_id) {
+        if (!c) { acoes = ["instalar", "vincular"]; aviso = "Ativação da base: o aparelho já está no cliente — não sai do estoque, sem nota."; }
+        else if (c.status === "ENCERRADO") { acoes = []; aviso = "Esta etiqueta é de um aparelho do estoque. Na ativação, cole uma etiqueta nova no aparelho que já está no cliente."; }
+      }
+      return json({ ok: true, numero: n, aparelho: ap, acoes, aviso: aviso ?? null, ativacao: s?.ocorrencia_tipo === OCORRENCIA_ATIVACAO });
     }
     case "etiqueta_vincular": {
       const { s, erro } = await visitaAberta(); if (erro) return erro;
@@ -446,7 +471,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         // A labelled device back in stock can be separated again (same model only).
         if (c.status !== "ENCERRADO") return usado(n);
         if (c.product_id && c.product_id !== pid) return json({ error: `A etiqueta nº ${formatEtiqueta(n)} é de outro modelo (${await nome(c.product_id)})` }, 409);
-        const e = await salvar(admin.from("comodatos").update({ ...campos, product_id: pid, data_fim: null, retirada_schedule_id: null }).eq("id", c.id)); if (e) return e;
+        const e = await salvar(admin.from("comodatos").update({ ...campos, product_id: pid, data_fim: null, retirada_schedule_id: null, origem: "campo" }).eq("id", c.id)); if (e) return e;
         return json({ ok: true, id: c.id, numero: n });
       }
       { const e = await foraDoLote(n); if (e) return e; }
@@ -478,6 +503,8 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       const c = await porNumero(n);
       if (c && !(c.status === "ENCERRADO" || (["SEPARADO", "PREVISTO"].includes(c.status) && doLocal(s, c))))
         return c.status === "SEPARADO" || !doLocal(s, c) ? usado(n) : json({ error: "Este aparelho já está instalado" }, 409);
+      const ativacao = s.ocorrencia_tipo === OCORRENCIA_ATIVACAO && !!s.client_id;
+      if (ativacao && c?.status === "ENCERRADO") return json({ error: "Esta etiqueta é de um aparelho do estoque. Na ativação, cole uma etiqueta nova no aparelho que já está no cliente." }, 409);
       const previsto = b.comodato_id ? await pontoDaVisita(s, b.comodato_id) : null;
       if (b.comodato_id && (!previsto || previsto.status !== "PREVISTO")) return json({ error: "Ponto previsto não encontrado" }, 404);
       const local = txt(b.localizacao_interna, 120) || previsto?.localizacao_interna || c?.localizacao_interna || "";
@@ -495,11 +522,13 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         estado_atual: "verde", ultima_avaliacao_em: new Date().toISOString(), periodicidade_manut: previsto?.periodicidade_manut ?? c?.periodicidade_manut ?? "mensal" };
       let id: string;
       if (c) {
-        const e = await salvar(admin.from("comodatos").update(campos).eq("id", c.id)); if (e) return e;
+        // A stock device installed again enters normal stock accounting.
+        const e = await salvar(admin.from("comodatos").update(c.status === "ENCERRADO" ? { ...campos, origem: "campo" } : campos).eq("id", c.id)); if (e) return e;
         id = c.id;
       } else {
         { const e = await foraDoLote(n); if (e) return e; }
-        const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n, origem: "campo", created_by: user.id })
+        const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n,
+          origem: ativacao ? "base_existente" : "campo", created_by: user.id })
           .select("id").single();
         if (error) return (await salvar(Promise.resolve({ error }), n))!;
         id = novo.id;
@@ -513,7 +542,8 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       // Leaves already evaluated (OK) with the installation photo, so closing never waits on a hidden step.
       await admin.from("schedule_evidencias").insert({ organization_id: s.organization_id, schedule_id: s.id, comodato_id: id, estado: "verde", itens: [], precisa_substituir: false,
         foto_path: foto, observacoes: `Instalação do aparelho nº ${formatEtiqueta(n)}`, autor_id: user.id });
-      await evento(s, id, `🏷️ Aparelho nº ${formatEtiqueta(n)} instalado (${status === "EM_TESTE" ? "em teste" : "ativo"}) em ${local}`);
+      await evento(s, id, ativacao && !c ? `🏷️ Aparelho nº ${formatEtiqueta(n)} já instalado ativado (base existente, sem estoque/nota) em ${local}`
+        : `🏷️ Aparelho nº ${formatEtiqueta(n)} instalado (${status === "EM_TESTE" ? "em teste" : "ativo"}) em ${local}`);
       return json({ ok: true, id, numero: n, status });
     }
     case "etiqueta_trocar_ponto": {
