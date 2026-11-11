@@ -39,6 +39,30 @@ export function evaluateCheckin(pos: { lat?: number | null; lng?: number | null 
   return { distancia_m: d, fora_do_raio: fora, sem_permissao: false, precisa_justificativa: fora, destino_sem_coordenadas: false };
 }
 
+/** Distance for people: below 1 km in meters ("850 m"), then km ("1,4 km", "312 km"). */
+export function formatDistancia(m: number | null | undefined): string {
+  if (typeof m !== "number" || !Number.isFinite(m)) return "";
+  const v = Math.max(0, Math.round(m));
+  if (v < 1000) return `${v} m`;
+  const km = v / 1000;
+  return km < 10 ? `${km.toFixed(1).replace(".", ",")} km` : `${Math.round(km)} km`;
+}
+
+/**
+ * Ordem A (11/11): only a commercial visit may start away from the place (with a justification).
+ * Maintenance, activation, installation, delivery, replacement and collection are blocked off-site for every role, managers included.
+ */
+export function permiteCheckinForaDoLocal(type?: string | null, subtype?: string | null, ocorrencia?: string | null): boolean {
+  if (ocorrencia && ocorrencia !== "primeira_visita") return false;
+  if (isTechnical(type, subtype)) return false;
+  return (type ?? "visita_comercial") === "visita_comercial" || (!type && !subtype);
+}
+export function checkinBloqueadoMensagem(distancia: number | null, tipo: string): string {
+  return distancia === null
+    ? `Check-in bloqueado: sem a sua localização não dá para confirmar que você está no cliente. ${tipo} só começa no local — ative a localização e tente de novo.`
+    : `Check-in bloqueado: você está a ${formatDistancia(distancia)} do endereço do cliente. ${tipo} só começa no local — chegue ao cliente e tente de novo.`;
+}
+
 export function durationMinutes(checkin: string | Date, checkout: string | Date): number {
   const ms = new Date(checkout).getTime() - new Date(checkin).getTime();
   return Number.isFinite(ms) && ms > 0 ? Math.round(ms / 60_000) : 0;
@@ -53,10 +77,11 @@ export function requiresPhoto(type?: string | null, subtype?: string | null): bo
 export function isTechnical(type?: string | null, subtype?: string | null): boolean { return requiresPhoto(type, subtype); }
 
 const PERIOD_MONTHS: Record<string, number> = { mensal: 1, bimestral: 2, trimestral: 3, semestral: 6, anual: 12 };
+const PERIOD_DAYS: Record<string, number> = { semanal: 7, quinzenal: 15 };
 /** Next maintenance date from today and the loan's periodicity (default monthly). */
 export function nextMaintenance(today: string, periodicidade?: string | null): string {
   const key = (periodicidade ?? "mensal").toLowerCase().trim();
-  const days = /^\d+$/.test(key) ? Number(key) : null;
+  const days = /^\d+$/.test(key) ? Number(key) : PERIOD_DAYS[key] ?? null;
   const d = new Date(`${today}T12:00:00Z`);
   if (days) d.setUTCDate(d.getUTCDate() + days);
   else d.setUTCMonth(d.getUTCMonth() + (PERIOD_MONTHS[key] ?? 1));
@@ -91,13 +116,19 @@ export interface VisitInfo { id: string; cliente: string; consultor: string; tip
 export function checkoutMessage(v: VisitInfo & { resultado: string; duracao: number; distancia: number | null; proximo: string; detalhe?: string | null }): string {
   return ["✅ Visita encerrada", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`,
     `Tipo: ${clean(v.tipo)}`, `Resultado: ${RESULT_LABEL[v.resultado] ?? clean(v.resultado)}`, `Duração: ${v.duracao} min`,
-    `Distância no check-in: ${v.distancia === null ? "sem localização" : `${v.distancia} m`}`,
+    `Distância no check-in: ${v.distancia === null ? "sem localização" : formatDistancia(v.distancia)}`,
     `Próximo passo: ${NEXT_LABEL[v.proximo] ?? clean(v.proximo)}${v.detalhe ? ` (${clean(v.detalhe)})` : ""}`,
     `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
 export function checkinAlertMessage(v: VisitInfo & { distancia: number | null; justificativa: string; geolocation_error?: string | null }): string {
   return ["📍 Check-in fora do local", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`,
-    v.distancia === null ? `Localização: indisponível${v.geolocation_error ? ` (${clean(v.geolocation_error)})` : ""}` : `Distância: ${v.distancia} m do endereço`, `Justificativa: ${clean(v.justificativa)}`,
+    v.distancia === null ? `Localização: indisponível${v.geolocation_error ? ` (${clean(v.geolocation_error)})` : ""}` : `Distância: ${formatDistancia(v.distancia)} do endereço`, `Justificativa: ${clean(v.justificativa)}`,
+    `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
+}
+/** Manager alert for a check-in refused off-site (technical visits). */
+export function checkinBloqueadoAlertMessage(v: VisitInfo & { distancia: number | null; geolocation_error?: string | null }): string {
+  return ["🚫 Check-in bloqueado fora do local", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`, `Tipo: ${clean(v.tipo)}`,
+    v.distancia === null ? `Localização: indisponível${v.geolocation_error ? ` (${clean(v.geolocation_error)})` : ""}` : `Distância: ${formatDistancia(v.distancia)} do endereço`,
     `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
 }
 export function lateAlertMessage(v: VisitInfo & { hora: string; minutos: number }): string {
