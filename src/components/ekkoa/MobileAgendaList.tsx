@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Schedule } from "@/hooks/use-schedules";
-import { fromNotes, mapsLink, normalizePhoneBR, serviceKind } from "@/lib/service-kind";
+import { fromNotes, mapsLink, normalizePhoneBR } from "@/lib/service-kind";
+import { OcorrenciaTipoBadge } from "@/components/agenda/OcorrenciaCores";
+import { corInfo } from "@/lib/ocorrencia-cores";
 
 interface LeadInfo { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }
 
@@ -56,12 +58,12 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
         const phone = normalizePhoneBR(lead?.contact_phone || lead?.whatsapp || fromNotes(s.notes, "Telefone"));
         const map = lead?.maps_url || fromNotes(s.notes, "Mapa") || mapsLink(s.location);
         return (
-          <article key={s.id} className="rounded-xl border bg-card p-4 space-y-3">
+          <article key={s.id} className={cn("rounded-xl border border-l-4 bg-card p-4 space-y-3", corInfo(s as any).borda)}>
             <button onClick={() => onOpen(s)} className="w-full text-left space-y-1">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-2xl font-bold text-primary">{noDateFilter && <span className="text-base mr-2">{format(parseISO(s.scheduled_date), "dd/MM")}</span>}{s.start_time?.slice(0, 5) || "--:--"}</span>
                 <div className="flex gap-1 flex-wrap justify-end">
-                  <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
+                  <OcorrenciaTipoBadge s={s as any} />
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                   {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
                   <OcorrenciaTag s={s as any} />

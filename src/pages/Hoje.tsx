@@ -18,6 +18,7 @@ import SepararMaterial from "@/components/inventario/SepararMaterial";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { format } from "date-fns";
 import { isMine, pendentesAnteriores, porConsultor } from "@/lib/hoje";
+import { OcorrenciaLegenda } from "@/components/agenda/OcorrenciaCores";
 
 /** Consultant's day: own visits in time order with Route/Call/WhatsApp and Start/Finish. */
 export default function Hoje() {
@@ -62,6 +63,7 @@ export default function Hoje() {
         {gestor && <div className="grid grid-cols-2 gap-2" role="tablist">{(["minhas", "equipe"] as const).map((k) => (
           <Button key={k} role="tab" aria-selected={escopo === k} variant={escopo === k ? "default" : "outline"} className="min-h-11" onClick={() => setEscopo(k)}>
             {k === "minhas" ? "Minhas" : "Equipe"}</Button>))}</div>}
+        <OcorrenciaLegenda />
         {infoPendente.length > 0 && <section className="space-y-2" aria-label="Informações pendentes">
           <h2 className="font-semibold text-warning">Realizadas — informações pendentes ({infoPendente.length})</h2>
           {infoPendente.map((s: any) => (
