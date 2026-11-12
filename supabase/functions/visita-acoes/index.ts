@@ -14,6 +14,8 @@ import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.
 import { checkinBloqueadoPorNota, FERA_URL, prontidaoLabel } from "../_shared/prontidao.ts";
 import { exigeColeta, pendenciasColeta } from "../_shared/coleta.ts";
 import { agendarRevisitaCliente, hojeSP } from "../_shared/revisita-agendar.ts";
+import { planejarRevisita } from "../_shared/revisita.ts";
+import { addDias } from "../_shared/agenda-slot.ts";
 import { itensDevolucaoRemessa, precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE } from "../_shared/teste-notas.ts";
 
 /** Return visit of a test (06/11): not approved → return invoice of the Simples Remessa (equipment only); approved → open the proposal. */
@@ -400,7 +402,8 @@ Deno.serve(async (req) => {
         const prev = await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id!, dryRun: true, periodicidade: perAtiv.periodicidade_manut,
           atendidos: (await admin.from("comodatos").select("id").eq("client_id", s.client_id).eq("organization_id", s.organization_id).in("status", ["ATIVO", "EM_TESTE"])).data?.map((x: any) => x.id) ?? [] });
         const data = prev.status === "prevista" && prev.data ? prev.data
-          : proximaVisitaPlano({ frequencia: perAtiv.frequencia, intervalo_dias: perAtiv.intervalo_dias, data_inicio: today0 }, today0, rota, blocked);
+          : planejarRevisita({ desde: addDias(today0, 1), agenda: { modo: "rota", rota }, aparelhos: [{ id: "_", proxima: nextMaintenance(today0, perAtiv.periodicidade_manut) }], bloqueado: blocked })?.data
+            ?? proximaVisitaPlano({ frequencia: perAtiv.frequencia, intervalo_dias: perAtiv.intervalo_dias, data_inicio: today0 }, today0, rota, blocked);
         ativ = { dias: Number(b.periodicidade_dias), data, hora: String(s.start_time ?? "09:00").slice(0, 5) };
         b.proximo = "novo_agendamento"; b.data_alvo = data; b.descricao = `Próxima manutenção: a cada ${ativ.dias} dias`;
       }
@@ -471,7 +474,7 @@ Deno.serve(async (req) => {
       if (ue) { console.error("[visita-acoes] checkout", ue.code); return json({ error: "Não foi possível encerrar" }, 400); }
 
       // Loans touched during the visit get their maintenance dates moved forward.
-      const today = now.slice(0, 10);
+      const today = hojeSP();
       const { data: evs } = await admin.from("schedule_evidencias").select("comodato_id").eq("schedule_id", s.id).not("comodato_id", "is", null);
       for (const id of new Set((evs ?? []).map((e: any) => e.comodato_id))) {
         const { data: c } = await admin.from("comodatos").select("periodicidade_manut").eq("id", id).eq("organization_id", s.organization_id).maybeSingle();
