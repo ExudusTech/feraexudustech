@@ -106,23 +106,7 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
   const refisLista = (novo?.disp && !todosRefis ? compat.lista : refis) as typeof refis;
   const novoFalta = !novo ? null : novo.local.trim().length < 2 ? "Informe o local do ponto" : !novo.estado ? "Escolha o estado do ponto" : !novo.foto ? "Tire a foto do ponto" : null;
 
-  return (
-    <section id="visita-pontos" className="space-y-3 rounded-lg border p-3 scroll-mt-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Pontos do cliente</h3>
-        <Badge variant={pend ? "outline" : "default"}>{vencem.length - pend}/{vencem.length} avaliados</Badge>
-      </div>
-      <EtiquetaNaVisita scheduleId={scheduleId} orgId={orgId} clientId={clientId} leadId={leadId} onChanged={() => { refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); }}
-        onAvaliar={(id) => { startEval(id); setTimeout(() => document.getElementById(`ponto-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
-      {!pontos.length && <p className="text-xs text-muted-foreground">Nenhum ponto cadastrado. Adicione os pontos instalados neste cliente.</p>}
-      {previstos.length > 0 && <p className="text-xs font-medium text-primary">Aparelhos que vencem nesta visita ({vencem.length})</p>}
-      {vencem.map((p) => renderPonto(p))}
-      {outros.length > 0 && <>
-        <Button type="button" variant="ghost" size="sm" className="w-full min-h-11 h-auto whitespace-normal" onClick={() => setVerOutros((v) => !v)}>
-          {verOutros ? "Ocultar" : "Ver"} outros pontos ({outros.length}) — não vencem nesta visita</Button>
-        {verOutros && outros.map((p) => renderPonto(p))}
-      </>}
-      {false && pontos.map((p) => {
+  const renderPonto = (p: any) => {
         const av = data?.avaliacoes.find((a) => a.comodato_id === p.id);
         const ocs = (data?.ocorrencias ?? []).filter((o) => o.comodato_id === p.id);
         return (
@@ -178,7 +162,24 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
                 </>}
               </div>)}
           </div>);
-      })}
+  };
+
+  return (
+    <section id="visita-pontos" className="space-y-3 rounded-lg border p-3 scroll-mt-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Pontos do cliente</h3>
+        <Badge variant={pend ? "outline" : "default"}>{vencem.length - pend}/{vencem.length} avaliados</Badge>
+      </div>
+      <EtiquetaNaVisita scheduleId={scheduleId} orgId={orgId} clientId={clientId} leadId={leadId} onChanged={() => { refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); }}
+        onAvaliar={(id) => { startEval(id); setTimeout(() => document.getElementById(`ponto-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
+      {!pontos.length && <p className="text-xs text-muted-foreground">Nenhum ponto cadastrado. Adicione os pontos instalados neste cliente.</p>}
+      {previstos.length > 0 && <p className="text-xs font-medium text-primary">Aparelhos que vencem nesta visita ({vencem.length})</p>}
+      {vencem.map((p) => renderPonto(p))}
+      {outros.length > 0 && <>
+        <Button type="button" variant="ghost" size="sm" className="w-full min-h-11 h-auto whitespace-normal" onClick={() => setVerOutros((v) => !v)}>
+          {verOutros ? "Ocultar" : "Ver"} outros pontos ({outros.length}) — não vencem nesta visita</Button>
+        {verOutros && outros.map((p) => renderPonto(p))}
+      </>}
       {novo ? (
         <div className="rounded-md border p-2 space-y-2">
           <Label>Novo ponto</Label>
