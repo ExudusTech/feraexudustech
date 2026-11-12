@@ -414,6 +414,13 @@
       "when": 1794416583137,
       "tag": "0058_fotos_referencia_aparelho_serie",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1794522169917,
+      "tag": "0059_migration",
+      "breakpoints": true
     }
   ]
 }

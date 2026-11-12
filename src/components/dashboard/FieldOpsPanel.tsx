@@ -17,6 +17,8 @@ import VisitExecutionDialog from "@/components/agenda/VisitExecutionDialog";
 import { RESULT_LABEL, STATUS_LABEL, formatDistancia, lateMinutes } from "@/lib/visit-exec";
 import EmergencyRequests from "@/components/dashboard/EmergencyRequests";
 import { fieldMetrics, matchesFilter, type OpsFilter } from "@/lib/field-ops";
+import { corInfo } from "@/lib/ocorrencia-cores";
+import { tipoDaOcorrenciaLabel } from "@/components/agenda/OcorrenciaCores";
 
 const spDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
@@ -81,6 +83,7 @@ export default function FieldOpsPanel() {
     const fora = m.foraDoLocal.includes(s.id);
     return (
       <li><button onClick={() => setSelected(s.id)} className="w-full flex items-center gap-3 py-2 min-h-11 text-left hover:text-primary">
+        <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${corInfo(s as any).dot}`} title={tipoDaOcorrenciaLabel(s as any)} />
         <span className="tabular-nums text-sm w-12 text-muted-foreground">{s.start_time?.slice(0, 5) ?? "—"}</span>
         <span className="flex-1 truncate text-sm">{s.title}</span>
         {late >= 15 && <Badge variant="destructive">Atrasada {late} min</Badge>}

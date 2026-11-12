@@ -59,6 +59,16 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Occurrence-type colors (mapping in src/lib/ocorrencia-cores.ts).
+        oc: {
+          lead: "hsl(var(--oc-lead) / <alpha-value>)",
+          teste: "hsl(var(--oc-teste) / <alpha-value>)",
+          ativacao: "hsl(var(--oc-ativacao) / <alpha-value>)",
+          manutencao: "hsl(var(--oc-manutencao) / <alpha-value>)",
+          recarga: "hsl(var(--oc-recarga) / <alpha-value>)",
+          cliente: "hsl(var(--oc-cliente) / <alpha-value>)",
+          outros: "hsl(var(--oc-outros) / <alpha-value>)",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

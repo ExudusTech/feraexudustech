@@ -6696,6 +6696,7 @@ export type Database = {
           raio_checkin_m: number
           retencao_fotos_dias: number
           retencao_localizacao_dias: number
+          rota_base: Json | null
           secondary_color: string | null
           state: string | null
           support_color: string | null
@@ -6738,6 +6739,7 @@ export type Database = {
           raio_checkin_m?: number
           retencao_fotos_dias?: number
           retencao_localizacao_dias?: number
+          rota_base?: Json | null
           secondary_color?: string | null
           state?: string | null
           support_color?: string | null
@@ -6780,6 +6782,7 @@ export type Database = {
           raio_checkin_m?: number
           retencao_fotos_dias?: number
           retencao_localizacao_dias?: number
+          rota_base?: Json | null
           secondary_color?: string | null
           state?: string | null
           support_color?: string | null
@@ -8763,6 +8766,10 @@ export type Database = {
           _ignorar_duplicados?: boolean
           _lead: string
         }
+        Returns: Json
+      }
+      definir_rota_base: {
+        Args: { _latitude: number; _longitude: number; _nome: string }
         Returns: Json
       }
       demo_conjunto: { Args: { _org?: string }; Returns: Json }

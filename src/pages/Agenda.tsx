@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Calendar, CalendarDays, List, Search, MoreHorizontal, Pencil, Trash2, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, CalendarDays, List, Map as MapIcon, Search, MoreHorizontal, Pencil, Trash2, Loader2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSchedules, useDeleteSchedule, type Schedule } from "@/hooks/use-schedules";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,6 +28,9 @@ import { CONFIRMACAO_LABEL } from "@/lib/visit-exec";
 import PainelAgora from "@/components/atendimentos/PainelAgora";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
+import { OcorrenciaDots, OcorrenciaLegenda, OcorrenciaTipoBadge, tipoDaOcorrenciaLabel } from "@/components/agenda/OcorrenciaCores";
+import MapaRotas from "@/components/agenda/MapaRotas";
+import { corInfo } from "@/lib/ocorrencia-cores";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
 
 type ViewMode = "todas" | "minhas" | "criadas";
@@ -46,7 +49,7 @@ export default function Agenda() {
   const [viewMode, setViewMode] = useState<ViewMode>(canViewAll ? "todas" : "minhas");
   useEffect(() => { setViewMode(canViewAll ? "todas" : "minhas"); }, [canViewAll, user?.organization_id]);
   const isMobile = useIsMobile();
-  const [displayMode, setDisplayMode] = useState<"hoje" | "lista" | "calendario">("lista");
+  const [displayMode, setDisplayMode] = useState<"hoje" | "lista" | "calendario" | "mapa">("lista");
   useEffect(() => { if (isMobile) setDisplayMode((m) => (m === "lista" ? "hoje" : m)); }, [isMobile]);
   const [calendarView, setCalendarView] = useState<CalendarView>("mes");
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -189,26 +192,31 @@ export default function Agenda() {
             <div key={d} className="p-2 text-center text-xs font-medium text-muted-foreground border-b">{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 auto-rows-[100px]">
+        <div className="grid grid-cols-7 auto-rows-[76px] md:auto-rows-[112px]">
           {days.map((day) => {
             const daySchedules = getSchedulesForDate(day);
             const isCurrentMonth = isSameMonth(day, currentDate);
             return (
               <div key={day.toISOString()} className={cn(
-                "border-b border-r p-1 overflow-hidden",
-                !isCurrentMonth && "bg-muted/30 text-muted-foreground"
-              )}>
-                <div className="text-xs font-medium mb-1">{format(day, "d")}</div>
-                <div className="space-y-0.5">
+                "border-b border-r p-1 overflow-hidden min-w-0",
+                !isCurrentMonth && "bg-muted/30 text-muted-foreground",
+                isSameDay(day, new Date()) && "bg-primary/5"
+              )} onClick={() => { if (isMobile && daySchedules.length) { setCurrentDate(day); setCalendarView("dia"); } }}>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-xs font-medium">{format(day, "d")}</span>
+                  {daySchedules.length > 0 && <span className="text-[10px] tabular-nums text-muted-foreground">{daySchedules.length}</span>}
+                </div>
+                <OcorrenciaDots items={daySchedules as any[]} className="my-1" />
+                <div className="hidden md:block space-y-0.5">
                   {daySchedules.slice(0, 2).map((s) => (
-                    <div key={s.id} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary rounded px-1 py-0.5 cursor-pointer hover:bg-primary/20 transition-colors" title={`${serviceKind(s.schedule_type, s.schedule_subtype)} — ${s.title}`} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                    <div key={s.id} className={cn("flex items-center gap-1 text-[10px] bg-muted/50 text-foreground border-l-4 rounded px-1 py-0.5 cursor-pointer hover:bg-accent transition-colors", corInfo(s as any).borda)} title={`${serviceKind(s.schedule_type, s.schedule_subtype)} — ${s.title}`} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium shrink-0">{s.start_time.slice(0, 5)}</span>}
                       <span className="min-w-0 truncate">{s.title}</span>
                       {s.source === "flora" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Relatada pela Flora</Badge>}
                     </div>
                   ))}
                   {daySchedules.length > 2 && (
-                    <div className="text-[10px] text-muted-foreground">+{daySchedules.length - 2} mais</div>
+                    <button type="button" className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => { setCurrentDate(day); setCalendarView("dia"); }}>+{daySchedules.length - 2} mais</button>
                   )}
                 </div>
               </div>
@@ -225,21 +233,22 @@ export default function Agenda() {
 
     return (
       <div className="border rounded-lg overflow-hidden">
-        <div className="grid grid-cols-7">
+        <div className="grid grid-cols-1 md:grid-cols-7">
           {days.map((day) => {
             const daySchedules = getSchedulesForDate(day);
             const isToday = isSameDay(day, new Date());
             return (
-              <div key={day.toISOString()} className="border-r min-h-[300px]">
-                <div className={cn("p-2 text-center border-b text-sm font-medium", isToday && "bg-primary text-primary-foreground")}>
-                  {format(day, "EEE dd/MM", { locale: ptBR })}
+              <div key={day.toISOString()} className="border-b md:border-b-0 md:border-r md:min-h-[300px] min-w-0">
+                <div className={cn("p-2 border-b text-sm font-medium flex items-center justify-between gap-2 md:flex-col md:justify-center", isToday && "bg-primary text-primary-foreground")}>
+                  <span className="capitalize">{format(day, "EEE dd/MM", { locale: ptBR })}</span>
+                  <OcorrenciaDots items={daySchedules as any[]} />
                 </div>
                 <div className="p-1 space-y-1">
                   {daySchedules.map((s) => (
-                    <div key={s.id} className="text-xs bg-primary/10 text-primary rounded p-1.5 cursor-pointer hover:bg-primary/20 transition-colors" onClick={() => { setEditItem(s); setDialogOpen(true); }}>
+                    <div key={s.id} className={cn("text-xs bg-muted/50 text-foreground border-l-4 rounded p-1.5 cursor-pointer hover:bg-accent transition-colors", corInfo(s as any).borda)} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
-                      <div className="truncate text-[10px] opacity-80">{serviceKind(s.schedule_type, s.schedule_subtype)}</div>
+                      <div className="truncate text-[10px] text-muted-foreground">{tipoDaOcorrenciaLabel(s as any)}</div>
                       {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                     </div>
@@ -263,10 +272,10 @@ export default function Agenda() {
         ) : (
           <div className="space-y-2">
             {daySchedules.map((s) => (
-              <div key={s.id} className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors" onClick={() => setExecId(s.id)}>
+              <div key={s.id} className={cn("flex flex-wrap sm:flex-nowrap items-start gap-3 p-3 border border-l-4 rounded-lg cursor-pointer hover:bg-accent transition-colors", corInfo(s as any).borda)} onClick={() => setExecId(s.id)}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
-                <div className="flex-1">
-                  <div className="font-medium">{s.title} <Badge variant="secondary">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge> {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{s.title} <OcorrenciaTipoBadge s={s as any} /> {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></div>
                   <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
@@ -300,6 +309,7 @@ export default function Agenda() {
               <div className="font-medium capitalize">{format(month, "MMMM", { locale: ptBR })}</div>
               <div className="text-2xl font-bold text-primary mt-1">{count}</div>
               <div className="text-xs text-muted-foreground">agendamentos</div>
+              <OcorrenciaDots className="justify-center mt-2" items={filtered.filter((s) => { const d = parseISO(s.scheduled_date); return d >= mStart && d <= mEnd; }) as any[]} />
             </button>
           );
         })}
@@ -332,7 +342,7 @@ export default function Agenda() {
             </TabsList>
           </Tabs>
 
-          <div className="flex items-center gap-1 sm:ml-auto border rounded-lg p-0.5">
+          <div className={cn("grid sm:flex items-center gap-1 w-full sm:w-auto sm:ml-auto border rounded-lg p-0.5 [&>button]:max-sm:h-auto [&>button]:max-sm:min-h-11 [&>button]:max-sm:flex-col [&>button]:max-sm:gap-0.5 [&>button]:max-sm:px-1 [&>button]:max-sm:py-1.5 [&>button]:max-sm:text-xs [&_svg]:max-sm:mr-0", isMobile ? "grid-cols-4" : "grid-cols-3")}>
             {isMobile && (
               <Button variant={displayMode === "hoje" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("hoje")}>
                 <CalendarDays className="h-4 w-4 mr-1" /> Hoje
@@ -343,6 +353,9 @@ export default function Agenda() {
             </Button>
             <Button variant={displayMode === "calendario" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("calendario")}>
               <Calendar className="h-4 w-4 mr-1" /> Calendário
+            </Button>
+            <Button variant={displayMode === "mapa" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("mapa")}>
+              <MapIcon className="h-4 w-4 mr-1" /> Mapa
             </Button>
           </div>
         </div>
@@ -422,11 +435,15 @@ export default function Agenda() {
           </div>
         )}
 
+        {displayMode !== "mapa" && <OcorrenciaLegenda />}
+
         {/* Content */}
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
         ) : displayMode === "hoje" ? (
           <MobileAgendaList schedules={modeFiltered} leads={leadInfo} onOpen={(s) => setExecId(s.id)} onExecute={(s) => setExecId(s.id)} />
+        ) : displayMode === "mapa" ? (
+          <MapaRotas schedules={modeFiltered} users={users} canViewAll={canViewAll} onOpen={(id) => setExecId(id)} />
         ) : displayMode === "lista" ? (
           <div className="border rounded-lg overflow-x-auto">
             <Table className="table-cards">
@@ -448,10 +465,10 @@ export default function Agenda() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum agendamento encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((s) => (
-                    <TableRow key={s.id} className="cursor-pointer" onClick={() => setExecId(s.id)}>
+                    <TableRow key={s.id} className={cn("cursor-pointer border-l-4", corInfo(s as any).borda)} onClick={() => setExecId(s.id)}>
                       <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="mr-1">{serviceKind(s.schedule_type, s.schedule_subtype)}</Badge>
+                        <OcorrenciaTipoBadge s={s as any} className="mr-1" />
                         {s.schedule_subtype ? (
                           <span className={cn("px-2 py-0.5 rounded-full text-xs", scheduleSubtypeBadgeClass(s.schedule_subtype))}>
                             {scheduleSubtypeLabel(s.schedule_subtype)}
