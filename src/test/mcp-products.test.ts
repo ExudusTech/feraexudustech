@@ -25,6 +25,7 @@ const catalog = [
   { id: "dr", name: "DRASTIC W4C", brand: "DIVERSEY", category: "Detergente ácido", fornecedor: "DIVERSEY", unit: "UN", description: "Detergente desincrustante desinfetante ácido. Indicado para: Banheiros e vestiários." },
   { id: "sc5", name: "SUMA CALC D5", brand: "DIVERSEY", category: "Desincrustante", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente desincrustante ácido para remoção de incrustações inorgânicas. Indicado para: Cozinhas." },
   { id: "ac", name: "LIMPADOR ACIDO PISO SHOCK 5L", brand: "OLEAK", category: "Limpadores", fornecedor: null, unit: "UN", description: null },
+  { id: "dl", name: "DRAX LAVA LOUÇAS", brand: "DIVERSEY", category: "Lavagem mecânica - detergente líquido", fornecedor: "DIVERSEY", unit: "GL", description: "Desincrustante alcalino para lavagem mecânica de louças e copos. Indicado para: Cozinhas." },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -232,6 +233,7 @@ describe("consultar_produto — necessidade e mensagem de solução", () => {
     const ids = r.data.similares.map((p: any) => p.id);
     expect(ids.length).toBeLessThanOrEqual(3);
     expect(ids.slice(0, 2).sort()).toEqual(["dr", "sc5"]);
+    expect(ids).not.toContain("dl");
     expect(r.data.similares[0].marca).toBe("DIVERSEY");
     expect(r.data.mensagem_para_lead).toBe("Temos solução profissional para limpeza pesada de rejunte, limo e encardido; o consultor avalia no local e indica o produto certo.");
   });

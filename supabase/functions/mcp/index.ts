@@ -1698,14 +1698,23 @@ function artigoDoNome(nome: string): string {
   const fem = new Set(["lanchonete", "boate", "rede", "sede", "unidade", "sociedade", "associacao", "cooperativa"]);
   return fem.has(first) || (first.endsWith("a") && !masc.has(first)) || /(cao|dade)$/.test(first) ? "a" : "o";
 }
+/** Google names often end with the city ("Peixaria Biju Cabo Frio"); the message already says it. */
+function nomeSemCidade(nome: string, cidade: unknown): string {
+  const words = nome.trim().split(/\s+/);
+  for (const key of cityKeys(cidade)) {
+    const n = key.split(" ").length;
+    if (words.length > n && cityKeys(words.slice(-n).join(" ")).includes(key)) return words.slice(0, -n).join(" ").replace(/[\s,–-]+$/, "");
+  }
+  return nome;
+}
 function mensagemCandidatosSemCidade(achados: AchadoSemCidade[]): string {
   const local = (a: AchadoSemCidade) => [ruaAbreviada(a.endereco), a.candidato.cidade].filter(Boolean).join(", ");
   if (achados.length === 1) {
-    const a = achados[0], nome = String(a.candidato.nome);
+    const a = achados[0], nome = nomeSemCidade(String(a.candidato.nome), a.candidato.cidade);
     const rua = ruaAbreviada(a.endereco), cidade = a.candidato.cidade;
     return `É ${artigoDoNome(nome)} ${nome}${rua ? ` da ${rua}` : ""}${cidade ? `, em ${cidade}` : ""}?`;
   }
-  return `Encontrei mais de um com esse nome na nossa região 😊 Qual é o seu?\n${achados.map((a, i) => `${i + 1}. ${a.candidato.nome}${local(a) ? ` — ${local(a)}` : ""}`).join("\n")}\nSe não for nenhum, me passa a cidade e o bairro (ou o CEP).`;
+  return `Encontrei mais de um com esse nome na nossa região 😊 Qual é o seu?\n${achados.map((a, i) => `${i + 1}. ${nomeSemCidade(String(a.candidato.nome), a.candidato.cidade)}${local(a) ? ` — ${local(a)}` : ""}`).join("\n")}\nSe não for nenhum, me passa a cidade e o bairro (ou o CEP).`;
 }
 
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
@@ -2125,9 +2134,10 @@ function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Reco
 
 // Need/ambiente words → product text (category, name, description, segments) that solves it.
 // Order = priority for the lead message; alvo patterns are strongest first (used for ranking).
-const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: string }[] = [
+const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: string; evitar?: RegExp }[] = [
   { termo: /^(rejunt\w*|limo|limos[ao]|bolor\w*|mofo\w*|encardid\w*|azulej\w*|ceramic\w*|porcelanat\w*|incrust\w*|calcari\w*|crostas?|ferrugem|manchad[oa]s?)$/,
-    alvo: [/desincrust/, /acido/, /limpeza pesada|limpador em creme/], assunto: "limpeza pesada de rejunte, limo e encardido", marca: "diversey" },
+    alvo: [/desincrust/, /acido/, /limpeza pesada|limpador em creme/], assunto: "limpeza pesada de rejunte, limo e encardido", marca: "diversey",
+    evitar: /lavagem mecanica|louca|maquina|lavanderia/ },
   { termo: /^(gordur\w*|engordurad\w*|oleos?|graxas?|chapas?|fornos?|fogao|fogoes|coifas?|exaustor\w*)$/,
     alvo: [/desengordur|chapas e fornos/, /desengrax/, /limpeza pesada/], assunto: "remover gordura", marca: "diversey" },
   { termo: /^(banheir\w*|sanitari\w*|vasos?|privadas?|vestiari\w*|mictori\w*|lavabos?)$/,
@@ -2154,6 +2164,7 @@ function produtosPorNecessidade(products: Array<Record<string, unknown>>, words:
     const text = needText(p);
     let score = 0;
     rules.forEach((rule, r) => {
+      if (rule.evitar?.test(text)) return;
       const i = rule.alvo.findIndex(re => re.test(text));
       if (i >= 0) score += (rules.length - r) * 10 + (rule.alvo.length - i);
     });

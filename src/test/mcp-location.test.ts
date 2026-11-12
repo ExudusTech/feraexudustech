@@ -300,6 +300,11 @@ describe("localizar_estabelecimento sem cidade (Peixaria Biju, 11/11)", () => {
     expect(body.locationBias.rectangle).toBeTruthy();
     expect(h.queries.some((q: any) => q.table === "ekkoa_coverage_areas" && q.filters.some((f: any[]) => f[1] === "organization_id" && f[2] === org))).toBe(true);
   });
+  it("tira a cidade repetida do nome do Google na mensagem", async () => {
+    const r = await harness({ places: [{ ...biju, displayName: { text: "Peixaria Biju Cabo Frio" } }] }).route("localizar_estabelecimento", params);
+    expect(r.data.candidatos[0].nome).toBe("Peixaria Biju Cabo Frio");
+    expect(r.data.mensagem_para_lead).toBe("É a Peixaria Biju da R. Peroba, 60, em Cabo Frio?");
+  });
   it("só acha fora da cobertura → pede cidade e bairro (ou CEP)", async () => {
     const niteroi = { ...biju, id: "nit", addressComponents: comp("Niterói", "24220-000") };
     const r = await harness({ places: [niteroi] }).route("localizar_estabelecimento", params);
