@@ -2266,7 +2266,11 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
         if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
       // 3b. Need/ambiente words (rejunte, limo, azulejo, piso, cozinha, gordura, odor…) → up to 3 suggestions.
-      const need = produtosPorNecessidade(products, sigWords);
+      // A brand word ("lysoform perfumado") keeps the partial brand match instead of a need suggestion.
+      const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo.test(w));
+      const namesBrand = sigWords.some(w => !isNeedWord(w) && products.some(p =>
+        foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
+      const need = namesBrand ? null : produtosPorNecessidade(products, sigWords);
       if (need?.produtos.length) {
         const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
         return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
