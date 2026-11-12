@@ -4202,13 +4202,14 @@ async function teamInfo(chatId: unknown): Promise<{ nome: string; papeis: string
 }
 
 type ScheduleRow = Record<string, any>;
-const SCHEDULE_FIELDS = "id, ocorrencia_codigo, ocorrencia_tipo, coleta_status, title, scheduled_date, start_time, status, schedule_type, schedule_subtype, prontidao, assigned_to, location, client_id, lead_id, clients(name), leads(empresa_nome, company, title)";
+const SCHEDULE_FIELDS = "id, ocorrencia_codigo, ocorrencia_tipo, coleta_status, aparelhos_previstos, title, scheduled_date, start_time, status, schedule_type, schedule_subtype, prontidao, assigned_to, location, client_id, lead_id, clients(name), leads(empresa_nome, company, title)";
 const PRONTIDAO_TXT: Record<string, string> = { falta_nota: "falta nota", falta_material: "falta separar material", falta_ambos: "falta nota e material" };
 function visitSummary(s: ScheduleRow) {
   return { codigo: visitCode(s.id, s.ocorrencia_codigo), tipo_ocorrencia: s.ocorrencia_tipo ?? null, horario: typeof s.start_time === "string" ? s.start_time.slice(0, 5) : null,
     cliente: s.clients?.name ?? s.leads?.empresa_nome ?? s.leads?.company ?? s.leads?.title ?? s.title, tipo: s.schedule_type,
     status: s.status, prontidao: s.prontidao === "pronto" ? "pronto" : PRONTIDAO_TXT[s.prontidao] ?? s.prontidao,
-    local: s.location ?? null, link: feraLink(`/agenda?agendamento=${s.id}`) };
+    local: s.location ?? null, aparelhos_vencendo: Array.isArray(s.aparelhos_previstos) && s.aparelhos_previstos.length ? s.aparelhos_previstos.length : null,
+    link: feraLink(`/agenda?agendamento=${s.id}`) };
 }
 
 async function identificarUsuario(params: Record<string, unknown>): Promise<McpResponse> {
@@ -5881,7 +5882,7 @@ function mensagemEquipe(acao: string, r: McpResponse): string {
   if (typeof d.mensagem_para_equipe === "string") return d.mensagem_para_equipe;
   const cut = (v: string) => v.length > 900 ? `${v.slice(0, 897)}...` : v;
   if (!r.success) return cut(r.message === "não autorizado" ? "Você não tem permissão para isso." : (r.message ?? "Não consegui fazer isso agora."));
-  const linhaVisita = (v: any) => `${v.horario ?? "--:--"} ${v.cliente ?? v.titulo ?? ""} ${v.codigo ?? ""}${v.prontidao && v.prontidao !== "pronto" ? ` (${v.prontidao})` : ""}`.trim();
+  const linhaVisita = (v: any) => `${v.horario ?? "--:--"} ${v.cliente ?? v.titulo ?? ""} ${v.codigo ?? ""}${v.aparelhos_vencendo ? ` · ${v.aparelhos_vencendo} aparelho(s) vencem` : ""}${v.prontidao && v.prontidao !== "pronto" ? ` (${v.prontidao})` : ""}`.trim();
   const dia = (iso?: string) => iso ? iso.split("-").reverse().join("/") : "hoje";
   switch (acao) {
     case "minha_agenda": return cut(d.visitas?.length ? `Sua agenda ${dia(d.data)}:\n${d.visitas.map(linhaVisita).join("\n")}` : `Você não tem visitas ${dia(d.data)}.`);
