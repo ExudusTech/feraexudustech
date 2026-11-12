@@ -16,7 +16,7 @@ export interface RevisitaResultado { status: StatusRevisita; data?: string | nul
 // deno-lint-ignore no-explicit-any
 type Admin = any;
 
-export async function contextoRevisita(admin: Admin, org: string, clientId: string, desde: string) {
+export async function contextoRevisita(admin: Admin, org: string, clientId: string, desde: string, ultimaVisita?: string | null) {
   const [{ data: plano }, { data: cliente }, { data: pts }, { data: areas }, { data: ultima }] = await Promise.all([
     admin.from("planos_manutencao").select("id, consultor_id, hora_inicio, duracao_min, modo_agenda, regra_data, proxima_data, dia_mes, intervalo_dias, data_inicio, frequencia")
       .eq("client_id", clientId).eq("organization_id", org).eq("ativo", true).limit(1).maybeSingle(),
@@ -31,7 +31,7 @@ export async function contextoRevisita(admin: Admin, org: string, clientId: stri
   const cidade = cidadeChave(cliente?.city);
   const set = new Set<string>((hol ?? []).filter((h: any) => !h.city || cidadeChave(h.city) === cidade).map((h: any) => h.date));
   const area = cliente ? areaDoCliente(areas ?? [], cliente.zip_code, cliente.city) : null;
-  const agenda: AgendaCliente = agendaDoPlano(plano, parseDiaSemana(area?.dia_semana), ultima?.scheduled_date ?? null);
+  const agenda: AgendaCliente = agendaDoPlano(plano, parseDiaSemana(area?.dia_semana), ultimaVisita ?? ultima?.scheduled_date ?? null);
   return { plano, cliente, pontos: (pts ?? []) as any[], agenda, area, bloqueado: (d: string) => set.has(d) };
 }
 
@@ -49,6 +49,7 @@ export interface AgendarRevisitaOpts {
   org: string; clientId: string; userId?: string | null;
   desde?: string;               // first day searched (default tomorrow, São Paulo)
   atendidos?: string[];         // devices serviced in the visit being closed (dry run before the dates are written)
+  periodicidade?: string | null; // dry run: periodicity chosen for every device (activation closing)
   dryRun?: boolean;             // only compute the date and the devices
   ignorarScheduleId?: string | null;
 }
@@ -56,10 +57,11 @@ export interface AgendarRevisitaOpts {
 export async function agendarRevisitaCliente(admin: Admin, o: AgendarRevisitaOpts): Promise<RevisitaResultado> {
   const hoje = hojeSP();
   const desde = o.desde ?? addDias(hoje, 1);
-  const ctx = await contextoRevisita(admin, o.org, o.clientId, desde);
+  const ctx = await contextoRevisita(admin, o.org, o.clientId, desde, o.atendidos ? hoje : null);
   if (!ctx.plano || !ctx.cliente) return { status: "sem_plano" };
   if (!ctx.pontos.length) return { status: "sem_aparelhos" };
   let aparelhos = ctx.pontos.map((p) => ({ id: p.id as string, proxima: p.proxima_manutencao as string | null, periodicidade: p.periodicidade_manut as string | null }));
+  if (o.periodicidade) aparelhos = aparelhos.map((a) => ({ ...a, periodicidade: o.periodicidade! }));
   if (o.atendidos?.length) aparelhos = aposVisita(aparelhos, o.atendidos, hoje, nextMaintenance);
   const input = { desde, agenda: ctx.agenda, aparelhos, bloqueado: ctx.bloqueado };
   const r: Revisita | null = planejarRevisita(input);
