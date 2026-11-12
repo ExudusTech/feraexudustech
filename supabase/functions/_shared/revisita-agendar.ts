@@ -10,7 +10,7 @@ export const hojeSP = () => new Date(Date.now() - 3 * 3_600_000).toISOString().s
 const ABERTAS = ["agendado", "confirmado"];
 const EM_USO = ["ATIVO", "EM_TESTE"];
 
-export type StatusRevisita = "prevista" | "agendada" | "anexada" | "reagendada" | "aguardando_data" | "sem_aparelhos" | "sem_plano" | "erro";
+export type StatusRevisita = "prevista" | "agendada" | "anexada" | "reagendada" | "mantida" | "aguardando_data" | "sem_aparelhos" | "sem_plano" | "erro";
 export interface RevisitaResultado { status: StatusRevisita; data?: string | null; schedule_id?: string | null; aparelhos?: string[]; codigo?: string | null }
 
 // deno-lint-ignore no-explicit-any
@@ -94,6 +94,11 @@ export async function agendarRevisitaCliente(admin: Admin, o: AgendarRevisitaOpt
   const horaPlano = String(plano.hora_inicio ?? "09:00").slice(0, 5);
   // 2) The plan's own open visit later than needed moves to the right date.
   const doPlano = lista.find((s) => s.plano_manutencao_id === plano.id && !s.checkin_em);
+  // An earlier visit of the plan (booked before this rule) is kept as is — never pushed away without the manager; the next closing recomputes.
+  if (doPlano && doPlano.scheduled_date < r.data) {
+    await cancelarOutras(doPlano.id);
+    return { status: "mantida", data: doPlano.scheduled_date, schedule_id: doPlano.id, aparelhos: doPlano.aparelhos_previstos ?? [], codigo: doPlano.ocorrencia_codigo ?? null };
+  }
   if (doPlano) {
     await cancelarOutras(doPlano.id);
     const hora = doPlano.scheduled_date === r.data ? String(doPlano.start_time ?? horaPlano).slice(0, 5) : await horaLivre(admin, consultor, r.data, horaPlano, passo, doPlano.id);
