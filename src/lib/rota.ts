@@ -63,9 +63,8 @@ export function regioesDoDia<A extends { dia_semana: string | null; is_active?: 
 }
 
 const fold = (v: unknown) => String(v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\(.*?\)/g, "").replace(/\s+/g, " ").trim();
-/** Same city, tolerant to accents and notes like "Bacaxá (Saquarema)" / "Cabo Frio 2º Distrito". */
+/** Same city, ignoring accents, case and notes in parentheses ("Iguabinha (Araruama)" → "iguabinha"). */
 export function cidadeNaRegiao(cidade: unknown, regiaoCidade: unknown): boolean {
   const c = fold(cidade), r = fold(regiaoCidade);
-  if (!c || !r) return false;
-  return c === r || r.startsWith(`${c} `) || c.startsWith(`${r} `);
+  return !!c && c === r;
 }
