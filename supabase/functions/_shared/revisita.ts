@@ -139,3 +139,10 @@ export function agendaDataErro(v: { regra?: unknown; proxima_data?: unknown; dia
   if (v.regra === "intervalo") { const n = Number(v.intervalo_dias); if (!Number.isInteger(n) || n < 1 || n > 180) return "Intervalo entre 1 e 180 dias"; }
   return null;
 }
+
+/** Devices an already-open visit on `data` should carry: those due before the pass after it (all of them when no later pass is known). */
+export function aparelhosDaVisita(data: string, i: RevisitaInput): string[] {
+  const venc = (a: AparelhoRevisita) => (a.proxima && a.proxima > i.desde ? a.proxima : i.desde);
+  const prox = proximaPassagem(i.agenda, addDias(data, 1), i.bloqueado ?? (() => false));
+  return i.aparelhos.filter((a) => !prox || venc(a) < prox).map((a) => a.id);
+}
