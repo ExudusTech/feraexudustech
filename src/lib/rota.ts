@@ -12,7 +12,7 @@ export function rotaBaseDe(value: unknown): RotaBase {
     ? { nome: String(v.nome || "Base"), latitude: Number(v.latitude), longitude: Number(v.longitude) } : ROTA_BASE_PADRAO;
 }
 
-export const temCoordenadas = (p: { latitude?: unknown; longitude?: unknown } | null | undefined): p is Ponto =>
+export const temCoordenadas = (p: { latitude?: unknown; longitude?: unknown } | null | undefined): boolean =>
   !!p && typeof p.latitude === "number" && typeof p.longitude === "number" && Number.isFinite(p.latitude) && Number.isFinite(p.longitude);
 
 /** Great-circle distance in km. */
