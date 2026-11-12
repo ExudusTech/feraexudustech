@@ -3,13 +3,17 @@
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { acaoRevisitaErro, avaliacaoErro, enderecoImportado, ESTADO_LABEL, MANUTENCOES_ACEITAS, OCORRENCIA_ATIVACAO, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo, type ImportRow } from "../_shared/base-instalada.ts";
-import { addDias, maxPorDiaValido, planejarAtivacoes, type LinhaAtivacao } from "../_shared/ativacao.ts";
+import { addDias, ERRO_SEM_ROTA, maxPorDiaValido, planejarAtivacoes, type LinhaAtivacao } from "../_shared/ativacao.ts";
+const AVISO_SEM_ROTA = "Cidade sem rota cadastrada: não gera visita automática, fica em \"Aguardando data\"";
 import { googleOcupado } from "../_shared/google-calendar.ts";
 import { geocodeClient } from "../_shared/geocode.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
 import { qtdAparelhos } from "../_shared/estoque.ts";
+import { agendaDataErro, agendaDoPlano, proximaPassagem } from "../_shared/revisita.ts";
+import { agendarRevisitaCliente, contextoRevisita, hojeSP } from "../_shared/revisita-agendar.ts";
+import { areaDoCliente } from "../_shared/base-instalada.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -18,7 +22,7 @@ const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
 const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "importar_previa", "material_separado",
-  "ativacao_previa", "ativacao_criar",
+  "ativacao_previa", "ativacao_criar", "agenda_cliente",
   "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
@@ -264,9 +268,13 @@ Deno.serve(async (req) => {
       if (!rows.length) return json({ error: "A planilha não tem linhas" }, 400);
       const { data: existentes } = await admin.from("clients").select("id, name, city, document").eq("organization_id", org).limit(5000);
       const parsed = parseImportRows(rows, existentes ?? []);
+      // Cities without a registered route never get an automatic visit: the client waits in "Aguardando data" for the manager.
+      const { data: areasImp } = await admin.from("ekkoa_coverage_areas").select("name, city, dia_semana, zip_code_start, zip_code_end").eq("organization_id", org).eq("is_active", true);
+      const semRota = (r: ImportRow) => !areaDoCliente(areasImp ?? [], r.cep, r.cidade);
+      for (const r of parsed) if (!r.erro && semRota(r)) r.avisos = [...(r.avisos ?? []), AVISO_SEM_ROTA];
       if (b.action === "importar_previa") return json({ ok: true, linhas: parsed, novos: parsed.filter((r) => !r.erro).length });
       const { data: users } = await admin.from("profiles").select("user_id, name").eq("organization_id", org).eq("is_active", true);
-      let criados = 0; const ids: string[] = [];
+      let criados = 0; let aguardando = 0; const ids: string[] = [];
       for (const r of parsed) {
         if (r.erro) continue;
         const cons = r.consultor ? (users ?? []).find((u: any) => (u.name ?? "").toLowerCase().includes(r.consultor!.toLowerCase())) : null;
@@ -276,12 +284,14 @@ Deno.serve(async (req) => {
         if (error || !c) { console.error("[base-instalada] importar", error?.code); r.erro = "Não foi possível gravar"; continue; }
         criados++; ids.push(c.id);
         if (r.contato || r.telefone || r.email) await contatoImportado(admin, org, c.id, r, user.id);
-        if (r.frequencia) await admin.from("planos_manutencao").insert({ organization_id: org, client_id: c.id, frequencia: r.frequencia, dia_semana: r.dia_semana,
-          consultor_id: cons?.user_id ?? null, created_by: user.id });
+        const foraRota = semRota(r);
+        if (r.frequencia || foraRota) await admin.from("planos_manutencao").insert({ organization_id: org, client_id: c.id, frequencia: r.frequencia || "mensal", dia_semana: r.dia_semana,
+          consultor_id: cons?.user_id ?? null, created_by: user.id, ...(foraRota ? { modo_agenda: "data", regra_data: "manual" } : {}) });
+        if (foraRota) aguardando++;
       }
       // Coordinates from the address in the background (bounded); the 15-min scheduler retries whatever is left.
       bg((async () => { for (const id of ids.slice(0, 200)) await geocodeClient(admin, id).catch(() => null); })());
-      return json({ ok: true, criados, client_ids: ids, linhas: parsed });
+      return json({ ok: true, criados, aguardando_data: aguardando, client_ids: ids, linhas: parsed });
     }
     case "ativacao_previa":
     case "ativacao_criar": {
@@ -328,6 +338,11 @@ Deno.serve(async (req) => {
       const linhas = [...plano, ...fora];
       if (b.action === "ativacao_previa") return json({ ok: true, linhas, consultor: cons.name, desde, max_por_dia: max });
       let criadas = 0;
+      // No route for the city: keep the client in "Aguardando data" (outside-the-route plan without a date) for the manager.
+      for (const l of plano.filter((x) => x.erro === ERRO_SEM_ROTA)) {
+        const { data: tem } = await admin.from("planos_manutencao").select("id").eq("client_id", l.client_id).eq("organization_id", org).eq("ativo", true).maybeSingle();
+        if (!tem) await admin.from("planos_manutencao").insert({ organization_id: org, client_id: l.client_id, frequencia: "mensal", consultor_id: consultorId, created_by: user.id, modo_agenda: "data", regra_data: "manual" });
+      }
       for (const l of plano) {
         if (l.erro || !l.data) continue;
         const c: any = clientes.find((x: any) => x.id === l.client_id);
@@ -341,6 +356,59 @@ Deno.serve(async (req) => {
         Object.assign(l, { schedule_id: novo.id, codigo: novo.ocorrencia_codigo }); criadas++;
       }
       return json({ ok: true, criadas, linhas, consultor: cons.name });
+    }
+    case "agenda_cliente": {
+      // "Atendimento por data (fora da rota)" or back to the route (manager). The client is read with the caller's own access first.
+      if (!privileged) return json({ error: "Só o gestor pode definir o atendimento do cliente" }, 403);
+      const clientId = uuidOrNull(b.client_id);
+      const { data: cl } = clientId ? await caller.from("clients").select("id, name, organization_id, assigned_user_id, address, city, zip_code, latitude, longitude").eq("id", clientId).maybeSingle() : { data: null };
+      if (!cl || cl.organization_id !== org) return json({ error: "Cliente não encontrado" }, 404);
+      const hoje = hojeSP();
+      const modo = b.modo === "data" ? "data" : "rota";
+      if (modo === "data") { const e = agendaDataErro(b, hoje); if (e) return json({ error: e }, 400); }
+      const regra = modo === "data" ? String(b.regra) : null;
+      const campos: Record<string, unknown> = { modo_agenda: modo, regra_data: regra,
+        proxima_data: regra === "manual" ? b.proxima_data : null, dia_mes: regra === "dia_mes" ? Number(b.dia_mes) : null,
+        ...(regra === "intervalo" ? { frequencia: "personalizada", intervalo_dias: Number(b.intervalo_dias), data_inicio: hoje } : {}) };
+      const consultorId = uuidOrNull(b.consultor_id);
+      if (consultorId) {
+        const { data: cons } = await admin.from("profiles").select("user_id").eq("organization_id", org).eq("user_id", consultorId).eq("is_active", true).maybeSingle();
+        if (!cons) return json({ error: "Consultor não encontrado nesta organização" }, 404);
+        campos.consultor_id = consultorId;
+      }
+      const { data: atual } = await admin.from("planos_manutencao").select("id").eq("client_id", cl.id).eq("organization_id", org).eq("ativo", true).maybeSingle();
+      let planoId = atual?.id as string | undefined;
+      if (atual) {
+        // A new rule replaces the plan's future visits not started yet; the revisit below books the right one.
+        await admin.from("schedules").update({ status: "cancelado", notes: "Atendimento do cliente alterado" }).eq("plano_manutencao_id", atual.id)
+          .gte("scheduled_date", hoje).in("status", ["agendado", "confirmado"]).is("checkin_em", null);
+        const { error } = await admin.from("planos_manutencao").update(campos).eq("id", atual.id);
+        if (error) { console.error("[base-instalada] agenda", error.code); return json({ error: "Não foi possível salvar" }, 400); }
+      } else {
+        const { data: novo, error } = await admin.from("planos_manutencao").insert({ organization_id: org, client_id: cl.id, frequencia: "mensal", created_by: user.id, ...campos }).select("id").single();
+        if (error) { console.error("[base-instalada] agenda", error.code); return json({ error: "Não foi possível salvar" }, 400); }
+        planoId = novo.id;
+      }
+      const desde = regra === "manual" ? hoje : addDias(hoje, 1);
+      const r = await agendarRevisitaCliente(admin, { org, clientId: cl.id, userId: user.id, desde });
+      if (r.status !== "sem_aparelhos") return json({ ok: true, plano_id: planoId, revisita: r });
+      // No devices yet (base still to activate): outside the route, the first visit is the activation on the informed date.
+      if (modo !== "data") return json({ ok: true, plano_id: planoId, revisita: r });
+      const ctx = await contextoRevisita(admin, org, cl.id, desde);
+      const data = proximaPassagem(agendaDoPlano(ctx.plano, []), desde, ctx.bloqueado);
+      if (!data) return json({ ok: true, plano_id: planoId, revisita: { status: "aguardando_data" } });
+      const { data: ja } = await admin.from("schedules").select("id, scheduled_date").eq("client_id", cl.id).eq("organization_id", org).eq("ocorrencia_tipo", OCORRENCIA_ATIVACAO)
+        .in("status", ["agendado", "confirmado"]).is("checkin_em", null).limit(1).maybeSingle();
+      const consultorAtiv = (ctx.plano?.consultor_id as string | null) ?? cl.assigned_user_id ?? user.id;
+      const hora = String(ctx.plano?.hora_inicio ?? "09:00").slice(0, 5);
+      const row = { scheduled_date: data, start_time: hora, assigned_to: consultorAtiv };
+      const res = ja ? await admin.from("schedules").update(row).eq("id", ja.id).select("id, ocorrencia_codigo").single()
+        : await admin.from("schedules").insert({ ...row, organization_id: org, client_id: cl.id, title: `Ativação da base — ${cl.name}`, duracao_min: 60, status: "agendado",
+          schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", ocorrencia_tipo: OCORRENCIA_ATIVACAO, source: "ativacao", created_by: user.id, confirmacao_status: "nao_aplicavel",
+          location: [cl.address, cl.city].filter(Boolean).join(", ") || null, zip_code: cl.zip_code ?? null, latitude: cl.latitude ?? null, longitude: cl.longitude ?? null,
+          description: "Cadastrar os pontos e aparelhos já instalados: escanear a etiqueta, escolher o aparelho e tirar a foto. Não sai do estoque e não tem nota." }).select("id, ocorrencia_codigo").single();
+      if (res.error) { console.error("[base-instalada] agenda ativacao", res.error.code); return json({ error: "Não foi possível agendar a ativação" }, 400); }
+      return json({ ok: true, plano_id: planoId, revisita: { status: ja ? "reagendada" : "agendada", data, schedule_id: res.data.id, codigo: res.data.ocorrencia_codigo, ativacao: true } });
     }
   }
   return json({ error: "Requisição inválida" }, 400);
