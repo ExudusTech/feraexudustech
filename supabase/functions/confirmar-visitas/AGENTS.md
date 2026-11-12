@@ -1,2 +1,2 @@
 # confirmar-visitas rules
-- Maintenance plans generate visits inside confirmar-visitas (daily step, unique plan+date) and plan visits never get client confirmations; editing a plan cancels its future unexecuted visits so the generator rebuilds them.
+- Maintenance plans generate visits inside confirmar-visitas (daily step, unique plan+date among non-cancelled visits) and plan visits never get client confirmations; clients with devices go through agendarRevisitaCliente (one revisit), outside-route plans without devices wait for the manager, and editing a plan cancels its future unexecuted visits so the generator rebuilds them.
