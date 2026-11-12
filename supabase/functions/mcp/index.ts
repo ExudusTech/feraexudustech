@@ -94,14 +94,15 @@ function authenticate(req: Request): boolean {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PARAM_VALUES = new Set([
-  "nao informado", "nao informada", "n/a", "na", "-", "nenhum", "nenhuma",
-  "null", "undefined", "desconhecido", "sem", "",
+  "nao informado", "nao informada", "nao informou", "nao sei", "sem informacao", "n/a", "n/i", "na", "-", "--", "?",
+  "nenhum", "nenhuma", "null", "undefined", "desconhecido", "indefinido", "sem", "",
 ]);
 
 function normalizeParamValue(value: unknown): unknown {
   if (typeof value === "string") {
     const trimmed = value.trim();
-    const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    // Trailing dots/spaces are ignored ("Não informado." is still absent).
+    const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/(?<=\S)[.\s]+$/, "");
     return EMPTY_PARAM_VALUES.has(comparable) || /^\{\{[^{}]*\}\}$/.test(trimmed) ? null : value;
   }
   if (Array.isArray(value)) return value.map(normalizeParamValue);
@@ -1611,6 +1612,111 @@ function genericBusinessType(nome: string, cidade?: string | null): string | nul
   return tipo;
 }
 
+// Name-only lookup ranks inside this box (Maricá → Campos dos Goytacazes); the active coverage areas
+// (CEP range or city) are the real restriction, so a place outside them is never offered.
+const COVERAGE_SEARCH_BIAS = { rectangle: { low: { latitude: -23.1, longitude: -43.0 }, high: { latitude: -21.0, longitude: -40.9 } } };
+const nomeEstabelecimento = (value: string) => value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(word => word && !["restaurante", "loja", "o", "a"].includes(word)).join(" ");
+/** Same establishment name: containment either way, or every requested word present ("Biju Peixaria"). */
+function mesmoNomeEstabelecimento(requested: string, candidate: string): boolean {
+  const r = nomeEstabelecimento(requested), c = nomeEstabelecimento(candidate);
+  if (!r || !c) return false;
+  if (` ${c} `.includes(` ${r} `) || ` ${r} `.includes(` ${c} `)) return true;
+  const words = new Set(c.split(" "));
+  return r.split(" ").every(word => words.has(word));
+}
+/** Street + number from Google components (or the formatted address), e.g. "Rua Peroba, 60". */
+function enderecoCurto(place: any): string | null {
+  const street = addressPart(place.addressComponents, "route");
+  const number = addressPart(place.addressComponents, "street_number");
+  if (street) return [street, number].filter(Boolean).join(", ");
+  const sections = typeof place.formattedAddress === "string" ? place.formattedAddress.split(",").map((part: string) => part.trim()) : [];
+  const first = sections[0]?.split(/\s+-\s+/)[0];
+  if (!first) return null;
+  const nextNumber = sections[1]?.match(/^\d+[\w/]*\b/)?.[0];
+  return [first, nextNumber].filter(Boolean).join(", ");
+}
+/** Coverage area of a place by narrowest CEP range, else by city; null region when the city has several. */
+function coberturaDoLugar(areas: CoverageRegion[], cep: unknown, cidade: unknown): { coberto: boolean; regiao: CoverageRegion | null } {
+  const byCep = narrowestCoverage(areas, cep);
+  if (byCep) return { coberto: true, regiao: byCep };
+  const exact = areas.filter(area => cityInArea(cidade, area.city, true));
+  const list = exact.length ? exact : areas.filter(area => cityInArea(cidade, area.city));
+  return { coberto: list.length > 0, regiao: new Set(list.map(area => area.name)).size === 1 ? list[0] : null };
+}
+type AchadoSemCidade = { candidato: Record<string, unknown>; endereco: string | null };
+/** Places search by name only, biased to the coverage and filtered to active coverage areas (max 3). */
+async function localizarPorNomeNaCobertura(nome: string, bairro: string | null): Promise<AchadoSemCidade[]> {
+  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  if (!key) return [];
+  const areas = await selectCoverage(getClient(), {});
+  if (!areas.length) return [];
+  const textQuery = [nome, bairro, "RJ"].filter(Boolean).join(" ");
+  const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
+    body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 10, locationBias: COVERAGE_SEARCH_BIAS }),
+  }, `places:cobertura:${textQuery}`);
+  const places = (Array.isArray(result.places) ? result.places : [])
+    .filter(isPlaceInRj)
+    .filter((place: any) => mesmoNomeEstabelecimento(nome, place.displayName?.text ?? ""))
+    .filter((place: any) => coberturaDoLugar(areas, addressPart(place.addressComponents, "postal_code"),
+      addressPart(place.addressComponents, "administrative_area_level_2", "locality")).coberto)
+    .slice(0, 3);
+  const achados: AchadoSemCidade[] = [];
+  // Sequential, capped at three reverse lookups; no retries on Google errors.
+  for (const place of places) {
+    let cep = addressPart(place.addressComponents, "postal_code");
+    const latitude = place.location?.latitude ?? null, longitude = place.location?.longitude ?? null;
+    if (!validCep(cep) && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      try {
+        const reverse = await locationRequest(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=pt-BR&key=${encodeURIComponent(key)}`, {}, `reverse:${latitude},${longitude}`);
+        if (reverse.status === "OK") {
+          for (const r of reverse.results ?? []) {
+            const postal = addressPart(r.address_components, "postal_code");
+            if (validCep(postal)) { cep = postal; break; }
+          }
+        }
+      } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
+    }
+    const cidadeLugar = addressPart(place.addressComponents, "administrative_area_level_2", "locality");
+    const { regiao } = coberturaDoLugar(areas, cep, cidadeLugar);
+    achados.push({ endereco: enderecoCurto(place), candidato: {
+      nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
+      bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"), cidade: cidadeLugar,
+      cep: validCep(cep) ? cep : null, latitude, longitude, regiao: regiao?.name ?? null, dias_visita: regiao?.dia_semana ?? null,
+      horario: regiao?.horario_inicio && regiao.horario_fim ? `${regiao.horario_inicio.slice(0, 5)} às ${regiao.horario_fim.slice(0, 5)}` : null,
+      maps_url: place.googleMapsUri ?? null, telefone: place.nationalPhoneNumber ?? null, place_id: place.id ?? null } });
+  }
+  return achados;
+}
+const ruaAbreviada = (value: string | null) => value ? value.replace(/^Rua\s/i, "R. ").replace(/^Avenida\s/i, "Av. ").replace(/^Travessa\s/i, "Tv. ") : null;
+/** "a" for feminine-looking first words (Peixaria, Pousada, Lanchonete), "o" otherwise. */
+function artigoDoNome(nome: string): string {
+  const first = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
+  const masc = new Set(["dia", "clima", "sistema", "programa", "planeta", "mapa", "tema", "atleta", "guia", "cinema", "panorama"]);
+  const fem = new Set(["lanchonete", "boate", "rede", "sede", "unidade", "sociedade", "associacao", "cooperativa"]);
+  return fem.has(first) || (first.endsWith("a") && !masc.has(first)) || /(cao|dade)$/.test(first) ? "a" : "o";
+}
+/** Google names often end with the city ("Peixaria Biju Cabo Frio"); the message already says it. */
+function nomeSemCidade(nome: string, cidade: unknown): string {
+  const words = nome.trim().split(/\s+/);
+  for (const key of cityKeys(cidade)) {
+    const n = key.split(" ").length;
+    if (words.length > n && cityKeys(words.slice(-n).join(" ")).includes(key)) return words.slice(0, -n).join(" ").replace(/[\s,–-]+$/, "");
+  }
+  return nome;
+}
+function mensagemCandidatosSemCidade(achados: AchadoSemCidade[]): string {
+  const local = (a: AchadoSemCidade) => [ruaAbreviada(a.endereco), a.candidato.cidade].filter(Boolean).join(", ");
+  if (achados.length === 1) {
+    const a = achados[0], nome = nomeSemCidade(String(a.candidato.nome), a.candidato.cidade);
+    const rua = ruaAbreviada(a.endereco), cidade = a.candidato.cidade;
+    return `É ${artigoDoNome(nome)} ${nome}${rua ? ` da ${rua}` : ""}${cidade ? `, em ${cidade}` : ""}?`;
+  }
+  return `Encontrei mais de um com esse nome na nossa região 😊 Qual é o seu?\n${achados.map((a, i) => `${i + 1}. ${nomeSemCidade(String(a.candidato.nome), a.candidato.cidade)}${local(a) ? ` — ${local(a)}` : ""}`).join("\n")}\nSe não for nenhum, me passa a cidade e o bairro (ou o CEP).`;
+}
+
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
@@ -1620,11 +1726,22 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
   if (params.estado != null && !text(params.estado, 60)) return fail("estado inválido");
   const tipoGenerico = params.cep ? null : genericBusinessType(nome, cidade);
-  // Coverage before any search: without city/CEP only ask for them, never promise a visit.
+  // Without city/CEP: search the name only inside the registered coverage; ask for city/bairro or CEP
+  // only when nothing (or only places outside the coverage) is found. Generic names never search.
   if (!cidade && !params.cep) {
-    return ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
+    const pedirLocal = () => ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
       ...(tipoGenerico ? { precisa_nome: true } : {}), mensagem_para_lead: MSG_PEDIR_LOCAL },
       MSG_PEDIR_LOCAL, "Peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo; não ofereça visita antes de confirmar a cobertura");
+    if (tipoGenerico) return pedirLocal();
+    try {
+      const achados = await localizarPorNomeNaCobertura(nome, bairro);
+      if (!achados.length) return pedirLocal();
+      const mensagem = mensagemCandidatosSemCidade(achados);
+      return ok({ cobertura: "DISTRIBUIDORA", vinculo: "DISTRIBUIDORA", encontrado: true, busca_sem_cidade: true,
+        candidatos: achados.map(a => a.candidato), precisa_confirmar: true, correspondencia_exata: achados.length === 1,
+        mensagem_para_lead: mensagem }, mensagem,
+        "Confirme o estabelecimento com o lead. Se confirmar, use cidade, bairro, cep e regiao do candidato nas próximas chamadas; se não for, peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo");
+    } catch { return pedirLocal(); }
   }
   const coverage = await verificarCoberturaRegiao({ cidade: cidade ?? undefined, cep: params.cep ?? undefined, estado: text(params.estado, 60) ?? undefined });
   if (!coverage.success) return coverage;
@@ -2015,6 +2132,56 @@ function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Reco
   return out;
 }
 
+// Need/ambiente words → product text (category, name, description, segments) that solves it.
+// Order = priority for the lead message; alvo patterns are strongest first (used for ranking).
+const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: string; evitar?: RegExp }[] = [
+  { termo: /^(rejunt\w*|limo|limos[ao]|bolor\w*|mofo\w*|encardid\w*|azulej\w*|ceramic\w*|porcelanat\w*|incrust\w*|calcari\w*|crostas?|ferrugem|manchad[oa]s?)$/,
+    alvo: [/desincrust/, /acido/, /limpeza pesada|limpador em creme/], assunto: "limpeza pesada de rejunte, limo e encardido", marca: "diversey",
+    evitar: /lavagem mecanica|louca|maquina|lavanderia/ },
+  { termo: /^(gordur\w*|engordurad\w*|oleos?|graxas?|chapas?|fornos?|fogao|fogoes|coifas?|exaustor\w*)$/,
+    alvo: [/desengordur|chapas e fornos/, /desengrax/, /limpeza pesada/], assunto: "remover gordura", marca: "diversey" },
+  { termo: /^(banheir\w*|sanitari\w*|vasos?|privadas?|vestiari\w*|mictori\w*|lavabos?)$/,
+    alvo: [/banheiro|sanitari|mictorio/, /desincrust|acido/], assunto: "limpeza e higiene de banheiros", marca: "diversey" },
+  { termo: /^(pisos?|chao)$/, alvo: [/piso/, /limpeza pesada|uso geral/], assunto: "limpeza de pisos", marca: "diversey" },
+  { termo: /^(cozinh\w*|loucas?|panelas?)$/, alvo: [/cozinha/, /louca|desengordur/], assunto: "limpeza de cozinha", marca: "diversey" },
+  { termo: /^(vidros?|janelas?|espelhos?|vitrine\w*)$/, alvo: [/vidro/], assunto: "limpeza de vidros" },
+  { termo: /^(papel|papeis|toalh\w*|guardanap\w*|higienic\w*|dispenser\w*|papeleira\w*|suportes?)$/,
+    alvo: [/dispenser|papel|toalha|guardanapo/], assunto: "papel e dispensers" },
+  { termo: /^(maos?|sabonet\w*|alcool|antissep\w*)$/, alvo: [/sabonete|lavagem de maos|antissepsia|alcool/], assunto: "higiene das mãos" },
+  { termo: ODOR_WORD, alvo: [ODOR_CATEGORY], assunto: "controle de odores e aromatização", marca: "ekkoa" },
+  { termo: /^(ambientes?|salas?|recepca\w*|escritori\w*|halls?|quartos?)$/, alvo: [/recepc|escritorio|areas publicas/, /uso geral/], assunto: "limpeza dos ambientes", marca: "diversey" },
+];
+const MSG_SOLUCAO = "Temos solução profissional para isso; o consultor avalia no local e indica o produto certo.";
+const mensagemSolucao = (assunto?: string | null) => assunto
+  ? `Temos solução profissional para ${assunto}; o consultor avalia no local e indica o produto certo.` : MSG_SOLUCAO;
+const needText = (p: Record<string, unknown>) =>
+  [p.category, p.name, p.description].map(foldProductText).join(" ") + " " + productSegments(p).join(" ");
+/** Up to 3 products for the need words of a term (rejunte/limo → desincrustantes Diversey), best score first, varied. */
+function produtosPorNecessidade(products: Array<Record<string, unknown>>, words: string[]) {
+  const rules = PRODUCT_NEEDS.filter(rule => words.some(w => rule.termo.test(w)));
+  if (!rules.length) return null;
+  const scored = products.map(p => {
+    const text = needText(p);
+    let score = 0;
+    rules.forEach((rule, r) => {
+      if (rule.evitar?.test(text)) return;
+      const i = rule.alvo.findIndex(re => re.test(text));
+      if (i >= 0) score += (rules.length - r) * 10 + (rule.alvo.length - i);
+    });
+    const brand = foldProductText(p.brand);
+    return { p, score, marca: rules.some(rule => rule.marca && brand === rule.marca) };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score || Number(b.marca) - Number(a.marca));
+  const top = scored.length ? scored[0].score : 0;
+  const best = pickVaried(scored.filter(x => x.score === top).map(x => x.p), 3);
+  for (const x of scored) if (best.length < 3 && !best.includes(x.p)) best.push(x.p);
+  return { assunto: rules[0].assunto, produtos: best };
+}
+/** Subject shared by every suggestion (all aromatizadores → odores), for the lead message. */
+function assuntoDasSugestoes(list: Array<Record<string, unknown>>): string | null {
+  if (!list.length) return null;
+  return PRODUCT_NEEDS.find(rule => list.every(p => rule.alvo.some(re => re.test(needText(p)))))?.assunto ?? null;
+}
+
 async function consultarProduto(params: Record<string, unknown>): Promise<McpResponse> {
   const termo = productSearchText(params.termo) ?? productSearchText(params.nome);
   const categoria = productSearchText(params.categoria);
@@ -2095,7 +2262,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     }
   }
   // 3. Description/category/segment matches are never "total" and never send images.
-  let correspondencia: "parcial" | "nenhuma" = "parcial";
+  let correspondencia: "parcial" | "nenhuma" | "necessidade" = "parcial";
   let found = products;
   if (words.length) {
     const wide = sigWords.filter((w) => w.length >= 3);
@@ -2109,6 +2276,18 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
         const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
         if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
+      // 3b. Need/ambiente words (rejunte, limo, azulejo, piso, cozinha, gordura, odor…) → up to 3 suggestions.
+      // A brand word ("lysoform perfumado") keeps the partial brand match instead of a need suggestion.
+      const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo.test(w));
+      const namesBrand = sigWords.some(w => !isNeedWord(w) && products.some(p =>
+        foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
+      const need = namesBrand ? null : produtosPorNecessidade(products, sigWords);
+      if (need?.produtos.length) {
+        const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
+        return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
+          similares: need.produtos.map((p) => fmt(p, urls)), necessidade: need.assunto,
+          mensagem_para_lead: mensagemSolucao(need.assunto), imagem_enviada: false } };
+      }
       found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
       correspondencia = "parcial";
     }
@@ -2117,18 +2296,10 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   }
   if (!found.length) correspondencia = "nenhuma";
   const alternatives = found.length ? found : products.filter(matchesCategory);
-  const similares = rankByCategory(alternatives).slice(0, 3).map((p) => fmt(p, new Map()));
-  let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
-  const cats: string[] = [];
-  const seen = new Set<string>();
-  for (const s of similares) {
-    const c = typeof s.categoria === "string" ? s.categoria.trim() : "";
-    if (c && !seen.has(foldProductText(c))) { seen.add(foldProductText(c)); cats.push(c); }
-  }
-  if (similares.length) {
-    const lista = cats.length ? (cats.length === 1 ? cats[0] : `${cats.slice(0, -1).join(", ")} e ${cats[cats.length - 1]}`) : "produtos";
-    mensagem += ` Temos opções de ${lista} que podem atender a mesma necessidade.`;
-  }
+  const sugestoes = rankByCategory(alternatives).slice(0, 3);
+  const similares = sugestoes.map((p) => fmt(p, new Map()));
+  // Never tell the lead we do not carry/work with something: always offer the professional solution.
+  const mensagem = mensagemSolucao(assuntoDasSugestoes(sugestoes));
   return { success: true, data: { encontrado: false, correspondencia, produto_citado: produtoCitado, produtos: [], similares, mensagem_para_lead: mensagem, imagem_enviada: false } };
 }
 
@@ -3516,7 +3687,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "localizar_estabelecimento",
-    description: "Localiza estabelecimento por nome + cidade ou CEP. Antes de buscar, checa a cobertura: SEM_COBERTURA registra fora de cobertura e devolve a mensagem de fora de área; MATRIZ orienta transferir; sem cidade/CEP pede cidade e bairro. Só busca em DISTRIBUIDORA; sempre confirme o candidato com o lead.",
+    description: "Localiza estabelecimento por nome + cidade ou CEP. Antes de buscar, checa a cobertura: SEM_COBERTURA registra fora de cobertura e devolve a mensagem de fora de área; MATRIZ orienta transferir. Sem cidade/CEP busca pelo nome só dentro da área de cobertura (busca_sem_cidade=true, até 3 candidatos com cidade) e só pede cidade e bairro (ou CEP) quando não acha nada na cobertura. Só busca em DISTRIBUIDORA; sempre confirme o candidato com o lead.",
     parameters: { type: "object", required: ["nome"], properties: {
       nome: { type: "string", maxLength: 200 }, cidade: { type: "string", maxLength: 120 },
       bairro: { type: "string", maxLength: 120 }, cep: { type: "string" },
@@ -3573,7 +3744,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Parcial/nenhuma retorna encontrado=false, produtos=[], similares (até 3) e mensagem_para_lead informando que a NitsClean não trabalha com o produto citado — use-a; nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (banheiro, rejunte, limo, azulejo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial/nenhuma/necessidade retornam produtos=[], similares (até 3) e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {

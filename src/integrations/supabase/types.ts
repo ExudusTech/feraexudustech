@@ -3332,6 +3332,135 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261111_dispenser_families: {
+        Row: {
+          code: string | null
+          created_at: string | null
+          description: string | null
+          id: string | null
+          is_active: boolean | null
+          name: string | null
+          organization_id: string | null
+          sort_order: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          organization_id?: string | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          code?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          organization_id?: string | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      backup_20261111_products: {
+        Row: {
+          brand: string | null
+          category: string | null
+          codigo_fabricante: string | null
+          compatible_dispenser_families: string[] | null
+          cost: number | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dispenser_family_id: string | null
+          disponibilidade: string | null
+          disponivel_comodato: boolean | null
+          fornecedor: string | null
+          fotos_referencia: Json | null
+          id: string | null
+          image_url: string | null
+          is_active: boolean | null
+          is_dispenser: boolean | null
+          linha_produto: string | null
+          min_stock: number | null
+          name: string | null
+          organization_id: string | null
+          pode_enviar_foto_cliente: boolean | null
+          price: number | null
+          sku: string | null
+          specifications: Json | null
+          stock: number | null
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          codigo_fabricante?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponibilidade?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          fotos_referencia?: Json | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          pode_enviar_foto_cliente?: boolean | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          codigo_fabricante?: string | null
+          compatible_dispenser_families?: string[] | null
+          cost?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dispenser_family_id?: string | null
+          disponibilidade?: string | null
+          disponivel_comodato?: boolean | null
+          fornecedor?: string | null
+          fotos_referencia?: Json | null
+          id?: string | null
+          image_url?: string | null
+          is_active?: boolean | null
+          is_dispenser?: boolean | null
+          linha_produto?: string | null
+          min_stock?: number | null
+          name?: string | null
+          organization_id?: string | null
+          pode_enviar_foto_cliente?: boolean | null
+          price?: number | null
+          sku?: string | null
+          specifications?: Json | null
+          stock?: number | null
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string

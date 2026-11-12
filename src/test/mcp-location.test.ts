@@ -133,13 +133,14 @@ describe("MCP establishment location", () => {
     expect(result.data.candidatos).toHaveLength(1);
     expect(result.data.candidatos[0].nome).toBe("Cabo Frio Shopping");
   });
-  it.each([undefined, null])("without city or CEP only asks for them, never searches (%s)", async cidade => {
-    const h = harness();
-    const result = await h.route("localizar_estabelecimento", { nome: "Restaurante Teste", bairro: "Centro", cidade });
+  it.each([undefined, null, "não informado", "Não informado.", "-", ""])("without city or CEP (%s) and nothing in coverage, asks for them", async cidade => {
+    const h = harness({ places: [] });
+    const result = await h.route("localizar_estabelecimento", { nome: "Restaurante Teste", bairro: "Centro", cidade, cep: "não informado" });
     expect(result.data).toMatchObject({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
       mensagem_para_lead: "Me passa a cidade e o bairro (ou o CEP) do estabelecimento?" });
     expect(result.data.mensagem_para_lead).not.toContain("consultor");
-    expect(h.requests).toHaveLength(0);
+    expect(h.requests).toHaveLength(1);
+    expect(JSON.parse(h.requests[0].init.body).textQuery).toBe("Restaurante Teste Centro RJ");
   });
   it("keeps city query unchanged and omits bias", async () => {
     const h = harness(); await h.route("localizar_estabelecimento", input);
@@ -278,5 +279,55 @@ describe("nome genérico", () => {
     expect(h.requests).toHaveLength(0);
     expect((await h.route("localizar_estabelecimento", { nome: "Hotel do Cabo", cidade: "Cabo Frio" })).data.precisa_nome).toBeUndefined();
     expect(h.requests).toHaveLength(1);
+  });
+});
+
+describe("localizar_estabelecimento sem cidade (Peixaria Biju, 11/11)", () => {
+  const comp = (cidade: string, cep: string, uf = "RJ") => [{ types: ["route"], longText: "Rua Peroba" }, { types: ["street_number"], longText: "60" },
+    { types: ["sublocality_level_1"], longText: "Santo Antônio" }, { types: ["administrative_area_level_2"], longText: cidade },
+    { types: ["administrative_area_level_1"], longText: uf === "RJ" ? "Rio de Janeiro" : uf, shortText: uf }, { types: ["postal_code"], longText: cep }];
+  const biju = { id: "biju", displayName: { text: "Peixaria Biju" }, formattedAddress: "R. Peroba, 60 - Santo Antônio, Cabo Frio - RJ, 28909-000",
+    location: { latitude: -22.87, longitude: -42.03 }, googleMapsUri: "https://maps.google.com/?cid=9", addressComponents: comp("Cabo Frio", "28909-000") };
+  const params = { nome: "Peixaria Biju", cidade: "não informado", bairro: "não informado", cep: "não informado", chat_id: "3DF9D839DDCF463A3A350ADF91C40B89-5522988578479" };
+  it("busca pelo nome na cobertura e confirma com rua e cidade", async () => {
+    const h = harness({ places: [biju] });
+    const r = await h.route("localizar_estabelecimento", params);
+    expect(r.data).toMatchObject({ encontrado: true, busca_sem_cidade: true, cobertura: "DISTRIBUIDORA", precisa_confirmar: true,
+      candidatos: [{ nome: "Peixaria Biju", cidade: "Cabo Frio", bairro: "Santo Antônio", cep: "28909-000", regiao: "Cabo Frio", place_id: "biju" }] });
+    expect(r.data.mensagem_para_lead).toBe("É a Peixaria Biju da R. Peroba, 60, em Cabo Frio?");
+    const body = JSON.parse(h.requests[0].init.body);
+    expect(body.textQuery).toBe("Peixaria Biju RJ");
+    expect(body.locationBias.rectangle).toBeTruthy();
+    expect(h.queries.some((q: any) => q.table === "ekkoa_coverage_areas" && q.filters.some((f: any[]) => f[1] === "organization_id" && f[2] === org))).toBe(true);
+  });
+  it("tira a cidade repetida do nome do Google na mensagem", async () => {
+    const r = await harness({ places: [{ ...biju, displayName: { text: "Peixaria Biju Cabo Frio" } }] }).route("localizar_estabelecimento", params);
+    expect(r.data.candidatos[0].nome).toBe("Peixaria Biju Cabo Frio");
+    expect(r.data.mensagem_para_lead).toBe("É a Peixaria Biju da R. Peroba, 60, em Cabo Frio?");
+  });
+  it("só acha fora da cobertura → pede cidade e bairro (ou CEP)", async () => {
+    const niteroi = { ...biju, id: "nit", addressComponents: comp("Niterói", "24220-000") };
+    const r = await harness({ places: [niteroi] }).route("localizar_estabelecimento", params);
+    expect(r.data).toMatchObject({ encontrado: false, precisa_localizacao: true, candidatos: [] });
+    expect(r.data.mensagem_para_lead).toBe("Me passa a cidade e o bairro (ou o CEP) do estabelecimento?");
+  });
+  it("nome parecido não conta como achado", async () => {
+    const outro = { ...biju, id: "x", displayName: { text: "Peixaria do Porto" } };
+    const r = await harness({ places: [outro] }).route("localizar_estabelecimento", params);
+    expect(r.data.precisa_localizacao).toBe(true);
+  });
+  it("vários na cobertura → lista numerada com cidade (até 3)", async () => {
+    const buzios = { ...biju, id: "bz", formattedAddress: "Rua Peroba, 60, Búzios", addressComponents: comp("Armação dos Búzios", "28950-100") };
+    const r = await harness({ places: [biju, buzios, { ...biju, id: "es", addressComponents: comp("Vitória", "29000-000", "ES") }] }).route("localizar_estabelecimento", params);
+    expect(r.data.candidatos.map((c: any) => c.place_id)).toEqual(["biju", "bz"]);
+    expect(r.data.mensagem_para_lead).toContain("1. Peixaria Biju — R. Peroba, 60, Cabo Frio");
+    expect(r.data.mensagem_para_lead).toContain("2. Peixaria Biju — R. Peroba, 60, Armação dos Búzios");
+  });
+  it("sem chave do Google ou nome genérico → pede cidade sem buscar", async () => {
+    const h = harness({ places: [biju], noKey: true });
+    expect((await h.route("localizar_estabelecimento", params)).data.precisa_localizacao).toBe(true);
+    const g = harness({ places: [biju] });
+    expect((await g.route("localizar_estabelecimento", { nome: "restaurante" })).data.precisa_nome).toBe(true);
+    expect(g.requests).toHaveLength(0);
   });
 });
