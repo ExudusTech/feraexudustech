@@ -94,14 +94,15 @@ function authenticate(req: Request): boolean {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const EMPTY_PARAM_VALUES = new Set([
-  "nao informado", "nao informada", "n/a", "na", "-", "nenhum", "nenhuma",
-  "null", "undefined", "desconhecido", "sem", "",
+  "nao informado", "nao informada", "nao informou", "nao sei", "sem informacao", "n/a", "n/i", "na", "-", "--", "?",
+  "nenhum", "nenhuma", "null", "undefined", "desconhecido", "indefinido", "sem", "",
 ]);
 
 function normalizeParamValue(value: unknown): unknown {
   if (typeof value === "string") {
     const trimmed = value.trim();
-    const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    // Trailing dots/spaces are ignored ("Não informado." is still absent).
+    const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/(?<=\S)[.\s]+$/, "");
     return EMPTY_PARAM_VALUES.has(comparable) || /^\{\{[^{}]*\}\}$/.test(trimmed) ? null : value;
   }
   if (Array.isArray(value)) return value.map(normalizeParamValue);
@@ -2122,6 +2123,54 @@ function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Reco
   return out;
 }
 
+// Need/ambiente words → product text (category, name, description, segments) that solves it.
+// Order = priority for the lead message; alvo patterns are strongest first (used for ranking).
+const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: string }[] = [
+  { termo: /^(rejunt\w*|limo|limos[ao]|bolor\w*|mofo\w*|encardid\w*|azulej\w*|ceramic\w*|porcelanat\w*|incrust\w*|calcari\w*|crostas?|ferrugem|manchad[oa]s?)$/,
+    alvo: [/desincrust/, /acido/, /limpeza pesada|limpador em creme/], assunto: "limpeza pesada de rejunte, limo e encardido", marca: "diversey" },
+  { termo: /^(gordur\w*|engordurad\w*|oleos?|graxas?|chapas?|fornos?|fogao|fogoes|coifas?|exaustor\w*)$/,
+    alvo: [/desengordur|chapas e fornos/, /desengrax/, /limpeza pesada/], assunto: "remover gordura", marca: "diversey" },
+  { termo: /^(banheir\w*|sanitari\w*|vasos?|privadas?|vestiari\w*|mictori\w*|lavabos?)$/,
+    alvo: [/banheiro|sanitari|mictorio/, /desincrust|acido/], assunto: "limpeza e higiene de banheiros", marca: "diversey" },
+  { termo: /^(pisos?|chao)$/, alvo: [/piso/, /limpeza pesada|uso geral/], assunto: "limpeza de pisos", marca: "diversey" },
+  { termo: /^(cozinh\w*|loucas?|panelas?)$/, alvo: [/cozinha/, /louca|desengordur/], assunto: "limpeza de cozinha", marca: "diversey" },
+  { termo: /^(vidros?|janelas?|espelhos?|vitrine\w*)$/, alvo: [/vidro/], assunto: "limpeza de vidros" },
+  { termo: /^(papel|papeis|toalh\w*|guardanap\w*|higienic\w*|dispenser\w*|papeleira\w*|suportes?)$/,
+    alvo: [/dispenser|papel|toalha|guardanapo/], assunto: "papel e dispensers" },
+  { termo: /^(maos?|sabonet\w*|alcool|antissep\w*)$/, alvo: [/sabonete|lavagem de maos|antissepsia|alcool/], assunto: "higiene das mãos" },
+  { termo: ODOR_WORD, alvo: [ODOR_CATEGORY], assunto: "controle de odores e aromatização", marca: "ekkoa" },
+  { termo: /^(ambientes?|salas?|recepca\w*|escritori\w*|halls?|quartos?)$/, alvo: [/recepc|escritorio|areas publicas/, /uso geral/], assunto: "limpeza dos ambientes", marca: "diversey" },
+];
+const MSG_SOLUCAO = "Temos solução profissional para isso; o consultor avalia no local e indica o produto certo.";
+const mensagemSolucao = (assunto?: string | null) => assunto
+  ? `Temos solução profissional para ${assunto}; o consultor avalia no local e indica o produto certo.` : MSG_SOLUCAO;
+const needText = (p: Record<string, unknown>) =>
+  [p.category, p.name, p.description].map(foldProductText).join(" ") + " " + productSegments(p).join(" ");
+/** Up to 3 products for the need words of a term (rejunte/limo → desincrustantes Diversey), best score first, varied. */
+function produtosPorNecessidade(products: Array<Record<string, unknown>>, words: string[]) {
+  const rules = PRODUCT_NEEDS.filter(rule => words.some(w => rule.termo.test(w)));
+  if (!rules.length) return null;
+  const scored = products.map(p => {
+    const text = needText(p);
+    let score = 0;
+    rules.forEach((rule, r) => {
+      const i = rule.alvo.findIndex(re => re.test(text));
+      if (i >= 0) score += (rules.length - r) * 10 + (rule.alvo.length - i);
+    });
+    const brand = foldProductText(p.brand);
+    return { p, score, marca: rules.some(rule => rule.marca && brand === rule.marca) };
+  }).filter(x => x.score > 0).sort((a, b) => b.score - a.score || Number(b.marca) - Number(a.marca));
+  const top = scored.length ? scored[0].score : 0;
+  const best = pickVaried(scored.filter(x => x.score === top).map(x => x.p), 3);
+  for (const x of scored) if (best.length < 3 && !best.includes(x.p)) best.push(x.p);
+  return { assunto: rules[0].assunto, produtos: best };
+}
+/** Subject shared by every suggestion (all aromatizadores → odores), for the lead message. */
+function assuntoDasSugestoes(list: Array<Record<string, unknown>>): string | null {
+  if (!list.length) return null;
+  return PRODUCT_NEEDS.find(rule => list.every(p => rule.alvo.some(re => re.test(needText(p)))))?.assunto ?? null;
+}
+
 async function consultarProduto(params: Record<string, unknown>): Promise<McpResponse> {
   const termo = productSearchText(params.termo) ?? productSearchText(params.nome);
   const categoria = productSearchText(params.categoria);
@@ -2202,7 +2251,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     }
   }
   // 3. Description/category/segment matches are never "total" and never send images.
-  let correspondencia: "parcial" | "nenhuma" = "parcial";
+  let correspondencia: "parcial" | "nenhuma" | "necessidade" = "parcial";
   let found = products;
   if (words.length) {
     const wide = sigWords.filter((w) => w.length >= 3);
@@ -2216,6 +2265,14 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
         const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
         if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
+      // 3b. Need/ambiente words (rejunte, limo, azulejo, piso, cozinha, gordura, odor…) → up to 3 suggestions.
+      const need = produtosPorNecessidade(products, sigWords);
+      if (need?.produtos.length) {
+        const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
+        return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
+          similares: need.produtos.map((p) => fmt(p, urls)), necessidade: need.assunto,
+          mensagem_para_lead: mensagemSolucao(need.assunto), imagem_enviada: false } };
+      }
       found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
       correspondencia = "parcial";
     }
@@ -2224,18 +2281,10 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   }
   if (!found.length) correspondencia = "nenhuma";
   const alternatives = found.length ? found : products.filter(matchesCategory);
-  const similares = rankByCategory(alternatives).slice(0, 3).map((p) => fmt(p, new Map()));
-  let mensagem = `A NitsClean Distribuidora não trabalha com o ${produtoCitado ?? "produto informado"}.`;
-  const cats: string[] = [];
-  const seen = new Set<string>();
-  for (const s of similares) {
-    const c = typeof s.categoria === "string" ? s.categoria.trim() : "";
-    if (c && !seen.has(foldProductText(c))) { seen.add(foldProductText(c)); cats.push(c); }
-  }
-  if (similares.length) {
-    const lista = cats.length ? (cats.length === 1 ? cats[0] : `${cats.slice(0, -1).join(", ")} e ${cats[cats.length - 1]}`) : "produtos";
-    mensagem += ` Temos opções de ${lista} que podem atender a mesma necessidade.`;
-  }
+  const sugestoes = rankByCategory(alternatives).slice(0, 3);
+  const similares = sugestoes.map((p) => fmt(p, new Map()));
+  // Never tell the lead we do not carry/work with something: always offer the professional solution.
+  const mensagem = mensagemSolucao(assuntoDasSugestoes(sugestoes));
   return { success: true, data: { encontrado: false, correspondencia, produto_citado: produtoCitado, produtos: [], similares, mensagem_para_lead: mensagem, imagem_enviada: false } };
 }
 
