@@ -49,19 +49,25 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
   const { data, refetch } = useQuery({
     queryKey: ["checklist", scheduleId],
     queryFn: async () => {
-      const [pts, avs, ocs] = await Promise.all([
+      const [pts, avs, ocs, sch] = await Promise.all([
         (supabase as any).from("comodatos").select("id, localizacao_interna, status, quantidade, estado_atual, product_id, refil_product_id, etiqueta_numero").eq(clientId ? "client_id" : "lead_id", clientId ?? leadId).order("created_at"),
         (supabase as any).from("schedule_evidencias").select("comodato_id, estado, itens, precisa_substituir").eq("schedule_id", scheduleId).not("estado", "is", null),
         (supabase as any).from("maintenance_schedule").select("id, comodato_id, item_descricao, quantidade, urgente, status").eq("client_id", clientId ?? "00000000-0000-0000-0000-000000000000").eq("tipo_os", "substituicao").in("status", ["agendada", "em_andamento"]),
+        (supabase as any).from("schedules").select("aparelhos_previstos").eq("id", scheduleId).maybeSingle(),
       ]);
       const pontos = ((pts.data ?? []) as any[]).filter((p) => ["ATIVO", "EM_TESTE"].includes((p.status ?? "ATIVO").toUpperCase()));
-      return { pontos, avaliacoes: (avs.data ?? []) as any[], ocorrencias: (ocs.data ?? []) as any[] };
+      return { pontos, avaliacoes: (avs.data ?? []) as any[], ocorrencias: (ocs.data ?? []) as any[], previstos: ((sch.data?.aparelhos_previstos ?? []) as string[]) };
     },
   });
   const pontos = data?.pontos ?? [];
   const avaliados = (data?.avaliacoes ?? []).map((a) => a.comodato_id);
-  const pend = pontosPendentes(pontos, avaliados).length;
-  useEffect(() => { onPendingChange?.(pend, pontos.length); }, [pend, pontos.length, onPendingChange]);
+  // Concentrated revisit: the visit lists the devices due in it; the other points stay available but optional.
+  const previstos = (data?.previstos ?? []).filter((id) => pontos.some((p) => p.id === id));
+  const vencem = previstos.length ? pontos.filter((p) => previstos.includes(p.id)) : pontos;
+  const outros = previstos.length ? pontos.filter((p) => !previstos.includes(p.id)) : [];
+  const [verOutros, setVerOutros] = useState(false);
+  const pend = pontosPendentes(pontos, avaliados, previstos).length;
+  useEffect(() => { onPendingChange?.(pend, vencem.length); }, [pend, vencem.length, onPendingChange]);
   const nameOf = (id?: string | null) => products.find((p) => p.id === id)?.name;
   const { data: signed } = useProductImageUrls(pontos.map((p) => products.find((x) => x.id === p.product_id)?.image_url));
   const imageOf = (id?: string | null) => { const path = products.find((p) => p.id === id)?.image_url; return path ? (signed as any)?.[path] ?? null : null; };
@@ -104,12 +110,19 @@ export default function PointChecklist({ scheduleId, orgId, clientId, leadId, on
     <section id="visita-pontos" className="space-y-3 rounded-lg border p-3 scroll-mt-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">Pontos do cliente</h3>
-        <Badge variant={pend ? "outline" : "default"}>{pontos.length - pend}/{pontos.length} avaliados</Badge>
+        <Badge variant={pend ? "outline" : "default"}>{vencem.length - pend}/{vencem.length} avaliados</Badge>
       </div>
       <EtiquetaNaVisita scheduleId={scheduleId} orgId={orgId} clientId={clientId} leadId={leadId} onChanged={() => { refetch(); qc.invalidateQueries({ queryKey: ["comodatos"] }); }}
         onAvaliar={(id) => { startEval(id); setTimeout(() => document.getElementById(`ponto-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
       {!pontos.length && <p className="text-xs text-muted-foreground">Nenhum ponto cadastrado. Adicione os pontos instalados neste cliente.</p>}
-      {pontos.map((p) => {
+      {previstos.length > 0 && <p className="text-xs font-medium text-primary">Aparelhos que vencem nesta visita ({vencem.length})</p>}
+      {vencem.map((p) => renderPonto(p))}
+      {outros.length > 0 && <>
+        <Button type="button" variant="ghost" size="sm" className="w-full min-h-11 h-auto whitespace-normal" onClick={() => setVerOutros((v) => !v)}>
+          {verOutros ? "Ocultar" : "Ver"} outros pontos ({outros.length}) — não vencem nesta visita</Button>
+        {verOutros && outros.map((p) => renderPonto(p))}
+      </>}
+      {false && pontos.map((p) => {
         const av = data?.avaliacoes.find((a) => a.comodato_id === p.id);
         const ocs = (data?.ocorrencias ?? []).filter((o) => o.comodato_id === p.id);
         return (
