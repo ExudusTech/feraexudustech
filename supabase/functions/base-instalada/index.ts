@@ -2,7 +2,7 @@
 // maintenance_schedule (replacement work orders and urgent requests). No parallel tables.
 // Every write first reads the target with the caller's own access (RLS), then writes with the service role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { acaoRevisitaErro, avaliacaoErro, enderecoImportado, ESTADO_LABEL, MANUTENCOES_ACEITAS, OCORRENCIA_ATIVACAO, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo, type ImportRow } from "../_shared/base-instalada.ts";
+import { acaoRevisitaErro, areaDoCliente, avaliacaoErro, enderecoImportado, ESTADO_LABEL, MANUTENCOES_ACEITAS, OCORRENCIA_ATIVACAO, ocorrenciaUrgenteMessage, parseImportRows, pontoErro, podeGravarLocalizacao, statusPontoNovo, type ImportRow } from "../_shared/base-instalada.ts";
 import { addDias, ERRO_SEM_ROTA, maxPorDiaValido, planejarAtivacoes, type LinhaAtivacao } from "../_shared/ativacao.ts";
 const AVISO_SEM_ROTA = "Cidade sem rota cadastrada: não gera visita automática, fica em \"Aguardando data\"";
 import { googleOcupado } from "../_shared/google-calendar.ts";
@@ -13,7 +13,6 @@ import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APAR
 import { qtdAparelhos } from "../_shared/estoque.ts";
 import { agendaDataErro, agendaDoPlano, proximaPassagem } from "../_shared/revisita.ts";
 import { agendarRevisitaCliente, contextoRevisita, hojeSP } from "../_shared/revisita-agendar.ts";
-import { areaDoCliente } from "../_shared/base-instalada.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });

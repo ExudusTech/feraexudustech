@@ -6,6 +6,8 @@ import { areaDoCliente, cidadeChave, parseDiaSemana, type AreaRota } from "./bas
 
 export const MAX_ATIVACOES_DIA = 8;
 export const HORIZONTE_ATIVACAO = 90;
+/** City without a registered route: no automatic visit, the client waits in "Aguardando data". */
+export const ERRO_SEM_ROTA = "Cidade sem rota cadastrada: fica em \"Aguardando data\"";
 
 export interface ClienteAtivacao { id: string; nome: string; cidade?: string | null; cep?: string | null }
 export interface AreaAtivacao extends AreaRota { horario_inicio?: string | null; horario_fim?: string | null }
@@ -38,7 +40,7 @@ export function planejarAtivacoes(i: PlanoAtivacaoInput): LinhaAtivacao[] {
   comArea.sort((a, b) => (a.area?.name ?? "~").localeCompare(b.area?.name ?? "~", "pt-BR") || a.c.nome.localeCompare(b.c.nome, "pt-BR"));
   return comArea.map(({ c, area }) => {
     const base = { client_id: c.id, nome: c.nome, cidade: c.cidade ?? null, regiao: area?.name ?? null };
-    if (!area) return { ...base, erro: "Cidade sem região de rota cadastrada" };
+    if (!area) return { ...base, erro: ERRO_SEM_ROTA };
     const cidade = cidadeChave(c.cidade);
     const feriado = (d: string) => (i.feriados ?? []).some((h) => h.date === d && (!h.city || cidadeChave(h.city) === cidade));
     const slot = primeiroSlotLivre({ from: i.desde, rota: parseDiaSemana(area.dia_semana), inicio: area.horario_inicio, fim: area.horario_fim, duracao: dur,
