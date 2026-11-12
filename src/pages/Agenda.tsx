@@ -342,7 +342,7 @@ export default function Agenda() {
             </TabsList>
           </Tabs>
 
-          <div className={cn("grid sm:flex items-center gap-1 w-full sm:w-auto sm:ml-auto border rounded-lg p-0.5", isMobile ? "grid-cols-4" : "grid-cols-3")}>
+          <div className={cn("grid sm:flex items-center gap-1 w-full sm:w-auto sm:ml-auto border rounded-lg p-0.5 [&>button]:max-sm:h-auto [&>button]:max-sm:min-h-11 [&>button]:max-sm:flex-col [&>button]:max-sm:gap-0.5 [&>button]:max-sm:px-1 [&>button]:max-sm:py-1.5 [&>button]:max-sm:text-xs [&_svg]:max-sm:mr-0", isMobile ? "grid-cols-4" : "grid-cols-3")}>
             {isMobile && (
               <Button variant={displayMode === "hoje" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("hoje")}>
                 <CalendarDays className="h-4 w-4 mr-1" /> Hoje
@@ -352,7 +352,7 @@ export default function Agenda() {
               <List className="h-4 w-4 mr-1" /> Lista
             </Button>
             <Button variant={displayMode === "calendario" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("calendario")}>
-              <Calendar className="h-4 w-4 mr-1" /> <span className="sm:hidden">Mês</span><span className="hidden sm:inline">Calendário</span>
+              <Calendar className="h-4 w-4 mr-1" /> Calendário
             </Button>
             <Button variant={displayMode === "mapa" ? "default" : "ghost"} size="sm" onClick={() => setDisplayMode("mapa")}>
               <MapIcon className="h-4 w-4 mr-1" /> Mapa
