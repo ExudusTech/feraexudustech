@@ -192,6 +192,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     if (pm) { toast({ title: "Ativação encerrada", description: `Próxima manutenção: ${pm.data.split("-").reverse().join("/")} às ${pm.hora} (a cada ${pm.dias} dias)` }); return; }
     const rv = (r as any).revisita as { status: string; data?: string | null; aparelhos?: string[]; codigo?: string | null } | null | undefined;
     if (rv?.status === "aguardando_data") { toast({ title: "Visita encerrada", description: "Cliente atendido por data (fora da rota): o gestor define a próxima data." }); return; }
+    if (rv?.data && rv.status === "mantida") { toast({ title: "Visita encerrada", description: `Próxima visita já marcada: ${rv.data.split("-").reverse().join("/")}` }); return; }
     if (rv?.data && ["agendada", "anexada", "reagendada"].includes(rv.status)) {
       toast({ title: "Visita encerrada", description: `Próxima revisita: ${rv.data.split("-").reverse().join("/")} — ${rv.aparelhos?.length ?? 0} aparelho(s) vencem nela${rv.status === "anexada" ? " (junto com a visita já marcada)" : ""}` });
       return;
