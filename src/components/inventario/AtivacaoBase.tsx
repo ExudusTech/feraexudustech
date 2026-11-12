@@ -52,8 +52,8 @@ export function ImportarCarteiraDialog({ open, onOpenChange, onDone, onAtivar }:
     setPrevia(r.linhas);
   });
   const gravar = () => run(async () => {
-    const r = await baseAction<{ criados: number; client_ids: string[]; linhas: ImportRow[] }>({ action: "importar", rows });
-    setResult(r); onDone(); toast({ title: `${r.criados} cliente(s) importado(s)`, description: "Endereços sendo localizados no mapa." });
+    const r = await baseAction<{ criados: number; aguardando_data?: number; client_ids: string[]; linhas: ImportRow[] }>({ action: "importar", rows });
+    setResult(r); onDone(); toast({ title: `${r.criados} cliente(s) importado(s)`, description: `Endereços sendo localizados no mapa.${r.aguardando_data ? ` ${r.aguardando_data} de cidade sem rota: ficam em "Aguardando data".` : ""}` });
   });
   const linhas = result?.linhas ?? previa ?? [];
   const novos = linhas.filter((l) => !l.erro).length;

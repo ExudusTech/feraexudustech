@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MapContainer, TileLayer, CircleMarker, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import { CalendarPlus, Download, Upload, QrCode, Search } from "lucide-react";
+import { CalendarClock, CalendarPlus, Download, Upload, QrCode, Search } from "lucide-react";
 import { AtivacaoDialog, ImportarCarteiraDialog } from "@/components/inventario/AtivacaoBase";
+import { AguardandoDataDialog, useAguardandoData } from "@/components/inventario/AgendaPorData";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
@@ -55,6 +56,8 @@ export default function InstalledBasePanel() {
   const [importOpen, setImportOpen] = useState(false);
   const [ativOpen, setAtivOpen] = useState(false); const [ativIds, setAtivIds] = useState<string[] | undefined>(undefined);
   const navigate = useNavigate();
+  const [aguardOpen, setAguardOpen] = useState(false);
+  const { data: aguardando = [] } = useAguardandoData(isManager);
   const [busca, setBusca] = useState(""); const [scan, setScan] = useState(false);
   const abrirNumero = (n: number | null) => { if (n) navigate(`/aparelho/${formatEtiqueta(n)}`); else toast({ title: "Digite o número da etiqueta", variant: "destructive" }); };
 
@@ -112,6 +115,7 @@ export default function InstalledBasePanel() {
           <Download className="h-4 w-4 mr-2" />Exportar</Button>
         {isManager && <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="h-4 w-4 mr-2" />Importar clientes</Button>}
         {isManager && <Button variant="outline" onClick={() => { setAtivIds(undefined); setAtivOpen(true); }}><CalendarPlus className="h-4 w-4 mr-2" />Gerar visitas de ativação</Button>}
+        {isManager && <Button variant="outline" onClick={() => setAguardOpen(true)}><CalendarClock className="h-4 w-4 mr-2" />Aguardando data{aguardando.length ? ` (${aguardando.length})` : ""}</Button>}
       </div>
       <div className="h-[360px] rounded-lg overflow-hidden border">
         <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
@@ -139,9 +143,10 @@ export default function InstalledBasePanel() {
         </Table>
       </div>
       <ClientBaseDialog client={open} open={!!open} onOpenChange={(o) => !o && setOpen(null)} />
-      <ImportarCarteiraDialog open={importOpen} onOpenChange={setImportOpen} onDone={() => { qc.invalidateQueries({ queryKey: ["installed-base"] }); qc.invalidateQueries({ queryKey: ["clients"] }); qc.invalidateQueries({ queryKey: ["ativacao-candidatos"] }); }}
+      <ImportarCarteiraDialog open={importOpen} onOpenChange={setImportOpen} onDone={() => { qc.invalidateQueries({ queryKey: ["installed-base"] }); qc.invalidateQueries({ queryKey: ["clients"] }); qc.invalidateQueries({ queryKey: ["ativacao-candidatos"] }); qc.invalidateQueries({ queryKey: ["aguardando-data"] }); }}
         onAtivar={(ids) => { setImportOpen(false); setAtivIds(ids); setAtivOpen(true); }} />
       <AtivacaoDialog open={ativOpen} onOpenChange={setAtivOpen} preselecionados={ativIds} />
+      <AguardandoDataDialog open={aguardOpen} onOpenChange={setAguardOpen} />
     </div>
   );
 }
