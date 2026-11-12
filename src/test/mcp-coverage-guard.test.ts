@@ -124,10 +124,12 @@ describe("covered and Matriz cities", () => {
     const rota = await h.route("consultar_rota_consultor", { cidade });
     expect(rota.data).toMatchObject({ coberto: false, vinculo: "MATRIZ", opcoes_horario: [] });
   });
-  it("without city or CEP asks only for city and bairro", async () => {
+  it("without city or CEP searches the name only inside coverage and confirms", async () => {
     const h = harness();
     const r = await h.route("localizar_estabelecimento", { nome: "Pousada 7 Mares", chat_id: CHAT });
-    expect(r.data.mensagem_para_lead).toBe("Me passa a cidade e o bairro (ou o CEP) do estabelecimento?");
-    expect(h.requests).toHaveLength(0);
+    expect(r.data).toMatchObject({ encontrado: true, busca_sem_cidade: true, cobertura: "DISTRIBUIDORA" });
+    expect(r.data.mensagem_para_lead).toBe("É a Pousada 7 Mares da R. das Pedras, 10, em Armação dos Búzios?");
+    expect(h.requests).toHaveLength(1);
+    expect(JSON.stringify(h.writes())).not.toContain("SEM_COBERTURA");
   });
 });

@@ -22,6 +22,9 @@ const catalog = [
   { id: "ek2", name: "REFIL BALI OCEAN 80ML", brand: "EKKOA", category: "Neutralizadores", fornecedor: "EKKOA", unit: "UN", description: "Neutraliza odores" },
   { id: "bs", name: "ACRIL PROX B", brand: "DIVERSEY", category: "Base seladora", fornecedor: "DIVERSEY", unit: "UN", description: "Base seladora. Indicado para: Escritórios e salas, ambientes internos" },
   { id: "cx", name: "CLAX ANTI CHLOR", brand: "DIVERSEY", category: "Neutralizantes", fornecedor: "DIVERSEY", unit: "UN", description: "Neutralizante de cloro" },
+  { id: "dr", name: "DRASTIC W4C", brand: "DIVERSEY", category: "Detergente ácido", fornecedor: "DIVERSEY", unit: "UN", description: "Detergente desincrustante desinfetante ácido. Indicado para: Banheiros e vestiários." },
+  { id: "sc5", name: "SUMA CALC D5", brand: "DIVERSEY", category: "Desincrustante", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente desincrustante ácido para remoção de incrustações inorgânicas. Indicado para: Cozinhas." },
+  { id: "ac", name: "LIMPADOR ACIDO PISO SHOCK 5L", brand: "OLEAK", category: "Limpadores", fornecedor: null, unit: "UN", description: null },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -53,7 +56,8 @@ describe("consultar_produto", () => {
     const r = await harness().route("consultar_produto", { termo: "Solv Fresh", ...(categoria === undefined ? {} : { categoria }) });
     expect(r.data.encontrado).toBe(false);
     expect(r.data.produtos).toEqual([]);
-    expect(r.data.mensagem_para_lead).toContain("não trabalha com o Solv Fresh.");
+    expect(r.data.mensagem_para_lead).not.toMatch(/não trabalha|não temos|nao trabalha/i);
+    expect(r.data.mensagem_para_lead).toContain("o consultor avalia no local e indica o produto certo.");
   });
   it("brand match is not excluded by an unrelated category", async () => {
     const r = await harness().route("consultar_produto", { termo: "Diversey", categoria: "limpeza profissional para cozinhas" });
@@ -76,8 +80,7 @@ describe("consultar_produto", () => {
     const r = await harness().route("consultar_produto", { termo: "Solv Fresh" });
     expect(r.data.encontrado).toBe(false); expect(r.data.produtos).toEqual([]);
     expect(r.data.produto_citado).toBe("Solv Fresh");
-    expect(r.data.mensagem_para_lead.startsWith("A NitsClean Distribuidora não trabalha com o Solv Fresh.")).toBe(true);
-    expect(r.data.mensagem_para_lead).toContain("Temos opções de Aromatizador");
+    expect(r.data.mensagem_para_lead).toBe("Temos solução profissional para controle de odores e aromatização; o consultor avalia no local e indica o produto certo.");
     expect(r.data.similares.map((p: any) => p.id)).toContain("4");
     expect(r.next_action_hint).toBeUndefined(); expect(r.message).toBeUndefined();
   });
@@ -90,7 +93,7 @@ describe("consultar_produto", () => {
   it("no match at all has empty similares and plain message", async () => {
     const r = await harness().route("consultar_produto", { termo: "Xyzabc" });
     expect(r.data.similares).toEqual([]);
-    expect(r.data.mensagem_para_lead).toBe("A NitsClean Distribuidora não trabalha com o Xyzabc.");
+    expect(r.data.mensagem_para_lead).toBe("Temos solução profissional para isso; o consultor avalia no local e indica o produto certo.");
   });
   it.each(["alcool gel", "ÁLCOOL GEL", "álcool gel"])("accent/case-insensitive: %s", async termo => {
     const r = await harness().route("consultar_produto", { termo });
@@ -219,5 +222,32 @@ describe("consultar_produto — smell synonyms go to aromatização/neutralizaç
     const r = await harness().route("consultar_produto", { termo: "cheiro" });
     expect(r.data.produtos.length).toBeGreaterThan(0);
     expect(r.data.produtos.every((p: any) => /aromat|neutralizador/i.test(p.categoria))).toBe(true);
+  });
+});
+
+describe("consultar_produto — necessidade e mensagem de solução", () => {
+  it("limpa rejunte → necessidade com desincrustantes Diversey e mensagem de solução", async () => {
+    const r = await harness().route("consultar_produto", { termo: "limpa rejunte" });
+    expect(r.data).toMatchObject({ encontrado: false, correspondencia: "necessidade", produtos: [] });
+    const ids = r.data.similares.map((p: any) => p.id);
+    expect(ids.length).toBeLessThanOrEqual(3);
+    expect(ids.slice(0, 2).sort()).toEqual(["dr", "sc5"]);
+    expect(r.data.similares[0].marca).toBe("DIVERSEY");
+    expect(r.data.mensagem_para_lead).toBe("Temos solução profissional para limpeza pesada de rejunte, limo e encardido; o consultor avalia no local e indica o produto certo.");
+  });
+  it.each([["limo no azulejo", "dr"], ["tirar gordura da coifa", "d1"], ["algo pro rejunte do banheiro", "dr"]])("%s → necessidade", async (termo, id) => {
+    const r = await harness().route("consultar_produto", { termo });
+    expect(r.data.correspondencia).toBe("necessidade");
+    expect(r.data.similares[0].id).toBe(id);
+    expect(r.data.similares.length).toBeLessThanOrEqual(3);
+  });
+  it.each(["Solv Fresh", "Xyzabc", "limpa rejunte", "lysoform perfumado"])("nunca diz que não trabalhamos/temos: %s", async termo => {
+    const r = await harness().route("consultar_produto", { termo });
+    expect(r.data.mensagem_para_lead).not.toMatch(/n[aã]o (trabalha|trabalhamos|temos|tem)\b/i);
+  });
+  it("produto nomeado continua total (necessidade não atropela nome)", async () => {
+    const r = await harness().route("consultar_produto", { termo: "Drastic W4C" });
+    expect(r.data.correspondencia).toBe("total");
+    expect(r.data.produtos.map((p: any) => p.id)).toEqual(["dr"]);
   });
 });
