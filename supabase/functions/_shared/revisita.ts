@@ -65,9 +65,8 @@ export function proximaPassagem(a: AgendaCliente, desde: string, bloqueado: (iso
     const n = Math.floor(Number(a.intervalo_dias));
     if (!(n >= 1 && n <= 365)) return null;
     const ancora = a.ancora && /^\d{4}-\d{2}-\d{2}$/.test(a.ancora) ? a.ancora : desde;
-    if (ancora >= desde) return adiante(ancora === desde ? desde : ancora, bloqueado);
+    if (ancora >= desde) return adiante(ancora, bloqueado);
     let d = addDias(ancora, Math.ceil(diasEntre(ancora, desde) / n) * n);
-    // A shifted date could fall before `desde` only if the series point itself is before it; keep moving by N.
     for (let i = 0; i < 60; i++, d = addDias(d, n)) { const x = adiante(d, bloqueado); if (x >= desde) return x; }
     return null;
   }

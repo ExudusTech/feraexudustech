@@ -157,9 +157,11 @@ export function pontoEmUso(status?: string | null): boolean { return STATUS_EM_U
 export function statusPontoNovo(v: { client_id?: string | null; operacao_material?: string | null }): "ATIVO" | "EM_TESTE" {
   return !v.client_id || v.operacao_material === "instalacao_teste" ? "EM_TESTE" : "ATIVO";
 }
-export function pontosPendentes(pontos: { id: string; status?: string | null }[], avaliados: string[]): string[] {
+/** With `previstos` (concentrated revisit: devices due in this visit) only those are required; otherwise every point in use. */
+export function pontosPendentes(pontos: { id: string; status?: string | null }[], avaliados: string[], previstos?: string[] | null): string[] {
   const done = new Set(avaliados);
-  return pontos.filter((p) => pontoEmUso(p.status) && !done.has(p.id)).map((p) => p.id);
+  const alvo = previstos?.length ? new Set(previstos) : null;
+  return pontos.filter((p) => pontoEmUso(p.status) && !done.has(p.id) && (!alvo || alvo.has(p.id))).map((p) => p.id);
 }
 
 export function piorEstado(estados: (string | null | undefined)[]): Estado | null {
