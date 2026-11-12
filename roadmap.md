@@ -127,3 +127,7 @@
 - [x] 3) GPS: localização pelo WhatsApp da Flora libera o check-in dentro do raio; mensagem de bloqueio orienta
 - [x] Testes, publicar funções e app
 - [ ] Conferir logado no celular: tirar as fotos do aparelho e ativar com localização pelo WhatsApp (blocked: sem sessão do PH no ambiente)
+## Visual da operação — parte 1 (12/11)
+- [x] A) Cores por tipo (Agenda, Hoje, listas), legenda, contagem por cor no mês/semana
+- [x] B) Mapa de rotas na Agenda: clientes ativos, visitas do dia, filtro dia/consultor, regiões do dia, trilha real/sugerida, ponto de saída editável
+- [ ] Conferir logado com dados reais (blocked: sem conta do PH no ambiente de testes; conferido com dados de exemplo)
