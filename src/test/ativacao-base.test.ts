@@ -83,7 +83,7 @@ describe("visitas de ativação em lote", () => {
   });
   it("cidade sem região de rota fica de fora com motivo", () => {
     const [l] = planejarAtivacoes({ clientes: [{ id: "x", nome: "Longe", cidade: "Macaé" }], areas, desde: "2026-11-16", ocupados: [] });
-    expect(l.data).toBeUndefined(); expect(l.erro).toMatch(/região/);
+    expect(l.data).toBeUndefined(); expect(l.erro).toMatch(/sem rota cadastrada/);
   });
 });
 

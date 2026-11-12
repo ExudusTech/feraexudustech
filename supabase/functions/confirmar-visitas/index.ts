@@ -5,6 +5,7 @@ import { attemptsFor, CONFIRMACAO_MAX_TENTATIVAS, confirmationDue, confirmationE
 import { humanOpen, teamAlert } from "../_shared/team-alert.ts";
 import { areaDoCliente, manutencaoDoDiaMessage, parseDiaSemana, proximasDatas } from "../_shared/base-instalada.ts";
 import { geocodePending } from "../_shared/geocode.ts";
+import { agendarRevisitaCliente } from "../_shared/revisita-agendar.ts";
 import { FERA_URL, resumoNotasAmanha, tarefaMessage } from "../_shared/prontidao.ts";
 import { idsDemo, semDemo } from "../_shared/demo-guard.ts";
 
@@ -121,9 +122,18 @@ Deno.serve(async () => {
   // Maintenance plans: once a day (06:00–06:15 São Paulo) create the next visits inside each plan's horizon. Unique (plan, date) keeps reruns harmless.
   if (spH === 6 && now.getUTCMinutes() < 15) {
     try {
-      const { data: planos } = await admin.from("planos_manutencao").select("id, organization_id, client_id, frequencia, intervalo_dias, dia_semana, hora_inicio, duracao_min, consultor_id, data_inicio, horizonte_dias, clients(name, city, zip_code, address, latitude, longitude, assigned_user_id)").eq("ativo", true).limit(1000);
+      const { data: planos } = await admin.from("planos_manutencao").select("id, organization_id, client_id, frequencia, intervalo_dias, dia_semana, hora_inicio, duracao_min, consultor_id, data_inicio, horizonte_dias, modo_agenda, clients(name, city, zip_code, address, latitude, longitude, assigned_user_id)").eq("ativo", true).limit(1000);
       const areasPorOrg = new Map<string, any[]>();
       for (const p of planos ?? []) {
+        // Clients with devices: ONE concentrated revisit (route day or the client's own dates), carrying every device due by the next pass.
+        const { count: emUso } = await admin.from("comodatos").select("id", { count: "exact", head: true }).eq("client_id", p.client_id).eq("organization_id", p.organization_id).in("status", ["ATIVO", "EM_TESTE"]);
+        if (emUso) {
+          const r = await agendarRevisitaCliente(admin, { org: p.organization_id, clientId: p.client_id }).catch(() => ({ status: "erro" }));
+          if (r.status === "agendada" || r.status === "reagendada" || r.status === "anexada") out.manutencoes_geradas++;
+          continue;
+        }
+        // Outside the route without devices: the manager sets the date ("Aguardando data"); nothing is generated blindly.
+        if ((p as any).modo_agenda === "data") continue;
         const c: any = p.clients;
         const horizon = Math.min(90, Number(p.horizonte_dias) || 45);
         const end = new Date(Date.parse(`${today}T12:00:00Z`) + (horizon + 60) * 86_400_000).toISOString().slice(0, 10);

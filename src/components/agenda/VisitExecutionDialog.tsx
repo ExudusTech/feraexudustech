@@ -190,6 +190,13 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     if (rt?.resultado === "aprovado") { onOpenChange(false); navigate(rt.proposta_id ? `/propostas?abrir=${rt.proposta_id}` : "/propostas?nova=1"); return; }
     const pm = (r as any).proxima_manutencao as { data: string; hora: string; dias: number } | null | undefined;
     if (pm) { toast({ title: "Ativação encerrada", description: `Próxima manutenção: ${pm.data.split("-").reverse().join("/")} às ${pm.hora} (a cada ${pm.dias} dias)` }); return; }
+    const rv = (r as any).revisita as { status: string; data?: string | null; aparelhos?: string[]; codigo?: string | null } | null | undefined;
+    if (rv?.status === "aguardando_data") { toast({ title: "Visita encerrada", description: "Cliente atendido por data (fora da rota): o gestor define a próxima data." }); return; }
+    if (rv?.data && rv.status === "mantida") { toast({ title: "Visita encerrada", description: `Próxima visita já marcada: ${rv.data.split("-").reverse().join("/")}` }); return; }
+    if (rv?.data && ["agendada", "anexada", "reagendada"].includes(rv.status)) {
+      toast({ title: "Visita encerrada", description: `Próxima revisita: ${rv.data.split("-").reverse().join("/")} — ${rv.aparelhos?.length ?? 0} aparelho(s) vencem nela${rv.status === "anexada" ? " (junto com a visita já marcada)" : ""}` });
+      return;
+    }
     const cp = (r as any).coleta_pendente as string[] | undefined;
     toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
   });

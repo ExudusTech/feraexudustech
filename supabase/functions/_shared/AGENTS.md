@@ -1,0 +1,1 @@
+- Revisits: comodatos dates/periodicity drive the client's single visit and schedules.aparelhos_previstos via revisita.ts (pure) + revisita-agendar.ts (attach to an open technical visit, move the plan's later visit, never push an earlier one), shared by visita-acoes checkout, base-instalada and confirmar-visitas so the rule never forks.

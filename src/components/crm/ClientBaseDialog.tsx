@@ -16,6 +16,8 @@ import { useProducts } from "@/hooks/use-products";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { usePermissions } from "@/hooks/use-permissions";
 import { toast } from "@/hooks/use-toast";
+import { AgendaPorDataForm } from "@/components/inventario/AgendaPorData";
+import { agendaDoPlano, cadenciaTexto } from "@/lib/revisita";
 import { DIAS_SEMANA, ESTADO_CLASS, ESTADO_LABEL, FREQ_LABEL, FREQUENCIAS, MANUTENCAO_LABEL } from "@/lib/base-instalada";
 
 interface Props { client: { id: string; name: string } | null; open: boolean; onOpenChange: (o: boolean) => void }
@@ -33,7 +35,7 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
     queryKey: ["client-base", client?.id], enabled: !!client?.id && open,
     queryFn: async () => {
       const [pts, plano] = await Promise.all([
-        (supabase as any).from("comodatos").select("id, localizacao_interna, product_id, refil_product_id, quantidade, estado_atual, status, ultima_manutencao, proxima_manutencao, etiqueta_numero").eq("client_id", client!.id).order("created_at"),
+        (supabase as any).from("comodatos").select("id, localizacao_interna, product_id, refil_product_id, quantidade, estado_atual, status, ultima_manutencao, proxima_manutencao, periodicidade_manut, etiqueta_numero").eq("client_id", client!.id).order("created_at"),
         (supabase as any).from("planos_manutencao").select("*").eq("client_id", client!.id).eq("ativo", true).maybeSingle(),
       ]);
       const ids = ((pts.data ?? []) as any[]).map((p) => p.id);
@@ -86,6 +88,12 @@ export default function ClientBaseDialog({ client, open, onOpenChange }: Props) 
               </div>))}
           </TabsContent>
           <TabsContent value="plano" className="space-y-3">
+            {(() => {
+              const emUso = (data?.pontos ?? []).filter((p) => ["ATIVO", "EM_TESTE"].includes((p.status ?? "ATIVO").toUpperCase()));
+              const cad = cadenciaTexto(emUso.map((p) => p.periodicidade_manut), agendaDoPlano(data?.plano, []));
+              return cad ? <p className="text-sm"><strong>Revisita:</strong> uma visita por cliente — {cad}. Na visita aparecem só os aparelhos que vencem até a passagem seguinte.</p> : null;
+            })()}
+            {client && <AgendaPorDataForm clientId={client.id} plano={data?.plano} canEdit={canPlan} />}
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Frequência</Label><Select value={form.frequencia} onValueChange={(v) => setForm({ ...form, frequencia: v })} disabled={!canPlan}>
                 <SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{FREQUENCIAS.map((f) => <SelectItem key={f} value={f}>{FREQ_LABEL[f]}</SelectItem>)}</SelectContent></Select></div>
