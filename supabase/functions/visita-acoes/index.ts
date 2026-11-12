@@ -13,6 +13,7 @@ import { serviceLabel } from "../_shared/schedule-notify.ts";
 import { geocodeClient, geocodeLead, geocodeSchedule } from "../_shared/geocode.ts";
 import { checkinBloqueadoPorNota, FERA_URL, prontidaoLabel } from "../_shared/prontidao.ts";
 import { exigeColeta, pendenciasColeta } from "../_shared/coleta.ts";
+import { agendarRevisitaCliente, hojeSP } from "../_shared/revisita-agendar.ts";
 import { itensDevolucaoRemessa, precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE } from "../_shared/teste-notas.ts";
 
 /** Return visit of a test (06/11): not approved → return invoice of the Simples Remessa (equipment only); approved → open the proposal. */
@@ -62,7 +63,7 @@ async function aplicarPeriodicidadeAtivacao(admin: any, s: any, a: { dias: numbe
   const per = periodicidadeAtivacao(a.dias)!;
   const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
   const consultor = s.assigned_to ?? userId;
-  const campos = { frequencia: per.frequencia, intervalo_dias: per.intervalo_dias, data_inicio: a.data, dia_semana: new Date(`${a.data}T12:00:00Z`).getUTCDay(), hora_inicio: a.hora, ativo: true };
+  const campos = { frequencia: per.frequencia, intervalo_dias: per.intervalo_dias, data_inicio: hoje, dia_semana: new Date(`${a.data}T12:00:00Z`).getUTCDay(), hora_inicio: a.hora, ativo: true };
   const { data: atual } = await admin.from("planos_manutencao").select("id, frequencia, intervalo_dias").eq("client_id", s.client_id).eq("organization_id", s.organization_id).eq("ativo", true).limit(1).maybeSingle();
   let planoId: string | null = atual?.id ?? null;
   if (atual) {
@@ -75,26 +76,12 @@ async function aplicarPeriodicidadeAtivacao(admin: any, s: any, a: { dias: numbe
     if (error) console.error("[visita-acoes] plano ativacao", error.code);
     planoId = novo?.id ?? null;
   }
-  // Same start time as the activation, moved forward while the consultant is busy at that hour.
-  const { data: busy } = await admin.from("schedules").select("start_time").eq("assigned_to", consultor).eq("scheduled_date", a.data).in("status", ["agendado", "confirmado", "em_atendimento"]);
-  const taken = new Set((busy ?? []).map((x: any) => String(x.start_time ?? "").slice(0, 5)));
-  let [h, m] = a.hora.split(":").map(Number);
-  let hora = a.hora;
-  while (taken.has(hora) && h < 18) { h += 1; hora = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
-  const { data: c } = await admin.from("clients").select("name, address, zip_code, latitude, longitude").eq("id", s.client_id).maybeSingle();
-  let agendada = false;
-  if (planoId) {
-    const { data: ja } = await admin.from("schedules").select("id").eq("plano_manutencao_id", planoId).eq("scheduled_date", a.data).neq("status", "cancelado").maybeSingle();
-    if (!ja) {
-      const { error } = await admin.from("schedules").insert({ organization_id: s.organization_id, client_id: s.client_id, plano_manutencao_id: planoId, title: `Manutenção — ${c?.name ?? ""}`,
-        scheduled_date: a.data, start_time: hora, status: "agendado", schedule_type: "manutencao", schedule_subtype: "MANUTENCAO", source: "plano", assigned_to: consultor, created_by: userId,
-        location: c?.address ?? null, zip_code: c?.zip_code ?? null, latitude: c?.latitude ?? null, longitude: c?.longitude ?? null, confirmacao_status: "nao_aplicavel" });
-      if (error) console.error("[visita-acoes] proxima manutencao", error.code); else agendada = true;
-    } else agendada = true;
-  }
-  await admin.from("comodatos").update({ periodicidade_manut: per.periodicidade_manut, proxima_manutencao: a.data, ultima_manutencao: hoje })
+  // Devices carry the chosen periodicity from today; the concentrated revisit (one visit per client) books the next one.
+  await admin.from("comodatos").update({ periodicidade_manut: per.periodicidade_manut, proxima_manutencao: nextMaintenance(hoje, per.periodicidade_manut), ultima_manutencao: hoje })
     .eq("client_id", s.client_id).eq("organization_id", s.organization_id).in("status", ["ATIVO", "EM_TESTE"]);
-  return { data: a.data, hora, dias: a.dias, agendada };
+  const r = planoId ? await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id, userId }) : null;
+  const { data: nova } = r?.schedule_id ? await admin.from("schedules").select("start_time").eq("id", r.schedule_id).maybeSingle() : { data: null };
+  return { data: r?.data ?? a.data, hora: String(nova?.start_time ?? a.hora).slice(0, 5), dias: a.dias, agendada: !!r?.schedule_id, aparelhos: r?.aparelhos?.length ?? 0 };
 }
 
 /** Active managers of the organization (blocked check-ins always reach them, subscribed or not). */
@@ -193,7 +180,7 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
   if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada", "liberar_checkin", "audio", "devolucao_assinada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
-  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, wa_latitude, wa_longitude, wa_localizacao_em, wa_localizacao_por, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
+  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, aparelhos_previstos, wa_latitude, wa_longitude, wa_localizacao_em, wa_localizacao_por, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
   if (!s) return json({ error: "Agendamento não encontrado" }, 404);
   // Headers let the history triggers record the app user behind service-role writes.
@@ -396,7 +383,8 @@ Deno.serve(async (req) => {
       if ((s.client_id || s.lead_id) && tecnico) {
         const { data: pts } = await admin.from("comodatos").select("id, status").eq(s.client_id ? "client_id" : "lead_id", s.client_id ?? s.lead_id).eq("organization_id", s.organization_id);
         const { data: avs } = await admin.from("schedule_evidencias").select("comodato_id").eq("schedule_id", s.id).not("estado", "is", null);
-        const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id));
+        // Concentrated revisit: only the devices due in this visit are required; the other points may be evaluated too.
+        const pend = pontosPendentes(pts ?? [], (avs ?? []).map((a: any) => a.comodato_id), (s as any).aparelhos_previstos);
         if (pend.length) return json({ error: `Avalie todos os pontos antes de encerrar (${pend.length} pendente(s))` }, 400);
         checklist = (pts ?? []).some((p: any) => pontoEmUso(p.status));
       }
@@ -408,11 +396,16 @@ Deno.serve(async (req) => {
       if (ehAtivacao && perAtiv) {
         const today0 = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
         const { rota, blocked } = await rotaDoCliente(admin, s.organization_id, s.client_id!, today0);
-        const data = proximaVisitaPlano({ frequencia: perAtiv.frequencia, intervalo_dias: perAtiv.intervalo_dias, data_inicio: today0 }, today0, rota, blocked);
+        // Same rule as every revisit (route day or the client's dates outside the route); without a plan yet, the route day after the interval.
+        const prev = await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id!, dryRun: true, periodicidade: perAtiv.periodicidade_manut,
+          atendidos: (await admin.from("comodatos").select("id").eq("client_id", s.client_id).eq("organization_id", s.organization_id).in("status", ["ATIVO", "EM_TESTE"])).data?.map((x: any) => x.id) ?? [] });
+        const data = prev.status === "prevista" && prev.data ? prev.data
+          : proximaVisitaPlano({ frequencia: perAtiv.frequencia, intervalo_dias: perAtiv.intervalo_dias, data_inicio: today0 }, today0, rota, blocked);
         ativ = { dias: Number(b.periodicidade_dias), data, hora: String(s.start_time ?? "09:00").slice(0, 5) };
         b.proximo = "novo_agendamento"; b.data_alvo = data; b.descricao = `Próxima manutenção: a cada ${ativ.dias} dias`;
       }
       // Maintenance: the next step is the maintenance plan's next visit; without a plan, the consultant picks a frequency and the plan is created.
+      let revisita = false;
       if (!ativ && tecnico && s.client_id && (!b.proximo || b.proximo === "plano")) {
         const today0 = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
         let { data: plano } = await admin.from("planos_manutencao").select("id, frequencia, intervalo_dias, dia_semana, data_inicio")
@@ -424,16 +417,27 @@ Deno.serve(async (req) => {
             consultor_id: s.assigned_to ?? user.id, data_inicio: today0, created_by: user.id }).select("id, frequencia, intervalo_dias, dia_semana, data_inicio").single();
           if (pe0) { console.error("[visita-acoes] plano", pe0.code); return json({ error: "Não foi possível criar o plano de manutenção" }, 400); }
           plano = novo;
+          // The quick frequency becomes the periodicity of the client's devices, which now drive the revisit.
+          await admin.from("comodatos").update({ periodicidade_manut: b.frequencia }).eq("client_id", s.client_id).eq("organization_id", s.organization_id).in("status", ["ATIVO", "EM_TESTE"]);
         }
-        const { data: prox } = await admin.from("schedules").select("scheduled_date").eq("client_id", s.client_id).eq("plano_manutencao_id", plano!.id)
-          .gt("scheduled_date", today0).in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle();
         b.proximo = "novo_agendamento";
-        if (prox?.scheduled_date) b.data_alvo = prox.scheduled_date;
-        else {
-          const { rota, blocked } = await rotaDoCliente(admin, s.organization_id, s.client_id, today0);
-          b.data_alvo = proximaVisitaPlano(plano as any, today0, rota, blocked);
+        // Concentrated revisit: one visit per client on the route day (or the client's own dates), with every device due by the next pass.
+        const { data: avsR } = await admin.from("schedule_evidencias").select("comodato_id").eq("schedule_id", s.id).not("estado", "is", null);
+        const prev = await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id, dryRun: true, atendidos: (avsR ?? []).map((a: any) => a.comodato_id) });
+        if (prev.status === "prevista") {
+          revisita = true; b.data_alvo = prev.data; b.descricao = `Próxima revisita do cliente: ${prev.aparelhos?.length ?? 0} aparelho(s) vencem nela`;
+        } else if (prev.status === "aguardando_data") {
+          revisita = true; b.data_alvo = null; b.descricao = "Atendimento por data (fora da rota): o gestor define a próxima data";
+        } else {
+          const { data: prox } = await admin.from("schedules").select("scheduled_date").eq("client_id", s.client_id).eq("plano_manutencao_id", plano!.id)
+            .gt("scheduled_date", today0).in("status", ["agendado", "confirmado"]).order("scheduled_date").limit(1).maybeSingle();
+          if (prox?.scheduled_date) b.data_alvo = prox.scheduled_date;
+          else {
+            const { rota, blocked } = await rotaDoCliente(admin, s.organization_id, s.client_id, today0);
+            b.data_alvo = proximaVisitaPlano(plano as any, today0, rota, blocked);
+          }
+          b.descricao = "Próxima visita do plano de manutenção";
         }
-        b.descricao = "Próxima visita do plano de manutenção";
       }
       // Commercial visit with collection: the next step lives only in the draft; closing needs just the result.
       if (!tecnico && exigeColeta((s as any).ocorrencia_tipo) && !["novo_agendamento", "proposta", "follow_up", "perdido"].includes(b.proximo)) {
@@ -474,6 +478,8 @@ Deno.serve(async (req) => {
         if (c) await admin.from("comodatos").update({ ultima_manutencao: today, proxima_manutencao: nextMaintenance(today, c.periodicidade_manut) }).eq("id", id);
       }
       const proximaAtivacao = ativ ? await aplicarPeriodicidadeAtivacao(admin, s, ativ, user.id) : null;
+      // Devices just got their new dates: book (or attach to an open visit) the client's single next revisit.
+      const proximaRevisita = revisita && s.client_id ? await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id, userId: s.assigned_to ?? user.id }) : null;
       // Lote 15: commercial occurrences may leave the client with "information pending" until the collection is confirmed.
       let coletaPendente: string[] = [];
       if (exigeColeta((s as any).ocorrencia_tipo) && (s as any).coleta_status !== "confirmada") {
@@ -498,7 +504,7 @@ Deno.serve(async (req) => {
       const { data: ck } = await admin.from("schedule_checkins").select("distancia_m").eq("schedule_id", s.id).maybeSingle();
       bg(teamAlert(admin, s.organization_id, "visita_concluida", checkoutMessage({ ...info, resultado: b.resultado, duracao,
         distancia: ck?.distancia_m ?? null, proximo: b.proximo, detalhe }), { schedule_id: s.id }, { dedupeKey: "schedule_id" }));
-      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao, teste, proxima_manutencao: proximaAtivacao });
+      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao, teste, proxima_manutencao: proximaAtivacao, revisita: proximaRevisita });
     }
   }
   return json({ error: "Requisição inválida" }, 400);
