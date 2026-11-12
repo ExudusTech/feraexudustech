@@ -7028,6 +7028,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           data_inicio: string
+          dia_mes: number | null
           dia_semana: number | null
           duracao_min: number
           frequencia: string
@@ -7035,7 +7036,10 @@ export type Database = {
           horizonte_dias: number
           id: string
           intervalo_dias: number | null
+          modo_agenda: string
           organization_id: string
+          proxima_data: string | null
+          regra_data: string | null
           updated_at: string
         }
         Insert: {
@@ -7045,6 +7049,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           data_inicio?: string
+          dia_mes?: number | null
           dia_semana?: number | null
           duracao_min?: number
           frequencia?: string
@@ -7052,7 +7057,10 @@ export type Database = {
           horizonte_dias?: number
           id?: string
           intervalo_dias?: number | null
+          modo_agenda?: string
           organization_id: string
+          proxima_data?: string | null
+          regra_data?: string | null
           updated_at?: string
         }
         Update: {
@@ -7062,6 +7070,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           data_inicio?: string
+          dia_mes?: number | null
           dia_semana?: number | null
           duracao_min?: number
           frequencia?: string
@@ -7069,7 +7078,10 @@ export type Database = {
           horizonte_dias?: number
           id?: string
           intervalo_dias?: number | null
+          modo_agenda?: string
           organization_id?: string
+          proxima_data?: string | null
+          regra_data?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -8131,6 +8143,7 @@ export type Database = {
       }
       schedules: {
         Row: {
+          aparelhos_previstos: string[]
           assigned_to: string | null
           atraso_alertado_em: string | null
           checkin_em: string | null
@@ -8206,6 +8219,7 @@ export type Database = {
           zip_code: string | null
         }
         Insert: {
+          aparelhos_previstos?: string[]
           assigned_to?: string | null
           atraso_alertado_em?: string | null
           checkin_em?: string | null
@@ -8281,6 +8295,7 @@ export type Database = {
           zip_code?: string | null
         }
         Update: {
+          aparelhos_previstos?: string[]
           assigned_to?: string | null
           atraso_alertado_em?: string | null
           checkin_em?: string | null
