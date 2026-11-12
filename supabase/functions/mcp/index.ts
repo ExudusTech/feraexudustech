@@ -1611,6 +1611,102 @@ function genericBusinessType(nome: string, cidade?: string | null): string | nul
   return tipo;
 }
 
+// Name-only lookup ranks inside this box (Maricá → Campos dos Goytacazes); the active coverage areas
+// (CEP range or city) are the real restriction, so a place outside them is never offered.
+const COVERAGE_SEARCH_BIAS = { rectangle: { low: { latitude: -23.1, longitude: -43.0 }, high: { latitude: -21.0, longitude: -40.9 } } };
+const nomeEstabelecimento = (value: string) => value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(word => word && !["restaurante", "loja", "o", "a"].includes(word)).join(" ");
+/** Same establishment name: containment either way, or every requested word present ("Biju Peixaria"). */
+function mesmoNomeEstabelecimento(requested: string, candidate: string): boolean {
+  const r = nomeEstabelecimento(requested), c = nomeEstabelecimento(candidate);
+  if (!r || !c) return false;
+  if (` ${c} `.includes(` ${r} `) || ` ${r} `.includes(` ${c} `)) return true;
+  const words = new Set(c.split(" "));
+  return r.split(" ").every(word => words.has(word));
+}
+/** Street + number from Google components (or the formatted address), e.g. "Rua Peroba, 60". */
+function enderecoCurto(place: any): string | null {
+  const street = addressPart(place.addressComponents, "route");
+  const number = addressPart(place.addressComponents, "street_number");
+  if (street) return [street, number].filter(Boolean).join(", ");
+  const sections = typeof place.formattedAddress === "string" ? place.formattedAddress.split(",").map((part: string) => part.trim()) : [];
+  const first = sections[0]?.split(/\s+-\s+/)[0];
+  if (!first) return null;
+  const nextNumber = sections[1]?.match(/^\d+[\w/]*\b/)?.[0];
+  return [first, nextNumber].filter(Boolean).join(", ");
+}
+/** Coverage area of a place by narrowest CEP range, else by city; null region when the city has several. */
+function coberturaDoLugar(areas: CoverageRegion[], cep: unknown, cidade: unknown): { coberto: boolean; regiao: CoverageRegion | null } {
+  const byCep = narrowestCoverage(areas, cep);
+  if (byCep) return { coberto: true, regiao: byCep };
+  const exact = areas.filter(area => cityInArea(cidade, area.city, true));
+  const list = exact.length ? exact : areas.filter(area => cityInArea(cidade, area.city));
+  return { coberto: list.length > 0, regiao: new Set(list.map(area => area.name)).size === 1 ? list[0] : null };
+}
+type AchadoSemCidade = { candidato: Record<string, unknown>; endereco: string | null };
+/** Places search by name only, biased to the coverage and filtered to active coverage areas (max 3). */
+async function localizarPorNomeNaCobertura(nome: string, bairro: string | null): Promise<AchadoSemCidade[]> {
+  const key = Deno.env.get("GOOGLE_MAPS_API_KEY");
+  if (!key) return [];
+  const areas = await selectCoverage(getClient(), {});
+  if (!areas.length) return [];
+  const textQuery = [nome, bairro, "RJ"].filter(Boolean).join(" ");
+  const result = await locationRequest("https://places.googleapis.com/v1/places:searchText", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.addressComponents,places.location,places.nationalPhoneNumber,places.googleMapsUri,places.primaryType" },
+    body: JSON.stringify({ textQuery, languageCode: "pt-BR", regionCode: "BR", maxResultCount: 10, locationBias: COVERAGE_SEARCH_BIAS }),
+  }, `places:cobertura:${textQuery}`);
+  const places = (Array.isArray(result.places) ? result.places : [])
+    .filter(isPlaceInRj)
+    .filter((place: any) => mesmoNomeEstabelecimento(nome, place.displayName?.text ?? ""))
+    .filter((place: any) => coberturaDoLugar(areas, addressPart(place.addressComponents, "postal_code"),
+      addressPart(place.addressComponents, "administrative_area_level_2", "locality")).coberto)
+    .slice(0, 3);
+  const achados: AchadoSemCidade[] = [];
+  // Sequential, capped at three reverse lookups; no retries on Google errors.
+  for (const place of places) {
+    let cep = addressPart(place.addressComponents, "postal_code");
+    const latitude = place.location?.latitude ?? null, longitude = place.location?.longitude ?? null;
+    if (!validCep(cep) && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      try {
+        const reverse = await locationRequest(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&language=pt-BR&key=${encodeURIComponent(key)}`, {}, `reverse:${latitude},${longitude}`);
+        if (reverse.status === "OK") {
+          for (const r of reverse.results ?? []) {
+            const postal = addressPart(r.address_components, "postal_code");
+            if (validCep(postal)) { cep = postal; break; }
+          }
+        }
+      } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
+    }
+    const cidadeLugar = addressPart(place.addressComponents, "administrative_area_level_2", "locality");
+    const { regiao } = coberturaDoLugar(areas, cep, cidadeLugar);
+    achados.push({ endereco: enderecoCurto(place), candidato: {
+      nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
+      bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"), cidade: cidadeLugar,
+      cep: validCep(cep) ? cep : null, latitude, longitude, regiao: regiao?.name ?? null, dias_visita: regiao?.dia_semana ?? null,
+      horario: regiao?.horario_inicio && regiao.horario_fim ? `${regiao.horario_inicio.slice(0, 5)} às ${regiao.horario_fim.slice(0, 5)}` : null,
+      maps_url: place.googleMapsUri ?? null, telefone: place.nationalPhoneNumber ?? null, place_id: place.id ?? null } });
+  }
+  return achados;
+}
+const ruaAbreviada = (value: string | null) => value ? value.replace(/^Rua\s/i, "R. ").replace(/^Avenida\s/i, "Av. ").replace(/^Travessa\s/i, "Tv. ") : null;
+/** "a" for feminine-looking first words (Peixaria, Pousada, Lanchonete), "o" otherwise. */
+function artigoDoNome(nome: string): string {
+  const first = nome.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
+  const masc = new Set(["dia", "clima", "sistema", "programa", "planeta", "mapa", "tema", "atleta", "guia", "cinema", "panorama"]);
+  const fem = new Set(["lanchonete", "boate", "rede", "sede", "unidade", "sociedade", "associacao", "cooperativa"]);
+  return fem.has(first) || (first.endsWith("a") && !masc.has(first)) || /(cao|dade)$/.test(first) ? "a" : "o";
+}
+function mensagemCandidatosSemCidade(achados: AchadoSemCidade[]): string {
+  const local = (a: AchadoSemCidade) => [ruaAbreviada(a.endereco), a.candidato.cidade].filter(Boolean).join(", ");
+  if (achados.length === 1) {
+    const a = achados[0], nome = String(a.candidato.nome);
+    const rua = ruaAbreviada(a.endereco), cidade = a.candidato.cidade;
+    return `É ${artigoDoNome(nome)} ${nome}${rua ? ` da ${rua}` : ""}${cidade ? `, em ${cidade}` : ""}?`;
+  }
+  return `Encontrei mais de um com esse nome na nossa região 😊 Qual é o seu?\n${achados.map((a, i) => `${i + 1}. ${a.candidato.nome}${local(a) ? ` — ${local(a)}` : ""}`).join("\n")}\nSe não for nenhum, me passa a cidade e o bairro (ou o CEP).`;
+}
+
 async function localizarEstabelecimento(params: Record<string, unknown>): Promise<McpResponse> {
   const text = (value: unknown, max: number) => typeof value === "string" && value.trim().length <= max ? value.trim() : null;
   const nome = text(params.nome, 200), cidade = text(params.cidade, 120), bairro = text(params.bairro, 120);
@@ -1620,11 +1716,22 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
   if (params.cep != null && !validCep(params.cep)) return fail("CEP deve conter oito dígitos");
   if (params.estado != null && !text(params.estado, 60)) return fail("estado inválido");
   const tipoGenerico = params.cep ? null : genericBusinessType(nome, cidade);
-  // Coverage before any search: without city/CEP only ask for them, never promise a visit.
+  // Without city/CEP: search the name only inside the registered coverage; ask for city/bairro or CEP
+  // only when nothing (or only places outside the coverage) is found. Generic names never search.
   if (!cidade && !params.cep) {
-    return ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
+    const pedirLocal = () => ok({ encontrado: false, candidatos: [], cobertura: null, precisa_localizacao: true,
       ...(tipoGenerico ? { precisa_nome: true } : {}), mensagem_para_lead: MSG_PEDIR_LOCAL },
       MSG_PEDIR_LOCAL, "Peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo; não ofereça visita antes de confirmar a cobertura");
+    if (tipoGenerico) return pedirLocal();
+    try {
+      const achados = await localizarPorNomeNaCobertura(nome, bairro);
+      if (!achados.length) return pedirLocal();
+      const mensagem = mensagemCandidatosSemCidade(achados);
+      return ok({ cobertura: "DISTRIBUIDORA", vinculo: "DISTRIBUIDORA", encontrado: true, busca_sem_cidade: true,
+        candidatos: achados.map(a => a.candidato), precisa_confirmar: true, correspondencia_exata: achados.length === 1,
+        mensagem_para_lead: mensagem }, mensagem,
+        "Confirme o estabelecimento com o lead. Se confirmar, use cidade, bairro, cep e regiao do candidato nas próximas chamadas; se não for, peça cidade e bairro (ou CEP) e chame localizar_estabelecimento de novo");
+    } catch { return pedirLocal(); }
   }
   const coverage = await verificarCoberturaRegiao({ cidade: cidade ?? undefined, cep: params.cep ?? undefined, estado: text(params.estado, 60) ?? undefined });
   if (!coverage.success) return coverage;
