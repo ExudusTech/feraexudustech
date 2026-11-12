@@ -38,4 +38,3 @@
 - Recurrence uses the region's route days; unattached required invoices block check-in server-side unless a manager release is recorded.
 - Mobile (390px) never scrolls sideways: lists use .table-cards (index.css; data-card/data-label cells), dialogs render full-screen, side-by-side fields stack; below md a bottom nav replaces the side menu, installability is manifest-only.
 - EM_TESTE devices change status only when their billing tasks (comodato_ids) conclude, so stock follows invoices.
-- Visit-type colors come only from src/lib/ocorrencia-cores.ts (CSS tokens --oc-*), and route stop order from src/lib/rota.ts; the departure point is organizations.rota_base, written only by the privileged definir_rota_base RPC, so every screen and tenant stays consistent.
