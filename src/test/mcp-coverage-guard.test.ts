@@ -133,3 +133,15 @@ describe("covered and Matriz cities", () => {
     expect(JSON.stringify(h.writes())).not.toContain("SEM_COBERTURA");
   });
 });
+
+describe("Distribuidora city without its own region (Arraial do Cabo case)", () => {
+  it("localizar never forwards to the Matriz and consultar_rota uses the nearest region's days", async () => {
+    const h = harness();
+    const r = await h.route("localizar_estabelecimento", { nome: "Loja de piscina", cidade: "Arraial do Cabo", cep: "28936960", chat_id: CHAT });
+    expect(r.data.cobertura).not.toBe("MATRIZ");
+    expect(r.data.encaminhado_matriz).toBeUndefined();
+    expect(JSON.stringify(h.writes())).not.toContain("Encaminhado à Matriz");
+    const rota = await h.route("consultar_rota_consultor", { cidade: "Arraial do Cabo" });
+    expect(rota.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true, regiao_proxima: "Cabo Frio", dias_de_visita: "Segunda-feira" });
+  });
+});
