@@ -6684,6 +6684,7 @@ export type Database = {
           id: string
           is_active: boolean
           logo_url: string | null
+          matriz_cidades: string[]
           max_users: number
           name: string
           ocorrencia_seq: number
@@ -6727,6 +6728,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           logo_url?: string | null
+          matriz_cidades?: string[]
           max_users?: number
           name: string
           ocorrencia_seq?: number
@@ -6770,6 +6772,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           logo_url?: string | null
+          matriz_cidades?: string[]
           max_users?: number
           name?: string
           ocorrencia_seq?: number
@@ -8782,6 +8785,10 @@ export type Database = {
           _lead: string
         }
         Returns: Json
+      }
+      definir_matriz_cidades: {
+        Args: { _cidades: string[] }
+        Returns: string[]
       }
       definir_rota_base: {
         Args: { _latitude: number; _longitude: number; _nome: string }
