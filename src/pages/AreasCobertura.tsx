@@ -10,6 +10,7 @@ import EkkoaCoverageAreaFormDialog from "@/components/ekkoa/EkkoaCoverageAreaFor
 import { useEkkoaCoverageAreas, useDeleteEkkoaCoverageArea, type EkkoaCoverageArea } from "@/hooks/use-ekkoa-coverage-areas";
 import { Plus, Search, MoreHorizontal, Pencil, Trash2, Loader2, MapPin } from "lucide-react";
 import { useOrganizationUsers } from "@/hooks/use-users";
+import MatrizCidadesCard from "@/components/cobertura/MatrizCidadesCard";
 
 function formatTime(t: string | null) {
   if (!t) return "";
@@ -35,6 +36,7 @@ export default function AreasCobertura() {
       actions={<Button onClick={() => { setSelected(null); setDialogOpen(true); }}><Plus className="h-4 w-4 mr-2" />Nova Área</Button>}
     >
       <div className="space-y-4">
+        <MatrizCidadesCard />
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar áreas..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
