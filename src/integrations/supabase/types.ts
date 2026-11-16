@@ -3461,6 +3461,72 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261116_ekkoa_coverage_areas: {
+        Row: {
+          city: string | null
+          consultant_user_id: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          dia_semana: string | null
+          horario_fim: string | null
+          horario_inicio: string | null
+          id: string | null
+          is_active: boolean | null
+          latitude: number | null
+          longitude: number | null
+          name: string | null
+          organization_id: string | null
+          radius_km: number | null
+          state: string | null
+          updated_at: string | null
+          zip_code_end: string | null
+          zip_code_start: string | null
+        }
+        Insert: {
+          city?: string | null
+          consultant_user_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          organization_id?: string | null
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Update: {
+          city?: string | null
+          consultant_user_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          dia_semana?: string | null
+          horario_fim?: string | null
+          horario_inicio?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          latitude?: number | null
+          longitude?: number | null
+          name?: string | null
+          organization_id?: string | null
+          radius_km?: number | null
+          state?: string | null
+          updated_at?: string | null
+          zip_code_end?: string | null
+          zip_code_start?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
