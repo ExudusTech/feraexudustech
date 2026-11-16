@@ -3875,13 +3875,13 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "verificar_cobertura_regiao",
-    description: "Define vinculo DISTRIBUIDORA (área ativa), MATRIZ (RJ sem área) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. MATRIZ: chame transferir_para_humano com motivo MATRIZ. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
+    description: "Define vinculo MATRIZ (só as cidades da Matriz: Rio, Niterói, São Gonçalo e Baixada), DISTRIBUIDORA (qualquer outra cidade do RJ, com região própria ou pela região mais próxima: sem_rota_propria) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. MATRIZ: chame transferir_para_humano com motivo MATRIZ. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
     parameters: {
       type: "object",
       properties: {
         cidade: { type: "string" },
         cep:    { type: "string" },
-        estado: { type: "string", description: "UF ou nome do estado; RJ descoberto encaminha à MATRIZ" },
+        estado: { type: "string", description: "UF ou nome do estado" },
         regiao: { type: "string", description: "Nome exato de uma área ativa; prioridade sobre CEP e cidade" },
         chat_id: { type: "string", description: "chat_id do GPT Maker; liga o resultado MATRIZ à transferência seguinte" },
       },
