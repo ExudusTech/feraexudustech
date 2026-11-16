@@ -37,7 +37,7 @@ export default function MatrizCidadesCard() {
   };
 
   return (
-    <div className="glass-card rounded-xl border border-border p-4 space-y-3 min-w-0">
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3 min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <Building2 className="h-4 w-4 text-primary shrink-0" />
