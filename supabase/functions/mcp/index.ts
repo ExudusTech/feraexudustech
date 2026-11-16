@@ -1205,6 +1205,7 @@ function regiaoMaisProxima(areas: CoverageRegion[], coords: [number, number] | n
 }
 /** Nearest region for a Distribuidora municipality without its own region (marked sem_rota_propria); [] otherwise. */
 async function areasSemRotaPropria(all: CoverageRegion[], cidade: unknown): Promise<CoverageRegion[]> {
+  if (all.some(area => cityInArea(cidade, area.city))) return [];
   const mun = municipioRj(cidade, await matrizCidades());
   if (mun?.tipo !== "DISTRIBUIDORA") return [];
   const proxima = regiaoMaisProxima(all, mun.coords);
@@ -1311,7 +1312,8 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
   if (!region && params.cep) {
     const match = narrowestCoverage(all, params.cep);
     if (match) return [match];
-    if (!city) return [];
+    // An unmatched explicit CEP never broadens to the city's areas; only a city without its own region falls back.
+    return city ? await areasSemRotaPropria(all, city) : [];
   }
   if (!region && city) {
     const list = all.filter((area: CoverageRegion) => cityInArea(city, area.city, exactCity));
@@ -1993,8 +1995,7 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
         } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
       }
       const candCidade = addressPart(place.addressComponents, "administrative_area_level_2", "locality") ?? cidade;
-      const region = narrowestCoverage(areas, cep) ?? coberturaDoLugar(areas, null, candCidade).regiao
-        ?? (await areasSemRotaPropria(areas, candCidade))[0] ?? null;
+      const region = narrowestCoverage(areas, cep) ?? (await areasSemRotaPropria(areas, candCidade))[0] ?? null;
       addresses.push(shortAddress(place));
       candidatos.push({ nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
         bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"),
@@ -3043,12 +3044,14 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
       : `Nosso consultor vai apresentar as soluções ideais para a sua empresa. `) +
     `Qualquer dúvida, pode chamar aqui! 😊`;
 
+  if (areas.some(a => a.sem_rota_propria) && leadId) comCidadeSemRota(ok({ lead_id: leadId }), params);
   return ok(
     {
       agendamento_id:              schedule?.id,
       confirmado_provisoriamente:  true,
       agendamento:                 schedule,
       lead_id:                     leadId,
+      ...(areas.some(a => a.sem_rota_propria) ? { sem_rota_propria: true } : {}),
       mensagem_para_lead:          mensagemParaLead,
     },
     `Visita técnica agendada: ${dataFmt} às ${horario}h em ${cidade}`,
@@ -6508,7 +6511,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     // Block 3
     case "listar_horarios_disponiveis":  return listarHorariosDisponiveis(params);
     case "agendar_visita":               return agendarVisita(params);
-    case "agendar_visita_tecnica":       return comCidadeSemRota(await agendarVisitaTecnica(params), params);
+    case "agendar_visita_tecnica":       return agendarVisitaTecnica(params);
     case "agendar_reuniao_sede":         return agendarReuniaoSede(params);
     case "cancelar_reagendar_visita":    return cancelarReagendarVisita(params);
     case "responder_confirmacao_visita": return responderConfirmacaoVisita(params);
