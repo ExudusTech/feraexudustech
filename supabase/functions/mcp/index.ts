@@ -988,34 +988,43 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   const matchesCity = (areaCity: string | null) => cityInArea(cidade, areaCity);
   const { data, error } = await getClient()
     .from("ekkoa_coverage_areas")
-    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end")
+    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end, latitude, longitude")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("is_active", true);
   if (error) return fail(dbFail("consultar cobertura", error));
   const allAreas: CoverageRegion[] = data ?? [];
   const postalMatch = cep ? narrowestCoverage(allAreas, cep) : null;
   const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
-    : cep ? (postalMatch ? [postalMatch] : []) : allAreas.filter(area => matchesCity(area.city));
+    : postalMatch ? [postalMatch] : cidade ? allAreas.filter(area => matchesCity(area.city)) : [];
   if (areas.length === 0) {
     const state = normalizeLocation(estado ?? "") || (cityUf(cidade) ?? "");
-    const postal = validCep(cep);
-    const knownRjCities = "Rio de Janeiro|Niterói|São Gonçalo|Duque de Caxias|Nova Iguaçu|Belford Roxo|São João de Meriti|Mesquita|Nilópolis|Queimados|Itaboraí|Maricá|Magé|Guapimirim|Petrópolis|Teresópolis|Nova Friburgo|Cachoeiras de Macacu|Rio Bonito|Tanguá|Silva Jardim|Casimiro de Abreu|Rio das Ostras|Macaé|Campos dos Goytacazes|São João da Barra|São Francisco de Itabapoana|Quissamã|Carapebus|Conceição de Macabu|Araruama|Iguaba Grande|São Pedro da Aldeia|Arraial do Cabo|Cabo Frio|Armação dos Búzios|Búzios|Saquarema|Angra dos Reis|Paraty|Mangaratiba|Itaguaí|Seropédica|Volta Redonda|Barra Mansa|Resende|Itatiaia|Porto Real|Quatis|Barra do Piraí|Piraí|Pinheiral|Rio Claro|Valença|Vassouras|Miguel Pereira|Paty do Alferes|Paraíba do Sul|Três Rios|Areal|Comendador Levy Gasparian|Sapucaia|Sumidouro|Carmo|Cantagalo|Cordeiro|Duas Barras|Bom Jardim|Santa Maria Madalena|São Sebastião do Alto|Trajano de Moraes|São Fidélis|Itaocara|Aperibé|Santo Antônio de Pádua|Miracema|Laje do Muriaé|Itaperuna|Bom Jesus do Itabapoana|Natividade|Porciúncula|Varre-Sai|Cambuci|Cardoso Moreira|São José de Ubá|São José do Vale do Rio Preto|Engenheiro Paulo de Frontin|Mendes|Paracambi|Japeri|Rio das Flores|Comendador Levy Gasparian";
-    const inferredRj = !!postal && postal >= "20000000" && postal <= "28999999" ||
-      knownRjCities.split("|").some(city => sameCity(city, cidade)) ||
-      allAreas.some(area => matchesCity(area.city));
-    const isRj = state ? ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state) : inferredRj;
-    const knownOutside = !state && !isRj && knownOutsideCity(cidade);
-    if (!state && !isRj && !knownOutside) {
-      const mensagem = "Você pode me confirmar o estado ou o CEP do estabelecimento?";
-      return ok({ coberto: false, vinculo: null, precisa_confirmar: true, cidade: cidade ?? null,
-        mensagem_para_lead: mensagem }, mensagem, "Pergunte o estado ou CEP antes de definir o vínculo; não registre fora de cobertura ainda");
+    const stateRj = ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state);
+    if (state && !stateRj) {
+      return ok({ coberto: false, vinculo: "SEM_COBERTURA", cidade: cidade ?? null, mensagem_para_lead: MSG_SEM_COBERTURA }, MSG_SEM_COBERTURA, HINT_SEM_COBERTURA);
     }
-    const vinculo = isRj ? "MATRIZ" : "SEM_COBERTURA";
-    const mensagem = isRj ? matrizMessage(cidade) : MSG_SEM_COBERTURA;
-    return ok(
-      { coberto: false, vinculo, cidade: cidade ?? null, mensagem_para_lead: mensagem, ...(isRj ? { proxima_acao: MATRIZ_ACAO } : {}) }, mensagem,
-      isRj ? HINT_MATRIZ : HINT_SEM_COBERTURA
-    );
+    const matriz = await matrizCidades();
+    const mun = municipioRj(cidade, matriz);
+    const porCep = mun ? null : cepRj(cep);
+    if (mun?.tipo === "MATRIZ" || porCep === "MATRIZ") {
+      const mensagem = matrizMessage(cidade);
+      return ok({ coberto: false, vinculo: "MATRIZ", cidade: cidade ?? null, mensagem_para_lead: mensagem, proxima_acao: MATRIZ_ACAO }, mensagem, HINT_MATRIZ);
+    }
+    if (mun?.tipo === "DISTRIBUIDORA") {
+      const proxima = await areasSemRotaPropria(allAreas, cidade);
+      const cobertura = coverageByRegion(proxima);
+      return ok({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true, cidade: cidade ?? null,
+        regiao_proxima: proxima[0]?.name ?? null, cobertura },
+        `${cidade} é atendida pela Distribuidora${proxima[0] ? ` pela região ${proxima[0].name}. Visitas: ${cobertura.map(c => c.dia_visita).join(", ")}` : ""}`,
+        proxima[0] ? "Cobertura confirmada. Chame consultar_rota_consultor, consulte a agenda e ofereça 3 opções com dia e horário livres."
+          : "Cobertura da Distribuidora sem região ativa: registre o lead com criar_lead e diga que o consultor vai entrar em contato; nunca encaminhe à Matriz");
+    }
+    if (!stateRj && !cep && knownOutsideCity(cidade)) {
+      return ok({ coberto: false, vinculo: "SEM_COBERTURA", cidade: cidade ?? null, mensagem_para_lead: MSG_SEM_COBERTURA }, MSG_SEM_COBERTURA, HINT_SEM_COBERTURA);
+    }
+    // Unknown municipality (or a CEP that does not tell the city): ask, never assume Matriz.
+    const mensagem = porCep === "DISTRIBUIDORA" || (cep && !cidade) ? "Qual é a cidade do estabelecimento?" : "Você pode me passar o CEP do estabelecimento?";
+    return ok({ coberto: false, vinculo: null, precisa_confirmar: true, cidade: cidade ?? null, mensagem_para_lead: mensagem }, mensagem,
+      "Pergunte o CEP (ou a cidade) antes de definir o vínculo; nunca assuma Matriz e não registre fora de cobertura ainda");
   }
 
   const cobertura = coverageByRegion(areas);
@@ -1065,6 +1074,7 @@ const CITY_ALIASES: Record<string, string> = {
   "arraial": "arraial do cabo",
   "iguaba": "iguaba grande",
   "ostras": "rio das ostras",
+  "rio": "rio de janeiro",
 };
 /** Canonical folded city names in a free text ("Búzios/RJ" → ["armacao dos buzios"]); UF parts/suffixes are dropped. */
 function cityKeys(value: unknown): string[] {
@@ -1096,6 +1106,138 @@ function cityUf(cidade: unknown): string | null {
 function knownOutsideCity(cidade: unknown): boolean {
   const outside = new Set(KNOWN_OUTSIDE_CITIES.split("|").map(foldPlace));
   return placeParts(cidade).some(part => outside.has(part));
+}
+
+// ── Matriz × Distribuidora (decision 16/11/2026) ──────────────────────────────
+// MATRIZ only for the organization's matriz_cidades list (gestão edits it; default below); every
+// other RJ municipality is DISTRIBUIDORA even without its own region, using the nearest region.
+const MATRIZ_CIDADES_PADRAO = ["Rio de Janeiro", "Niterói", "São Gonçalo", "Duque de Caxias", "Nova Iguaçu", "São João de Meriti",
+  "Belford Roxo", "Nilópolis", "Mesquita", "Queimados", "Japeri", "Seropédica", "Paracambi", "Itaguaí", "Magé", "Guapimirim", "Itaboraí", "Tanguá"];
+// All 92 RJ municipalities (approximate center lat:lng) plus district names used by coverage areas.
+const RJ_LUGARES = "Rio de Janeiro:-22.91:-43.20|Niterói:-22.88:-43.10|São Gonçalo:-22.83:-43.05|Duque de Caxias:-22.79:-43.31|Nova Iguaçu:-22.76:-43.45|" +
+  "São João de Meriti:-22.80:-43.37|Belford Roxo:-22.76:-43.40|Nilópolis:-22.81:-43.42|Mesquita:-22.78:-43.43|Queimados:-22.72:-43.56|Japeri:-22.64:-43.65|" +
+  "Seropédica:-22.74:-43.71|Paracambi:-22.61:-43.71|Itaguaí:-22.85:-43.78|Magé:-22.65:-43.04|Guapimirim:-22.54:-42.98|Itaboraí:-22.74:-42.86|Tanguá:-22.73:-42.72|" +
+  "Maricá:-22.92:-42.82|Petrópolis:-22.51:-43.18|Teresópolis:-22.41:-42.97|Nova Friburgo:-22.28:-42.53|Cachoeiras de Macacu:-22.46:-42.65|Rio Bonito:-22.71:-42.62|" +
+  "Silva Jardim:-22.65:-42.39|Casimiro de Abreu:-22.48:-42.20|Rio das Ostras:-22.53:-41.95|Macaé:-22.37:-41.79|Campos dos Goytacazes:-21.75:-41.32|" +
+  "São João da Barra:-21.64:-41.05|São Francisco de Itabapoana:-21.47:-41.11|Quissamã:-22.11:-41.47|Carapebus:-22.19:-41.66|Conceição de Macabu:-22.08:-41.87|" +
+  "Araruama:-22.87:-42.34|Iguaba Grande:-22.84:-42.23|São Pedro da Aldeia:-22.84:-42.10|Arraial do Cabo:-22.97:-42.03|Cabo Frio:-22.88:-42.02|" +
+  "Armação dos Búzios:-22.75:-41.89|Saquarema:-22.92:-42.51|Angra dos Reis:-23.01:-44.32|Paraty:-23.22:-44.71|Mangaratiba:-22.96:-44.04|Volta Redonda:-22.52:-44.10|" +
+  "Barra Mansa:-22.54:-44.17|Resende:-22.47:-44.45|Itatiaia:-22.50:-44.56|Porto Real:-22.42:-44.29|Quatis:-22.40:-44.26|Barra do Piraí:-22.47:-43.83|Piraí:-22.63:-43.90|" +
+  "Pinheiral:-22.51:-44.00|Rio Claro:-22.72:-44.14|Valença:-22.25:-43.70|Vassouras:-22.40:-43.66|Miguel Pereira:-22.45:-43.47|Paty do Alferes:-22.43:-43.42|" +
+  "Paraíba do Sul:-22.16:-43.29|Três Rios:-22.12:-43.21|Areal:-22.23:-43.10|Comendador Levy Gasparian:-22.04:-43.21|Sapucaia:-21.99:-42.91|Sumidouro:-22.05:-42.67|" +
+  "Carmo:-21.93:-42.61|Cantagalo:-21.98:-42.37|Cordeiro:-22.03:-42.36|Macuco:-21.98:-42.25|Duas Barras:-22.05:-42.52|Bom Jardim:-22.15:-42.42|" +
+  "Santa Maria Madalena:-21.96:-42.01|São Sebastião do Alto:-21.96:-42.13|Trajano de Moraes:-22.06:-42.07|São Fidélis:-21.65:-41.75|Itaocara:-21.67:-42.08|" +
+  "Aperibé:-21.62:-42.10|Santo Antônio de Pádua:-21.54:-42.18|Miracema:-21.41:-42.20|Laje do Muriaé:-21.21:-42.13|Itaperuna:-21.21:-41.89|" +
+  "Bom Jesus do Itabapoana:-21.14:-41.68|Natividade:-21.04:-41.97|Porciúncula:-20.96:-42.04|Varre-Sai:-20.93:-41.87|Cambuci:-21.57:-41.91|Italva:-21.42:-41.69|" +
+  "Cardoso Moreira:-21.49:-41.62|São José de Ubá:-21.36:-41.94|São José do Vale do Rio Preto:-22.15:-42.92|Engenheiro Paulo de Frontin:-22.55:-43.68|" +
+  "Mendes:-22.53:-43.73|Rio das Flores:-22.17:-43.59";
+const RJ_DISTRITOS = "Cabo Frio 2 Distrito:-22.62:-42.00|Tamoios:-22.62:-42.00|Bacaxá:-22.89:-42.47|Iguabinha:-22.84:-42.28|Sampaio Correia:-22.83:-42.60|Barra de São João:-22.60:-41.99";
+let rjCoordsCache: Map<string, [number, number]> | null = null;
+let rjMunicipiosCache: Set<string> | null = null;
+function rjCoords(): Map<string, [number, number]> {
+  if (rjCoordsCache) return rjCoordsCache;
+  rjCoordsCache = new Map();
+  rjMunicipiosCache = new Set();
+  for (const [list, municipio] of [[RJ_LUGARES, true], [RJ_DISTRITOS, false]] as const) {
+    for (const item of list.split("|")) {
+      const [nome, lat, lng] = item.split(":");
+      const key = foldPlace(nome);
+      rjCoordsCache.set(key, [Number(lat), Number(lng)]);
+      if (municipio) rjMunicipiosCache.add(key);
+    }
+  }
+  return rjCoordsCache;
+}
+function rjMunicipios(): Set<string> { rjCoords(); return rjMunicipiosCache!; }
+let matrizCache: { at: number; list: string[] } | null = null;
+/** Organization's Matriz municipalities (5-min cache); a read failure falls back to the default list. */
+async function matrizCidades(): Promise<string[]> {
+  if (matrizCache && Date.now() - matrizCache.at < 300_000) return matrizCache.list;
+  let list = MATRIZ_CIDADES_PADRAO;
+  try {
+    const { data, error } = await getClient().from("organizations").select("matriz_cidades").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
+    if (error) dbFail("consultar cidades da Matriz", error);
+    else if (Array.isArray(data?.matriz_cidades)) list = data.matriz_cidades.filter((c: unknown) => typeof c === "string" && c.trim());
+  } catch { console.error("[cobertura] matriz list lookup failed"); }
+  matrizCache = { at: Date.now(), list };
+  return list;
+}
+/** RJ municipality named in the text: a Distribuidora municipality wins over the "Rio de Janeiro" part (often the state). */
+function municipioRj(cidade: unknown, matriz: string[]): { tipo: "MATRIZ" | "DISTRIBUIDORA"; nome: string; coords: [number, number] | null } | null {
+  const keys = cityKeys(cidade);
+  const matrizKeys = new Set(matriz.flatMap(c => cityKeys(c)));
+  const dist = keys.find(k => rjMunicipios().has(k) && !matrizKeys.has(k));
+  if (dist) return { tipo: "DISTRIBUIDORA", nome: dist, coords: rjCoords().get(dist) ?? null };
+  const m = keys.find(k => matrizKeys.has(k));
+  return m ? { tipo: "MATRIZ", nome: m, coords: rjCoords().get(m) ?? null } : null;
+}
+/** CEP-only classification: Rio capital and Niterói/São Gonçalo are Matriz; 24900-24999 and 27000-28999 are Distribuidora; the rest is unknown. */
+function cepRj(cep: unknown): "MATRIZ" | "DISTRIBUIDORA" | null {
+  const postal = validCep(cep);
+  if (!postal) return null;
+  if (postal >= "20000000" && postal <= "23799999" || postal >= "24000000" && postal <= "24799999") return "MATRIZ";
+  if (postal >= "24900000" && postal <= "24999999" || postal >= "27000000" && postal <= "28999999") return "DISTRIBUIDORA";
+  return null;
+}
+function areaCoords(area: CoverageRegion): [number, number] | null {
+  if (Number.isFinite(Number(area.latitude)) && Number.isFinite(Number(area.longitude)) && area.latitude != null && area.longitude != null) {
+    return [Number(area.latitude), Number(area.longitude)];
+  }
+  const table = rjCoords();
+  for (const source of [area.city, area.name]) {
+    const keys = cityKeys(source);
+    const exact = keys.find(k => table.has(k));
+    if (exact) return table.get(exact)!;
+    const contained = [...table.keys()].filter(t => keys.some(k => ` ${k} `.includes(` ${t} `))).sort((a, b) => b.length - a.length)[0];
+    if (contained) return table.get(contained)!;
+  }
+  return null;
+}
+function regiaoMaisProxima(areas: CoverageRegion[], coords: [number, number] | null): CoverageRegion | null {
+  if (!coords) return null;
+  const rad = (v: number) => v * Math.PI / 180;
+  const km = (a: [number, number], b: [number, number]) => {
+    const h = Math.sin(rad(b[0] - a[0]) / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(rad(b[1] - a[1]) / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  };
+  return areas.map(area => ({ area, c: areaCoords(area) })).filter(x => x.c)
+    .sort((a, b) => km(coords, a.c!) - km(coords, b.c!) || a.area.name.localeCompare(b.area.name))[0]?.area ?? null;
+}
+/** Nearest region for a Distribuidora municipality without its own region (marked sem_rota_propria); [] otherwise. */
+async function areasSemRotaPropria(all: CoverageRegion[], cidade: unknown): Promise<CoverageRegion[]> {
+  const mun = municipioRj(cidade, await matrizCidades());
+  if (mun?.tipo !== "DISTRIBUIDORA") return [];
+  const proxima = regiaoMaisProxima(all, mun.coords);
+  const label = typeof cidade === "string" ? cidade.split(/[,/]|\s-\s|\s–\s/)[0].trim() : mun.nome;
+  return proxima ? [{ ...proxima, sem_rota_propria: label }] : [];
+}
+const TAG_SEM_ROTA = "cidade_sem_rota_propria";
+/** Leads in a Distribuidora city without its own region get a tag, the nearest region and one timeline note for the gestor. */
+function comCidadeSemRota(res: McpResponse, params: Record<string, unknown>): McpResponse {
+  try {
+    const data = res.data as { lead_id?: unknown; lead?: { id?: unknown } } | undefined;
+    const leadId = data?.lead_id ?? data?.lead?.id;
+    if (!res.success || typeof leadId !== "string" || !leadId) return res;
+    const runtime = (globalThis as unknown as { EdgeRuntime?: { waitUntil: (t: Promise<void>) => void } }).EdgeRuntime;
+    runtime?.waitUntil(marcarCidadeSemRota(leadId, params).catch(() => console.error("[cidade_sem_rota] mark failed")));
+  } catch { console.error("[cidade_sem_rota] not scheduled"); }
+  return res;
+}
+async function marcarCidadeSemRota(leadId: string, params: Record<string, unknown>): Promise<void> {
+  const supabase = getClient();
+  const { data: lead, error } = await supabase.from("leads").select("id, city, zip_code, flora_tags, regiao, pessoa_id, vinculo")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
+  if (error) { dbFail("consultar lead sem rota", error); return; }
+  const tags: string[] = Array.isArray(lead?.flora_tags) ? lead.flora_tags : [];
+  if (!lead?.city || tags.includes(TAG_SEM_ROTA)) return;
+  const areas = await selectCoverage(supabase, { cidade: lead.city, ...(validCep(lead.zip_code) ? { cep: lead.zip_code } : {}) });
+  const proxima = areas.length === 1 && areas[0].sem_rota_propria ? areas[0] : null;
+  if (!proxima) return;
+  const { error: upError } = await supabase.from("leads").update({ flora_tags: [...tags, TAG_SEM_ROTA], regiao: lead.regiao ?? proxima.name,
+    vinculo: lead.vinculo && lead.vinculo !== "MATRIZ" ? lead.vinculo : "DISTRIBUIDORA" }).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
+  if (upError) { dbFail("marcar cidade sem rota", upError); return; }
+  await writeTimeline(supabase, { leadId, pessoaId: lead.pessoa_id, tipo: "resumo", params,
+    resumo: `Cidade sem rota própria: ${lead.city} usa os dias e horários da região ${proxima.name}` });
 }
 
 const MULTI_REGION_HINT = "Antes de oferecer horários, pergunte o nome do estabelecimento e chame localizar_estabelecimento; a região depende do endereço.";
@@ -1136,6 +1278,9 @@ interface CoverageRegion {
   horario_inicio: string | null; horario_fim: string | null;
   zip_code_start: string | null; zip_code_end: string | null;
   consultant_user_id?: string | null;
+  latitude?: number | null; longitude?: number | null;
+  /** Requested Distribuidora city served through this nearest region (no own region). */
+  sem_rota_propria?: string;
 }
 
 function validCep(value: unknown): string | null {
@@ -1157,17 +1302,23 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
   const region = typeof params.regiao === "string" ? params.regiao.trim() : null;
   const city = typeof params.cidade === "string" ? params.cidade.trim() : null;
   let query = supabase.from("ekkoa_coverage_areas")
-    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end, consultant_user_id")
+    .select("id, name, city, dia_semana, horario_inicio, horario_fim, zip_code_start, zip_code_end, consultant_user_id, latitude, longitude")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("is_active", true);
   if (region) query = query.eq("name", region);
   const { data, error } = await query;
   if (error) throw new Error(dbFail("consultar regiões", error));
+  const all: CoverageRegion[] = data ?? [];
   if (!region && params.cep) {
-    const match = narrowestCoverage(data ?? [], params.cep);
-    return match ? [match] : [];
+    const match = narrowestCoverage(all, params.cep);
+    if (match) return [match];
+    if (!city) return [];
   }
-  if (!region && city) return (data ?? []).filter((area: CoverageRegion) => cityInArea(city, area.city, exactCity));
-  return data ?? [];
+  if (!region && city) {
+    const list = all.filter((area: CoverageRegion) => cityInArea(city, area.city, exactCity));
+    // Distribuidora municipality without its own region: nearest region's days and times.
+    return list.length ? list : await areasSemRotaPropria(all, city);
+  }
+  return all;
 }
 
 // Use the same selected region and weekday/window as the booking, never another area's consultant.
@@ -1841,12 +1992,15 @@ async function localizarEstabelecimento(params: Record<string, unknown>): Promis
           }
         } catch { /* Missing reverse CEP must not discard a Places candidate. */ }
       }
-      const region = narrowestCoverage(areas, cep);
+      const candCidade = addressPart(place.addressComponents, "administrative_area_level_2", "locality") ?? cidade;
+      const region = narrowestCoverage(areas, cep) ?? coberturaDoLugar(areas, null, candCidade).regiao
+        ?? (await areasSemRotaPropria(areas, candCidade))[0] ?? null;
       addresses.push(shortAddress(place));
       candidatos.push({ nome: place.displayName?.text ?? nome, endereco: place.formattedAddress ?? null,
         bairro: addressPart(place.addressComponents, "sublocality_level_1", "sublocality"),
         cidade: addressPart(place.addressComponents, "administrative_area_level_2", "locality") ?? cidade,
         cep: validCep(cep) ? cep : null, latitude, longitude, regiao: region?.name ?? null,
+        ...(region?.sem_rota_propria ? { sem_rota_propria: true } : {}),
         dias_visita: region?.dia_semana ?? null,
         horario: region?.horario_inicio && region.horario_fim ? `${region.horario_inicio.slice(0, 5)} às ${region.horario_fim.slice(0, 5)}` : null,
         maps_url: place.googleMapsUri ?? null, telefone: place.nationalPhoneNumber ?? null, place_id: place.id ?? null });
@@ -1930,7 +2084,7 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
   const availableArea = (date: string) => {
     const dow = new Date(date + "T12:00:00-03:00").getDay();
     return areas.find(area => parseDiaSemana(area.dia_semana ?? "").includes(dow) &&
-      !holidayForDate(holidays, date, area.city ?? cidade));
+      !holidayForDate(holidays, date, area.sem_rota_propria ?? area.city ?? cidade));
   };
   const proximas = candidates.filter(date => availableArea(date)).slice(0, count);
 
@@ -1958,6 +2112,7 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
     {
       coberto:         true,
       cidade:          regiao ?? cidade ?? cep,
+      ...(areas[0]?.sem_rota_propria ? { vinculo: "DISTRIBUIDORA", sem_rota_propria: true, regiao_proxima: areas[0].name } : {}),
       dias_de_visita:  diasSemana,
       proximas_datas:  proximasFormatadas,
       opcoes_horario:  opcoes,
@@ -3288,11 +3443,19 @@ async function isMatrizHandoff(supabase: ReturnType<typeof getClient>, fields: R
   }
   if (fields.chat_id) {
     try {
-      const { data } = await supabase.from("mcp_request_log").select("response").in("method", COVERAGE_METHODS).eq("success", true)
+      const { data } = await supabase.from("mcp_request_log").select("params, response").in("method", COVERAGE_METHODS).eq("success", true)
         .contains("params", { chat_id: fields.chat_id }).gte("created_at", new Date(Date.now() - 86_400_000).toISOString())
         .order("created_at", { ascending: false }).limit(1);
       const last = Array.isArray(data) ? data[0] : null;
-      if (last && /"(vinculo|cobertura)"\s*:\s*"MATRIZ"/.test(JSON.stringify(last.response ?? null))) return true;
+      if (last && /"(vinculo|cobertura)"\s*:\s*"MATRIZ"/.test(JSON.stringify(last.response ?? null))) {
+        // Re-check the logged location with the current rule so an old wrong MATRIZ answer never forwards.
+        const lp = (last.params ?? {}) as Record<string, unknown>;
+        const local = { cidade: typeof lp.cidade === "string" ? lp.cidade : undefined, cep: validCep(lp.cep) ? lp.cep as string : undefined,
+          estado: typeof lp.estado === "string" ? lp.estado : undefined };
+        if (!local.cidade && !local.cep) return true;
+        const again = await verificarCoberturaRegiao(local);
+        if ((again.data as { vinculo?: unknown } | undefined)?.vinculo === "MATRIZ") return true;
+      }
     } catch { console.error("[solicitar_atendimento_humano] matriz log lookup failed"); }
   }
   return false;
@@ -6339,13 +6502,13 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "obter_promocao_vigente":       return obterPromocaoVigente(params);
     case "consultar_produto":            return withKnownContact(await consultarProduto(params), params.chat_id);
     // Block 2
-    case "criar_lead":                   return criarLead(params);
-    case "atualizar_lead":               return atualizarLead(params);
+    case "criar_lead":                   return comCidadeSemRota(await criarLead(params), params);
+    case "atualizar_lead":               return comCidadeSemRota(await atualizarLead(params), params);
     case "registrar_interacao":          return registrarInteracao(params);
     // Block 3
     case "listar_horarios_disponiveis":  return listarHorariosDisponiveis(params);
     case "agendar_visita":               return agendarVisita(params);
-    case "agendar_visita_tecnica":       return agendarVisitaTecnica(params);
+    case "agendar_visita_tecnica":       return comCidadeSemRota(await agendarVisitaTecnica(params), params);
     case "agendar_reuniao_sede":         return agendarReuniaoSede(params);
     case "cancelar_reagendar_visita":    return cancelarReagendarVisita(params);
     case "responder_confirmacao_visita": return responderConfirmacaoVisita(params);
@@ -6355,7 +6518,7 @@ async function routeTool(method: string, params: Record<string, unknown>): Promi
     case "adicionar_tag":                return adicionarTag(params);
     // Block 5
     case "solicitar_atendimento_humano":
-    case "transferir_para_humano":       return solicitarAtendimentoHumano(params);
+    case "transferir_para_humano":       return comCidadeSemRota(await solicitarAtendimentoHumano(params), params);
     case "registrar_fora_cobertura":     return registrarForaCobertura(params);
     // QR do aparelho
     case "contexto_qr":                  return contextoQr(params);
