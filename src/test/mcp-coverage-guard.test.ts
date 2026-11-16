@@ -112,7 +112,7 @@ describe("covered and Matriz cities", () => {
     expect(r.data.coberto).toBe(true);
     expect(r.data.proximas_datas.length).toBeGreaterThan(0);
   });
-  it.each(["Niterói", "Petrópolis"])("%s (RJ outside the Lagos) forwards to the MATRIZ server-side without search or out-of-coverage registration", async cidade => {
+  it.each(["Niterói", "São Gonçalo"])("%s (Matriz municipality) forwards to the MATRIZ server-side without search or out-of-coverage registration", async cidade => {
     const h = harness();
     const r = await h.route("localizar_estabelecimento", { nome: "Hotel Central", cidade, chat_id: CHAT });
     expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ(cidade), encaminhado_matriz: true });

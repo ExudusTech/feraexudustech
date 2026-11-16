@@ -61,13 +61,13 @@ describe("city aliases", () => {
     expect(r.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA" });
     expect(r.data.cobertura.map((c: any) => c.regiao)).toEqual([regiao]);
   });
-  it("Arraial / Arraial do Cabo are the same city (RJ, no area → MATRIZ), never Cabo Frio", async () => {
+  it("Arraial / Arraial do Cabo are the same city (Distribuidora via nearest region, never Matriz), never matched as Cabo Frio", async () => {
     const h = harness();
     expect(h.fn("sameCity", "Arraial", "Arraial do Cabo")).toBe(true);
     expect(h.fn("sameCity", "Arraial", "Cabo Frio")).toBe(false);
     for (const cidade of ["Arraial", "Arraial do Cabo"]) {
       const r = await h.route("verificar_cobertura_regiao", { cidade });
-      expect(r.data).toMatchObject({ coberto: false, vinculo: "MATRIZ" });
+      expect(r.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true });
     }
   });
   it("one alias table compares accents, case and UF suffix", () => {
