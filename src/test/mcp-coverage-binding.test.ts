@@ -63,10 +63,9 @@ describe("coverage bindings", () => {
   });
   it.each([
     { cidade: "Niterói", estado: "RJ" }, { cidade: "Niterói", estado: "Rio de Janeiro" },
-    { cidade: "Niterói", estado: "não informado" }, { cidade: "Maricá" },
-    { cep: "20000-000" }, { cep: "28999-999" },
-    { cidade: "desconhecida", estado: "RJ", regiao: "missing" },
-  ])("routes uncovered RJ to MATRIZ for %j", async params => {
+    { cidade: "Niterói", estado: "não informado" }, { cidade: "Rio de Janeiro" }, { cidade: "Rio" },
+    { cidade: "Copacabana, Rio de Janeiro" }, { cidade: "Duque de Caxias" }, { cep: "20000-000" }, { cep: "24020-000" },
+  ])("routes Matriz municipalities to MATRIZ for %j", async params => {
     const result = await harness().route("verificar_cobertura_regiao", params);
     expect(result.data).toMatchObject({ coberto: false, vinculo: "MATRIZ" });
     expect(result.data.mensagem_para_lead).toContain("Matriz");
@@ -77,7 +76,8 @@ describe("coverage bindings", () => {
     expect(result.data).toMatchObject({ coberto: false, vinculo: "SEM_COBERTURA" });
     expect(result.next_action_hint).toContain("Use registrar_fora_cobertura");
   });
-  it.each([{ cidade: "Cidade desconhecida", estado: "não informado" }, { cep: "19999-999" }, { cep: "29000-000" }])("does not guess non-RJ from %j", async params => {
+  it.each([{ cidade: "Cidade desconhecida", estado: "não informado" }, { cep: "19999-999" }, { cep: "29000-000" },
+    { cidade: "desconhecida", estado: "RJ", regiao: "missing" }, { cidade: "desconhecida", estado: "RJ" }, { cep: "28999-999" }])("does not guess (never Matriz) from %j", async params => {
     const result = await harness().route("verificar_cobertura_regiao", params);
     expect(result.data).toMatchObject({ vinculo: null, precisa_confirmar: true });
   });
@@ -99,5 +99,34 @@ describe("outside-coverage registration", () => {
   // Company/city isolation for outside-coverage leads is covered in mcp-lead-timeline.test.ts.
   it.each([{ readError: true }, { writeError: true }])("reports failures rather than pretending success %j", async options => {
     expect((await harness(options).route("registrar_fora_cobertura", params)).success).toBe(false);
+  });
+});
+// Decision 16/11/2026 (Arraial do Cabo lead wrongly sent to the Matriz).
+describe("Matriz only for its municipalities; any other RJ city is Distribuidora", () => {
+  it.each(["Arraial do Cabo", "Búzios", "Maricá", "Casimiro de Abreu", "Nova Friburgo", "Volta Redonda", "Rio Bonito", "Silva Jardim", "Petrópolis", "Cabo Frio, Rio de Janeiro"])("%s → DISTRIBUIDORA", async cidade => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade });
+    expect(r.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA" });
+    expect(r.data.mensagem_para_lead).toBeUndefined();
+    expect(r.next_action_hint).not.toContain("MATRIZ");
+  });
+  it.each(["Niterói", "Rio de Janeiro", "Rio"])("%s → MATRIZ", async cidade => {
+    expect((await harness().route("verificar_cobertura_regiao", { cidade })).data.vinculo).toBe("MATRIZ");
+  });
+  it("São Paulo → SEM_COBERTURA", async () => {
+    expect((await harness().route("verificar_cobertura_regiao", { cidade: "São Paulo" })).data.vinculo).toBe("SEM_COBERTURA");
+  });
+  it("real case: Arraial do Cabo + CEP 28936960 uses the nearest region (Cabo Frio), marked sem_rota_propria", async () => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Arraial do Cabo", cep: "28936960" });
+    expect(r.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true, regiao_proxima: "Cabo Frio", cobertura: [{ regiao: "Cabo Frio" }] });
+  });
+  it("Casimiro de Abreu uses the nearest registered region and is never Matriz", async () => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Casimiro de Abreu" });
+    expect(r.data.sem_rota_propria).toBe(true);
+    expect(["Búzios", "Cabo Frio"]).toContain(r.data.regiao_proxima);
+  });
+  it("unknown municipality asks for the CEP, never assumes Matriz", async () => {
+    const r = await harness().route("verificar_cobertura_regiao", { cidade: "Cidade Inventada", estado: "RJ" });
+    expect(r.data).toMatchObject({ vinculo: null, precisa_confirmar: true });
+    expect(r.data.mensagem_para_lead).toContain("CEP");
   });
 });

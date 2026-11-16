@@ -112,7 +112,7 @@ describe("covered and Matriz cities", () => {
     expect(r.data.coberto).toBe(true);
     expect(r.data.proximas_datas.length).toBeGreaterThan(0);
   });
-  it.each(["Niterói", "Petrópolis"])("%s (RJ outside the Lagos) forwards to the MATRIZ server-side without search or out-of-coverage registration", async cidade => {
+  it.each(["Niterói", "São Gonçalo"])("%s (Matriz municipality) forwards to the MATRIZ server-side without search or out-of-coverage registration", async cidade => {
     const h = harness();
     const r = await h.route("localizar_estabelecimento", { nome: "Hotel Central", cidade, chat_id: CHAT });
     expect(r.data).toMatchObject({ cobertura: "MATRIZ", encontrado: false, mensagem_para_lead: MATRIZ(cidade), encaminhado_matriz: true });
@@ -131,5 +131,17 @@ describe("covered and Matriz cities", () => {
     expect(r.data.mensagem_para_lead).toBe("É a Pousada 7 Mares da R. das Pedras, 10, em Armação dos Búzios?");
     expect(h.requests).toHaveLength(1);
     expect(JSON.stringify(h.writes())).not.toContain("SEM_COBERTURA");
+  });
+});
+
+describe("Distribuidora city without its own region (Arraial do Cabo case)", () => {
+  it("localizar never forwards to the Matriz and consultar_rota uses the nearest region's days", async () => {
+    const h = harness();
+    const r = await h.route("localizar_estabelecimento", { nome: "Loja de piscina", cidade: "Arraial do Cabo", cep: "28936960", chat_id: CHAT });
+    expect(r.data.cobertura).not.toBe("MATRIZ");
+    expect(r.data.encaminhado_matriz).toBeUndefined();
+    expect(JSON.stringify(h.writes())).not.toContain("Encaminhado à Matriz");
+    const rota = await h.route("consultar_rota_consultor", { cidade: "Arraial do Cabo" });
+    expect(rota.data).toMatchObject({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true, regiao_proxima: "Cabo Frio", dias_de_visita: "Segunda-feira" });
   });
 });
