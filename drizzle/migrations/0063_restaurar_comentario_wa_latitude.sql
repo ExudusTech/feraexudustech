@@ -1,0 +1,2 @@
+COMMENT ON COLUMN public.schedules.wa_latitude IS 'Location sent by the assigned consultant on WhatsApp (Flora) before check-in; used only when the app has no GPS';
+COMMENT ON COLUMN public.schedules.aguardando_localizacao IS 'UNUSED (reverted 18/11); always false.';

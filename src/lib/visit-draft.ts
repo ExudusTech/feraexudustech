@@ -50,7 +50,7 @@ export interface ClosingState {
   fotoObrigatoria: boolean; fotos: number; dataAlvo?: string; motivoPerda?: string; confPerdido?: boolean; tecnico?: boolean;
 }
 
-export type FaltaAlvo = "pontos" | "registro" | "resultado" | "proximo" | "localizacao";
+export type FaltaAlvo = "pontos" | "registro" | "resultado" | "proximo";
 export interface Falta { label: string; alvo: FaltaAlvo }
 
 /** What is still missing to close the visit (plain Portuguese + the section to jump to). Empty = can close. Summary is optional. */

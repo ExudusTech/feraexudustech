@@ -3,7 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   checkinAlertMessage, checkinBloqueadoAlertMessage, checkinBloqueadoMensagem, checkoutMessage, durationMinutes, evaluateCheckin, formatDistancia, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
-  permiteCheckinForaDoLocal, AGUARDANDO_LOCALIZACAO_MSG,
+  permiteCheckinForaDoLocal, posicaoWhatsapp,
   NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
 import { areaDoCliente, cidadeChave, FREQ_RAPIDAS, parseDiaSemana, periodicidadeAtivacao, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
@@ -182,7 +182,7 @@ Deno.serve(async (req) => {
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
   if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada", "liberar_checkin", "audio", "devolucao_assinada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
-  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, aparelhos_previstos, aguardando_localizacao, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
+  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, aparelhos_previstos, wa_latitude, wa_longitude, wa_localizacao_em, wa_localizacao_por, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
   if (!s) return json({ error: "Agendamento não encontrado" }, 404);
   // Headers let the history triggers record the app user behind service-role writes.
@@ -226,33 +226,34 @@ Deno.serve(async (req) => {
       if (b.geolocation_error != null && !GEOLOCATION_ERRORS.includes(b.geolocation_error)) return json({ error: "Diagnóstico de localização inválido" }, 400);
       const lat = num(b.lat); const lng = num(b.lng);
       const gps = lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
-      // 18/11: without app GPS the visit opens anyway, marked "aguardando localização"; the location sent to Flora on WhatsApp
-      // goes to this open visit (mcp registrar_localizacao_checkin) and check-out stays blocked until it arrives.
-      const pos = gps;
+      // 11/11: without app GPS, a location the same consultant sent to Flora on WhatsApp (last 30 min) stands in for it.
+      const wa = gps ? null : posicaoWhatsapp(s as any, user.id);
+      const pos = gps ?? wa;
       // Older clients send sem_permissao for every failure; never infer denial from that flag.
       const geolocation_error = b.geolocation_error ?? (pos ? null : "UNKNOWN");
       const ev = evaluateCheckin(pos, target, Number(org?.raio_checkin_m ?? 300) || 300, geolocation_error);
-      const aguardando = !pos;
-      // Ordem A (11/11): off-site check-in is allowed only on a commercial visit; every other type is blocked for every role.
-      if (pos && ev.precisa_justificativa && !permiteCheckinForaDoLocal(s.schedule_type, s.schedule_subtype, (s as any).ocorrencia_tipo)) {
+      // Ordem A (11/11): off-site (or unverifiable) check-in is allowed only on a commercial visit; every other type is blocked for every role.
+      if (ev.precisa_justificativa && !permiteCheckinForaDoLocal(s.schedule_type, s.schedule_subtype, (s as any).ocorrencia_tipo)) {
         const tipoTxt = (s as any).ocorrencia_tipo === "ativacao_base" ? "A ativação da base" : `A visita de ${tipo.toLowerCase()}`;
-        bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinBloqueadoAlertMessage({ ...info, distancia: ev.distancia_m, geolocation_error: null }),
+        bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinBloqueadoAlertMessage({ ...info, distancia: ev.distancia_m, geolocation_error: pos ? null : geolocation_error }),
           { schedule_id: s.id, bloqueado: true }, { immediate: true, dedupeKey: "schedule_id", extraUserIds: await gestores(admin, s.organization_id) }));
-        await timeline("visita", `Check-in bloqueado (${consultor}): a ${formatDistancia(ev.distancia_m)} do endereço`);
+        await timeline("visita", `Check-in bloqueado (${consultor}): ${ev.distancia_m !== null ? `a ${formatDistancia(ev.distancia_m)} do endereço` : `sem localização (${geolocation_error})`}`);
         return json({ error: checkinBloqueadoMensagem(ev.distancia_m, tipoTxt), bloqueado_local: true, distancia_m: ev.distancia_m, distancia: formatDistancia(ev.distancia_m) || null }, 423);
       }
       const justificativa = txt(b.justificativa, 300);
-      if (pos && ev.precisa_justificativa && justificativa.length < 3) {
-        return json({ error: `Você está a ${formatDistancia(ev.distancia_m)} do endereço: escreva uma justificativa`, precisa_justificativa: true, distancia_m: ev.distancia_m }, 422);
+      if (ev.precisa_justificativa && justificativa.length < 3) {
+        return json({ error: !pos ? "Sem localização: escreva uma justificativa" : `Você está a ${formatDistancia(ev.distancia_m)} do endereço: escreva uma justificativa`,
+          precisa_justificativa: true, distancia_m: ev.distancia_m }, 422);
       }
       const now = new Date().toISOString();
       const { error: e1 } = await admin.from("schedule_checkins").insert({ organization_id: s.organization_id, schedule_id: s.id, user_id: user.id, checkin_em: now,
         latitude: pos?.lat ?? null, longitude: pos?.lng ?? null, precisao_m: num(b.precisao), distancia_m: ev.distancia_m,
-        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, destino_sem_coordenadas: ev.destino_sem_coordenadas, geolocation_error, justificativa: justificativa || null });
+        fora_do_raio: ev.fora_do_raio, sem_permissao: ev.sem_permissao, destino_sem_coordenadas: ev.destino_sem_coordenadas, geolocation_error, justificativa: justificativa || null,
+        ...(wa ? { localizacao_origem: "whatsapp", localizacao_whatsapp_em: (s as any).wa_localizacao_em } : {}) });
       if (e1) { console.error("[visita-acoes] checkin", e1.code); return json({ error: e1.code === "23505" ? "Check-in já registrado" : "Não foi possível iniciar" }, 400); }
-      await admin.from("schedules").update({ status: "em_atendimento", checkin_em: now, aguardando_localizacao: aguardando }).eq("id", s.id);
-      await timeline("visita", `Check-in de ${consultor}${ev.distancia_m !== null ? ` a ${formatDistancia(ev.distancia_m)} do endereço` : aguardando ? ` sem localização (${geolocation_error}) — aguardando localização pelo WhatsApp` : ev.destino_sem_coordenadas ? " (local do cliente sem coordenadas — distância não verificada)" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
-      if (pos && ev.precisa_justificativa) {
+      await admin.from("schedules").update({ status: "em_atendimento", checkin_em: now }).eq("id", s.id);
+      await timeline("visita", `Check-in de ${consultor}${wa ? " (localização pelo WhatsApp)" : ""}${ev.distancia_m !== null ? ` a ${formatDistancia(ev.distancia_m)} do endereço` : !pos ? ` sem localização (${geolocation_error})` : ev.destino_sem_coordenadas ? " (local do cliente sem coordenadas — distância não verificada)" : ""}${justificativa ? ` — ${justificativa}` : ""}`);
+      if (ev.precisa_justificativa) {
         bg(teamAlert(admin, s.organization_id, "checkin_fora_do_local", checkinAlertMessage({ ...info, distancia: ev.distancia_m, justificativa, geolocation_error }),
           { schedule_id: s.id }, { immediate: true, dedupeKey: "schedule_id" }));
       }
@@ -263,7 +264,7 @@ Deno.serve(async (req) => {
         bg(teamAlert(admin, s.organization_id, "prontidao_pendente", [`📦 Check-in com pendência`, `Cliente: ${cliente}`, `Consultor: ${consultor}`, pendente,
           `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"), { schedule_id: s.id, checkin: true }, { immediate: true }));
       }
-      return json({ ok: true, ...ev, aguardando_localizacao: aguardando, prontidao_pendente: pendente });
+      return json({ ok: true, ...ev, prontidao_pendente: pendente });
     }
     case "liberar_checkin": {
       if (!privileged) return json({ error: "Só o gestor pode liberar o check-in sem nota" }, 403);
@@ -375,8 +376,6 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     case "checkout": {
-      // 18/11: a visit started without location (or a technical one whose location was off-site) closes only after an on-site location arrives.
-      if ((s as any).aguardando_localizacao) return json({ error: AGUARDANDO_LOCALIZACAO_MSG, aguardando_localizacao: true }, 423);
       if ((s as any).operacao_material === "substituicao" && !["nao_trocou", "trocou"].includes(b.substituicao_resultado)) {
         return json({ error: "Informe se o aparelho foi trocado ou não", precisa_substituicao: true }, 400);
       }
