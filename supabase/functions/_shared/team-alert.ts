@@ -1,4 +1,6 @@
 // Sends (or queues outside human hours) a team WhatsApp alert to the organization's subscribers of an event.
+// Minimal Deno typing so the frontend typecheck (tests import this file) passes; the runtime provides the real Deno.
+declare const Deno: { env: { get(key: string): string | undefined } };
 import { normalizeHumanHours, estaEmHorario, proximoHorarioUtil, type ClosedDay } from "./business-hours.ts";
 import { demoEnvolvido, idsDoPayload } from "./demo-guard.ts";
 
