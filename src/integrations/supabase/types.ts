@@ -3527,6 +3527,72 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261118_planos_manutencao: {
+        Row: {
+          ativo: boolean | null
+          client_id: string | null
+          consultor_id: string | null
+          created_at: string | null
+          created_by: string | null
+          data_inicio: string | null
+          dia_mes: number | null
+          dia_semana: number | null
+          duracao_min: number | null
+          frequencia: string | null
+          hora_inicio: string | null
+          horizonte_dias: number | null
+          id: string | null
+          intervalo_dias: number | null
+          modo_agenda: string | null
+          organization_id: string | null
+          proxima_data: string | null
+          regra_data: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          client_id?: string | null
+          consultor_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          data_inicio?: string | null
+          dia_mes?: number | null
+          dia_semana?: number | null
+          duracao_min?: number | null
+          frequencia?: string | null
+          hora_inicio?: string | null
+          horizonte_dias?: number | null
+          id?: string | null
+          intervalo_dias?: number | null
+          modo_agenda?: string | null
+          organization_id?: string | null
+          proxima_data?: string | null
+          regra_data?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          ativo?: boolean | null
+          client_id?: string | null
+          consultor_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          data_inicio?: string | null
+          dia_mes?: number | null
+          dia_semana?: number | null
+          duracao_min?: number | null
+          frequencia?: string | null
+          hora_inicio?: string | null
+          horizonte_dias?: number | null
+          id?: string | null
+          intervalo_dias?: number | null
+          modo_agenda?: string | null
+          organization_id?: string | null
+          proxima_data?: string | null
+          regra_data?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
