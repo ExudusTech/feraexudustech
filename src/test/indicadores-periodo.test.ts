@@ -251,3 +251,36 @@ describe("boletim em imagem", () => {
     expect(Array.from(png.slice(0, 4))).toEqual([137, 80, 78, 71]);
   });
 });
+
+describe("indicadores com pedido de agenda (caso 18/11) vai para a consulta de agenda", () => {
+  const comAgenda = () => {
+    const t = baseTables();
+    t.schedules.push({ id: "s19", organization_id: org, scheduled_date: "2026-11-19", status: "agendado", ocorrencia_tipo: "primeira_visita", assigned_to: "u2", start_time: "09:00:00", title: "Pousada Mar", ocorrencia_codigo: "OC-000119" } as any);
+    return t;
+  };
+  it("'Qual é a agenda de amanhã? Considerar 19/11/2026.' responde igual a minha agenda", async () => {
+    const h = harness(comAgenda());
+    const r = await h.route(PHONES.ph, "Qual é a agenda de amanhã? Considerar 19/11/2026.");
+    expect(r.data.acao).toBe("minha_agenda");
+    expect(r.data.pedido_original).toBe("indicadores");
+    expect(r.data.data).toBe("2026-11-19");
+    expect(r.data.numeros).toBeUndefined();
+    h.context.params = { chat_id: chat(PHONES.ph), acao: "minha_agenda", data: "2026-11-19" };
+    const direto = await vm.runInContext("routeTool('flora_equipe', params)", h.context);
+    expect(r.data.mensagem_para_equipe).toBe(direto.data.mensagem_para_equipe);
+    expect(r.data.mensagem_para_equipe).toContain("Pousada Mar");
+  });
+  it("'amanhã' sem data vira o dia seguinte; agenda de outra pessoa vai para a agenda da equipe", async () => {
+    const h = harness(comAgenda());
+    const r = await h.route(PHONES.ph, "o que o Marcos tem amanhã?");
+    expect(r.data.acao).toBe("agenda_equipe");
+    expect(r.data.data).toBe("2026-11-11");
+  });
+  it("'resumo de ontem' continua indo para indicadores", async () => {
+    const h = harness(comAgenda());
+    const r = await h.route(PHONES.ph, "resumo de ontem");
+    expect(r.data.acao).toBe("indicadores");
+    expect(r.data.visao).toBe("gestor");
+    expect(r.data.periodo.inicio).toBe("2026-11-09");
+  });
+});

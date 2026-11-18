@@ -996,6 +996,11 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
   const postalMatch = cep ? narrowestCoverage(allAreas, cep) : null;
   const areas = regiao ? allAreas.filter(area => area.name === regiao.trim())
     : postalMatch ? [postalMatch] : cidade ? allAreas.filter(area => matchesCity(area.city)) : [];
+  if (areas.length === 0 && cep && !cidade && !regiao) {
+    // Valid CEP outside every registered range and no city: ViaCEP names the city, then the normal rule applies.
+    const local = await cidadeDoCep(cep);
+    if (local) return verificarCoberturaRegiao({ ...params, cidade: local.cidade, estado: local.uf });
+  }
   if (areas.length === 0) {
     const state = normalizeLocation(estado ?? "") || (cityUf(cidade) ?? "");
     const stateRj = ["rj", "rio de janeiro", "estado do rio de janeiro"].includes(state);
@@ -1289,6 +1294,26 @@ function validCep(value: unknown): string | null {
   return value.replace(/\D/g, "");
 }
 
+const viaCepCache = new Map<string, { at: number; value: { cidade: string; uf: string } | null }>();
+/** City/UF of a CEP from ViaCEP (short timeout, 1h cache); null when the lookup fails or the CEP does not exist. */
+async function cidadeDoCep(cep: unknown): Promise<{ cidade: string; uf: string } | null> {
+  const postal = validCep(cep);
+  if (!postal) return null;
+  const hit = viaCepCache.get(postal);
+  if (hit && Date.now() - hit.at < 3_600_000) return hit.value;
+  let value: { cidade: string; uf: string } | null = null;
+  try {
+    const response = await fetch(`https://viacep.com.br/ws/${postal}/json/`, { signal: AbortSignal.timeout(4000) });
+    if (!response?.ok) return null;
+    const address = await response.json();
+    if (!address?.erro && typeof address?.localidade === "string" && address.localidade.trim() && typeof address?.uf === "string") {
+      value = { cidade: address.localidade.trim(), uf: address.uf.trim().toUpperCase() };
+    }
+  } catch { console.error("[viacep] lookup failed"); return null; }
+  viaCepCache.set(postal, { at: Date.now(), value });
+  return value;
+}
+
 function narrowestCoverage(areas: CoverageRegion[], cep: unknown): CoverageRegion | null {
   const postal = validCep(cep);
   if (!postal) return null;
@@ -1313,7 +1338,10 @@ async function selectCoverage(supabase: ReturnType<typeof getClient>, params: Re
     const match = narrowestCoverage(all, params.cep);
     if (match) return [match];
     // An unmatched explicit CEP never broadens to the city's areas; only a city without its own region falls back.
-    return city ? await areasSemRotaPropria(all, city) : [];
+    if (city) return await areasSemRotaPropria(all, city);
+    // No city: ViaCEP names it; only a Distribuidora city without its own region gets the nearest region.
+    const local = await cidadeDoCep(params.cep);
+    return local && local.uf === "RJ" ? await areasSemRotaPropria(all, local.cidade) : [];
   }
   if (!region && city) {
     const list = all.filter((area: CoverageRegion) => cityInArea(city, area.city, exactCity));
@@ -1333,7 +1361,7 @@ function bookingArea(areas: CoverageRegion[], date: string, time: string): Cover
 }
 
 type BookingLead = {
-  id: string; client_id?: string | null; pessoa_id?: string | null;
+  id: string; client_id?: string | null; pessoa_id?: string | null; flora_tags?: string[] | null;
   endereco?: string | null; bairro?: string | null; zip_code?: string | null;
   city?: string | null; regiao?: string | null; maps_url?: string | null;
   contact_phone?: string | null; contact_email?: string | null; category?: string | null;
@@ -1342,7 +1370,7 @@ type BookingLead = {
   pessoa?: { nome?: string | null; email?: string | null; telefone?: string | null; whatsapp?: string | null } | null;
 };
 
-const BOOKING_LEAD_SELECT = "id, stage, description, place_id, client_id, pessoa_id, endereco, bairro, zip_code, city, regiao, maps_url, contact_phone, contact_email, category, empresa_nome, company, title, contact_name, pessoa:pessoas(nome, email, telefone, whatsapp)";
+const BOOKING_LEAD_SELECT = "id, stage, description, place_id, client_id, pessoa_id, flora_tags, endereco, bairro, zip_code, city, regiao, maps_url, contact_phone, contact_email, category, empresa_nome, company, title, contact_name, pessoa:pessoas(nome, email, telefone, whatsapp)";
 
 async function loadBookingLead(supabase: ReturnType<typeof getClient>, leadId?: string, interactionId?: string): Promise<BookingLead | null> {
   if (!leadId && !interactionId) return null;
@@ -1631,8 +1659,13 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
     }
     if (validCep(params.cep)) updates.zip_code = validCep(params.cep);
     if (pessoa && !lead.pessoa_id) updates.pessoa_id = pessoa.id;
+    // City/CEP arrived for a lead saved without location: drop the pending tag in the same write.
+    const liberaLocal = (updates.city || updates.zip_code) && tagsDe(lead).includes(TAG_LOC_PENDENTE);
+    if (liberaLocal) updates.flora_tags = tagsDe(lead).filter((t) => t !== TAG_LOC_PENDENTE);
     const { error } = await supabase.from("leads").update(updates).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id);
     if (error) throw new Error(dbFail("atualizar lead atual", error));
+    if (liberaLocal) queueTimeline(supabase, { leadId: String(lead.id), pessoaId: lead.pessoa_id, tipo: "resumo",
+      resumo: `Localização informada: ${[updates.city, updates.zip_code ? `CEP ${updates.zip_code}` : null].filter(Boolean).join(", ")}`, params });
   }
   // Address remains current-only; product includes the validated same-company/chat fallback.
   // When the conversation gives no company/city, the validated resolved lead (same person,
@@ -2463,6 +2496,43 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
 // BLOCK 2 — LEAD CAPTURE (WRITE)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const TAG_LOC_PENDENTE = "localizacao_pendente";
+const tagsDe = (lead: unknown): string[] => { const t = (lead as { flora_tags?: unknown } | null)?.flora_tags; return Array.isArray(t) ? t.filter((x): x is string => typeof x === "string") : []; };
+const HINT_LOC_PENDENTE = "Lead registrado sem localização. Peça cidade e bairro (ou CEP); quando vier, chame criar_lead de novo neste chat (ou atualizar_lead com cidade/cep): o mesmo lead é atualizado";
+function localizacaoPendenteResposta(lead: Record<string, unknown> | null, criado: boolean, pessoa?: { id: string; nome: string }): McpResponse {
+  const view = lead ? { id: lead.id, contact_name: lead.contact_name, stage: lead.stage } : null;
+  return ok({ lead: view, criado, localizacao_pendente: true, ...(pessoa ? { pessoa } : {}), mensagem_para_lead: MSG_PEDIR_LOCAL },
+    criado ? "Lead registrado; falta a cidade" : "Lead já registrado; falta a cidade", HINT_LOC_PENDENTE);
+}
+/** Fills the waiting lead with the city/CEP that arrived in the same chat and removes the pending tag. */
+async function completarLocalizacaoPendente(supabase: ReturnType<typeof getClient>, lead: Record<string, unknown>, local: Record<string, unknown>,
+  empresa: string | null, produto: string | null, params: Record<string, unknown>): Promise<McpResponse> {
+  const updates: Record<string, unknown> = { ...local, flora_tags: tagsDe(lead).filter((t) => t !== TAG_LOC_PENDENTE), updated_at: new Date().toISOString() };
+  const company = productSearchText(empresa);
+  if (company && !productSearchText(lead.empresa_nome ?? lead.company)) { updates.company = company; updates.empresa_nome = company; }
+  if (productSearchText(produto) && !productSearchText(lead.category)) updates.category = produto;
+  const { data, error } = await supabase.from("leads").update(updates).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id)
+    .select("id, contact_name, stage").single();
+  if (error) return fail(dbFail("completar localização do lead", error));
+  const onde = [local.city, local.zip_code ? `CEP ${local.zip_code}` : null].filter(Boolean).join(", ");
+  queueTimeline(supabase, { leadId: String(lead.id), pessoaId: lead.pessoa_id, tipo: "resumo", resumo: `Localização informada: ${onde}`, params });
+  return ok({ lead: data ?? { id: lead.id }, lead_id: lead.id, criado: false, localizacao_atualizada: true },
+    `Lead atualizado com a localização: ${onde}`, "Use consultar_rota_consultor para verificar cobertura e propor visita técnica");
+}
+/** After any write that set city/CEP on a lead, drop the pending tag (one timeline line). */
+async function liberarLocalizacaoPendente(supabase: ReturnType<typeof getClient>, leadId: unknown, params: Record<string, unknown>): Promise<void> {
+  if (typeof leadId !== "string" || !leadId) return;
+  const { data: lead, error } = await supabase.from("leads").select("id, city, zip_code, flora_tags, pessoa_id")
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId).maybeSingle();
+  if (error) { dbFail("consultar localização pendente", error); return; }
+  if (!lead || !tagsDe(lead).includes(TAG_LOC_PENDENTE) || (!productSearchText(lead.city) && !validCep(lead.zip_code))) return;
+  const { error: upError } = await supabase.from("leads").update({ flora_tags: tagsDe(lead).filter((t) => t !== TAG_LOC_PENDENTE) })
+    .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", leadId);
+  if (upError) { dbFail("liberar localização pendente", upError); return; }
+  const onde = [lead.city, validCep(lead.zip_code) ? `CEP ${validCep(lead.zip_code)}` : null].filter(Boolean).join(", ");
+  queueTimeline(supabase, { leadId, pessoaId: lead.pessoa_id, tipo: "resumo", resumo: `Localização informada: ${onde}`, params });
+}
+
 async function criarLead(params: Record<string, unknown>): Promise<McpResponse> {
   const {
     nome,
@@ -2504,7 +2574,9 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     client_contact_id?: string;
   };
 
-  if (!nome) return fail("Nome do contato é obrigatório");
+  const empresaInformada = productSearchText(empresa_nome ?? empresa);
+  if (!productSearchText(nome) && !empresaInformada) return fail("Informe o nome do estabelecimento ou do contato");
+  const nomeContato = productSearchText(nome) ?? empresaInformada!;
 
   const locationFields: Record<string, unknown> = {};
   for (const field of ["endereco", "bairro", "maps_url", "place_id", "regiao"]) {
@@ -2536,15 +2608,23 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 
   const supabase = getClient();
 
+  // No city/CEP yet (lead stopped answering before saying where): save it anyway, tagged, and keep asking.
+  const semLocal = !productSearchText(cidade) && !locationFields.zip_code;
+  const localNovo: Record<string, unknown> = { ...locationFields, ...(productSearchText(cidade) ? { city: cidade } : {}) };
+
   // Idempotência
   const { data: existing } = await supabase
     .from("leads")
-    .select("id, contact_name, stage")
+    .select("id, contact_name, stage, flora_tags, pessoa_id, empresa_nome, company, category")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("interaction_id", interactionFinal)
     .single();
 
+  if (existing && !semLocal && tagsDe(existing).includes(TAG_LOC_PENDENTE)) {
+    return completarLocalizacaoPendente(supabase, existing, localNovo, empresa_nome ?? empresa ?? null, produto_interesse ?? null, params);
+  }
   if (existing) {
+    if (semLocal && tagsDe(existing).includes(TAG_LOC_PENDENTE)) return localizacaoPendenteResposta(existing, false);
     return ok(
       { lead: existing, criado: false },
       `Lead já existe: ${existing.contact_name}`,
@@ -2561,13 +2641,21 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   }
 
   const { data: openLeads, error: openLeadError } = await supabase.from("leads")
-    .select("id, contact_name, stage, place_id, empresa_nome, company, city")
+    .select("id, contact_name, stage, place_id, empresa_nome, company, city, flora_tags, gptmaker_chat_id, pessoa_id, category")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", personResult.pessoa.id)
     .order("created_at", { ascending: false }).limit(20);
   if (openLeadError) return fail(dbFail("consultar leads da pessoa", openLeadError));
   const requestedPlaceId = typeof params.place_id === "string" ? params.place_id.trim() : "";
   const companyKey = normalizedEstablishment(empresaFinal);
   const cityKey = normalizedEstablishment(cidade);
+  // Same chat's lead still waiting for its city: reuse it (never duplicate); a city/CEP now completes it.
+  const pendente = (openLeads ?? []).find((lead: Record<string, unknown>) => !["fechado_ganho", "fechado_perdido"].includes(String(lead.stage))
+    && tagsDe(lead).includes(TAG_LOC_PENDENTE) && (!chatId || !lead.gptmaker_chat_id || lead.gptmaker_chat_id === chatId)
+    && (!companyKey || !normalizedEstablishment(lead.empresa_nome ?? lead.company) || normalizedEstablishment(lead.empresa_nome ?? lead.company) === companyKey));
+  if (pendente) {
+    return semLocal ? localizacaoPendenteResposta(pendente, false)
+      : completarLocalizacaoPendente(supabase, pendente, localNovo, empresaFinal, produto_interesse ?? null, params);
+  }
   const matchingLead = (openLeads ?? []).find((lead: Record<string, unknown>) => {
     if (["fechado_ganho", "fechado_perdido"].includes(String(lead.stage))) return false;
     if (requestedPlaceId) return lead.place_id === requestedPlaceId;
@@ -2587,10 +2675,10 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     .from("leads")
     .insert({
       organization_id:   NITSCLEAN_ORG_ID,
-      contact_name:      nome,
+      contact_name:      nomeContato,
       contact_phone:     telefone && telefone.trim() !== "" ? telefone : null,
       contact_email:     email    && email.trim()    !== "" ? email    : null,
-      title:             empresaFinal ? `${nome} — ${empresaFinal}` : nome,
+      title:             empresaFinal && empresaFinal !== nomeContato ? `${nomeContato} — ${empresaFinal}` : nomeContato,
       company:           empresaFinal,
       empresa_nome:      empresaFinal,
       city:              cidade ?? null,
@@ -2613,6 +2701,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       position:          0,
       created_by_flora:  true,
       assigned_to:       await floraDefaultOwner(supabase),
+      ...(semLocal ? { flora_tags: [TAG_LOC_PENDENTE] } : {}),
     })
     .select("id, contact_name, stage")
     .single();
@@ -2623,12 +2712,13 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
 
   await logInteraction(supabase, "criar_lead", params, ok(lead), lead?.id, canalFinal, interactionFinal);
   queueTimeline(supabase, { leadId: String(lead?.id ?? ""), pessoaId: personResult.pessoa.id, tipo: "criar_lead",
-    resumo: `Novo lead — ${empresaFinal ?? nome}${productSearchText(produto_interesse) ? `: ${produto_interesse}` : ""}`,
+    resumo: `Novo lead — ${empresaFinal ?? nomeContato}${productSearchText(produto_interesse) ? `: ${produto_interesse}` : ""}${semLocal ? " (localização pendente: falta cidade/CEP)" : ""}`,
     params: { ...params, canal: canalFinal } });
 
+  if (semLocal) return localizacaoPendenteResposta(lead, true, { id: personResult.pessoa.id, nome: personResult.pessoa.nome });
   return ok(
     { lead, criado: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
-    `Lead criado: ${nome}`,
+    `Lead criado: ${nomeContato}`,
     "Use consultar_rota_consultor para verificar cobertura e propor visita técnica"
   );
 }
@@ -2661,7 +2751,7 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
     empresa:           "company",
     empresa_nome:      "empresa_nome",
     cargo_contato:     "cargo_contato",
-    cidade:            "zip_code",
+    cidade:            "city",
     produto_interesse: "category",
     notas:             "description",
     valor_estimado:    "value",
@@ -2672,6 +2762,12 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
 
   const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const [key, value] of Object.entries(updates)) {
+    if (key === "cep") {
+      const postal = validCep(value);
+      if (!postal) return fail("CEP deve conter oito dígitos");
+      updatePayload.zip_code = postal;
+      continue;
+    }
     const dbField = allowedFields[key] ?? key;
     updatePayload[dbField] = value;
   }
@@ -2689,6 +2785,7 @@ async function atualizarLead(params: Record<string, unknown>): Promise<McpRespon
   if (changed.length > 0 || productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(lead!.id),
     pessoaId: lead!.pessoa_id, tipo: "resumo",
     resumo: changed.length > 0 ? `Lead atualizado: ${changed.map((key) => key.replace(/_/g, " ")).join(", ")}` : "Conversa", params });
+  if (updatePayload.city || updatePayload.zip_code) await liberarLocalizacaoPendente(supabase, lead!.id, params);
 
   return ok({ lead }, `Lead atualizado: ${lead!.contact_name}`, "Continue o atendimento ou agende uma visita técnica");
 }
@@ -3924,10 +4021,10 @@ const TOOLS_MANIFEST_CLIENTE = [
   // ── Block 2: Lead Capture ─────────────────────────────────────────────────
   {
     name: "criar_lead",
-    description: "Registra uma oportunidade por estabelecimento. Reutiliza somente lead aberto da mesma pessoa e do mesmo local; mantém idempotência por interaction_id.",
+    description: "Registra uma oportunidade por estabelecimento. Reutiliza somente lead aberto da mesma pessoa e do mesmo local; mantém idempotência por interaction_id. Pode ser chamada sem cidade/CEP (com nome do estabelecimento ou do contato + necessidade/produto): o lead fica com localização pendente e, quando a cidade/CEP chegar neste chat, chame de novo que o mesmo lead é atualizado.",
     parameters: {
       type: "object",
-      required: ["nome", "canal", "interaction_id"],
+      required: ["canal", "interaction_id"],
       properties: {
         resumo_conversa: { type: "string", description: "Opcional: resumo curto (até 500 caracteres) do que foi conversado, sem e-mail/telefone" },
         proximo_passo:   { type: "string", description: "Opcional: próximo passo combinado (até 200 caracteres)" },
@@ -6070,14 +6167,48 @@ function mensagemEquipe(acao: string, r: McpResponse): string {
   return cut([r.message, d.link].filter(Boolean).join(" ") || "Feito.");
 }
 
+// acao=indicadores whose text asks for a day's (or someone's) agenda and not for numbers → the existing agenda query.
+const PEDE_AGENDA = /\bagenda\b|compromisso|\bvisitas?\b|o que (eu )?(tenho|temos)\b|o que (o|a) [a-z]+ tem\b|programacao/;
+const PEDE_NUMEROS = /resumo|numero|indicador|resultado|desempenho|boletim|panorama|balanco|relatorio|ranking|quant[oa]s?\b|como (foi|foram|estamos|esta|estao|fomos|anda|andam|vai|vao)\b|funil|grafico|dashboard|tempo|ciclo|taxa|percent|\bmeta/;
+const PEDE_EQUIPE = /\b(equipe|time|todos|todo mundo|pessoal|geral|consultores|vendedores)\b/;
+const DIAS_SEMANA_TXT = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
+function diaDaAgenda(texto: string, hoje: string): string {
+  const t = foldTxt(texto);
+  if (/depois de amanha/.test(t)) return addDiasIso(hoje, 2);
+  if (/amanha/.test(t)) return addDiasIso(hoje, 1);
+  if (/anteontem/.test(t)) return addDiasIso(hoje, -2);
+  if (/ontem/.test(t)) return addDiasIso(hoje, -1);
+  if (/\bhoje\b/.test(t)) return hoje;
+  const dow = DIAS_SEMANA_TXT.findIndex((d) => new RegExp(`\\b${d}\\b`).test(t));
+  if (dow >= 0) { const atual = new Date(`${hoje}T12:00:00Z`).getUTCDay(); return addDiasIso(hoje, (dow - atual + 7) % 7); }
+  return hoje;
+}
+async function agendaPedida(u: TeamUser, texto: string, dataExplicita: unknown, consultorExplicito: unknown): Promise<{ acao: "minha_agenda" | "agenda_equipe"; data: string; consultor?: string } | null> {
+  const t = foldTxt(texto);
+  if (!PEDE_AGENDA.test(t) || PEDE_NUMEROS.test(t) || ehTempoFunil(texto)) return null;
+  const hoje = spToday(), amanha = addDiasIso(hoje, 1);
+  const data = validDate(dataExplicita) ?? diaDaAgenda(texto, hoje);
+  let consultor = typeof consultorExplicito === "string" && consultorExplicito.trim() ? consultorExplicito.trim() : undefined;
+  if (!consultor && !PEDE_EQUIPE.test(t)) {
+    const { data: perfis } = await getClient().from("profiles").select("user_id, name, is_active").eq("organization_id", NITSCLEAN_ORG_ID).limit(200);
+    const outro = arr(perfis).filter((p) => p.is_active !== false && p.user_id !== u.user_id && typeof p.name === "string")
+      .find((p) => { const primeiro = foldTxt(p.name).split(" ")[0].replace(/[^a-z0-9]/g, ""); return primeiro.length >= 3 && new RegExp(`\\b${primeiro}\\b`).test(t); });
+    if (outro) consultor = outro.name;
+  }
+  const equipe = !!consultor || PEDE_EQUIPE.test(t);
+  // Field roles keep their own today/tomorrow agenda answer (with what to take), which is already an agenda.
+  if (!equipe && visaoIndicadores(u.papeis) === "campo" && ehAgendaCampo(texto) && (data === hoje || data === amanha)) return null;
+  return equipe ? { acao: "agenda_equipe", data, ...(consultor ? { consultor } : {}) } : { acao: "minha_agenda", data };
+}
+
 async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse> {
-  const acao = typeof params.acao === "string" ? params.acao.trim() : "";
+  let acao = typeof params.acao === "string" ? params.acao.trim() : "";
   const { user, ambiguo } = await resolverEquipe(getClient(), params.chat_id);
   if (!user) {
     const msg = ambiguo ? "Este número está em mais de um cadastro do Fera. Peça ao gestor para corrigir em Usuários." : "Este número não está cadastrado na equipe do Fera.";
     return { success: false, message: msg, data: { equipe: false, mensagem_para_equipe: msg } };
   }
-  const tool = FLORA_EQUIPE_ACOES[acao];
+  let tool = FLORA_EQUIPE_ACOES[acao];
   if (!tool) {
     const msg = "Não entendi o que fazer. Diga, por exemplo: minha agenda, pendências, criar lead ou agendar visita.";
     return { success: false, message: `acao inválida: ${acao || "(vazia)"}`, data: { equipe: true, acoes: Object.keys(FLORA_EQUIPE_ACOES), mensagem_para_equipe: msg } };
@@ -6093,6 +6224,14 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   for (const k of ["empresa", "cidade"]) if (typeof params[k] === "string" && (params[k] as string).trim() && p[k] === undefined) p[k] = (params[k] as string).trim();
   if (acao === "consultar" && !p.termo && typeof params.texto === "string") p.termo = params.texto.trim();
   if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && !params.texto.includes(":")) p.consultor = params.texto.trim();
+  let pedidoOriginal: string | null = null;
+  if (acao === "indicadores" && typeof params.texto === "string") {
+    const agenda = await agendaPedida(user, params.texto, p.data, p.consultor);
+    if (agenda) {
+      pedidoOriginal = acao; acao = agenda.acao; tool = FLORA_EQUIPE_ACOES[acao];
+      p.data = agenda.data; delete p.consultor; if (agenda.consultor) p.consultor = agenda.consultor;
+    }
+  }
   if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
     const alvo = typeof p.termo === "string" ? p.termo : typeof p.empresa === "string" ? p.empresa : null;
     if (alvo) {
@@ -6106,7 +6245,7 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   if (faltam.length) { const msg = `Preciso de: ${faltam.join(", ")}.`; return { success: false, message: msg, data: { equipe: true, faltam, mensagem_para_equipe: msg } }; }
   const r = await TEAM_TOOLS[tool](p);
   const data = r.data && typeof r.data === "object" && !Array.isArray(r.data) ? r.data as Record<string, unknown> : { resultado: r.data };
-  return { ...r, data: { ...data, equipe: true, acao, mensagem_para_equipe: mensagemEquipe(acao, r) },
+  return { ...r, data: { ...data, equipe: true, acao, ...(pedidoOriginal ? { pedido_original: pedidoOriginal } : {}), mensagem_para_equipe: mensagemEquipe(acao, r) },
     next_action_hint: "Envie mensagem_para_equipe literalmente ao usuário." };
 }
 
