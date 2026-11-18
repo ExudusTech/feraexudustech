@@ -3,13 +3,31 @@ import { parseDiaSemana } from "@/lib/scheduling-utils";
 export interface Ponto { latitude: number; longitude: number }
 export interface RotaBase extends Ponto { nome: string }
 
-/** Default departure point when the organization has not set one (organizations.rota_base). */
+/** Last-resort departure point: no saved rota_base and the organization's address could not be geocoded. */
 export const ROTA_BASE_PADRAO: RotaBase = { nome: "Base Cabo Frio", latitude: -22.8794, longitude: -42.0186 };
+export const ROTA_BASE_ORGANIZACAO = "Endereço da organização";
 
-export function rotaBaseDe(value: unknown): RotaBase {
+const baseValida = (value: unknown): value is Partial<RotaBase> => {
   const v = value as Partial<RotaBase> | null;
-  return v && Number.isFinite(Number(v.latitude)) && Number.isFinite(Number(v.longitude))
-    ? { nome: String(v.nome || "Base"), latitude: Number(v.latitude), longitude: Number(v.longitude) } : ROTA_BASE_PADRAO;
+  return !!v && v.latitude != null && v.longitude != null && Number.isFinite(Number(v.latitude)) && Number.isFinite(Number(v.longitude));
+};
+/** True when organizations.rota_base holds a usable point. */
+export const rotaBaseSalva = (value: unknown): boolean => baseValida(value);
+
+/** Departure point: saved organizations.rota_base, else the geocoded organization address, else ROTA_BASE_PADRAO. */
+export function rotaBaseDe(value: unknown, sugerida?: RotaBase | null): RotaBase {
+  if (baseValida(value)) return { nome: String(value.nome || "Base"), latitude: Number(value.latitude), longitude: Number(value.longitude) };
+  if (baseValida(sugerida)) return { nome: String(sugerida.nome || ROTA_BASE_ORGANIZACAO), latitude: Number(sugerida.latitude), longitude: Number(sugerida.longitude) };
+  return ROTA_BASE_PADRAO;
+}
+
+/** Organization address as one line for geocoding/prefill; null without street or CEP (a city alone is too coarse). */
+export function enderecoOrganizacao(o: { address?: string | null; city?: string | null; state?: string | null; zip_code?: string | null } | null | undefined): string | null {
+  if (!o) return null;
+  const rua = String(o.address ?? "").trim(), cep = String(o.zip_code ?? "").replace(/\D/g, "");
+  if (!rua && cep.length !== 8) return null;
+  const cidade = [o.city, o.state].map((v) => String(v ?? "").trim()).filter(Boolean).join(" - ");
+  return [rua, cidade, cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : ""].filter(Boolean).join(", ");
 }
 
 export const temCoordenadas = (p: { latitude?: unknown; longitude?: unknown } | null | undefined): boolean =>

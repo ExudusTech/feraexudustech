@@ -118,8 +118,8 @@ export default function InstalledBasePanel() {
         {isManager && <Button variant="outline" onClick={() => setAguardOpen(true)}><CalendarClock className="h-4 w-4 mr-2" />Aguardando data{aguardando.length ? ` (${aguardando.length})` : ""}</Button>}
       </div>
       <div className="h-[360px] rounded-lg overflow-hidden border">
-        <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
-          <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} maxZoom={19}>
+          <TileLayer maxZoom={19} attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {located.map((r) => (
             <CircleMarker key={r.id} center={[r.latitude, r.longitude]} radius={6 + Math.min(10, r.pontos)} eventHandlers={{ click: () => setOpen(r) }}
               pathOptions={{ color: r.pior ? ESTADO_HEX[r.pior] : "hsl(0 0% 60%)", fillOpacity: 0.7 }}>

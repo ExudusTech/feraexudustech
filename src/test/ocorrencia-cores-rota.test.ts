@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { corDaOcorrencia, contarPorCor } from "@/lib/ocorrencia-cores";
-import { ordemDaRota, regioesDoDia, rotaBaseDe, ROTA_BASE_PADRAO, cidadeNaRegiao } from "@/lib/rota";
+import { ordemDaRota, regioesDoDia, rotaBaseDe, rotaBaseSalva, enderecoOrganizacao, ROTA_BASE_PADRAO, cidadeNaRegiao } from "@/lib/rota";
 
 describe("cor por tipo de ocorrência", () => {
   it("primeiro atendimento / comercial a lead é amarelo (lead)", () => {
@@ -48,10 +48,24 @@ describe("ordem da rota", () => {
     expect(ordem.map((x) => x.id)).toEqual(["d", "b", "c", "a"]);
     expect(reais).toBe(2);
   });
-  it("ponto de saída padrão é a base de Cabo Frio e pode ser trocado", () => {
+  it("ponto de saída sem rota_base: usa o endereço da organização; só sem ele cai na base de Cabo Frio", () => {
+    const sede = { nome: "Endereço da organização", latitude: -22.97, longitude: -42.03 };
+    expect(rotaBaseDe(null, sede)).toEqual(sede);
+    expect(rotaBaseDe(null, null)).toEqual(ROTA_BASE_PADRAO);
     expect(rotaBaseDe(null)).toEqual(ROTA_BASE_PADRAO);
     expect(ROTA_BASE_PADRAO.nome).toBe("Base Cabo Frio");
-    expect(rotaBaseDe({ nome: "Base Macaé", latitude: -22.37, longitude: -41.78 })).toEqual({ nome: "Base Macaé", latitude: -22.37, longitude: -41.78 });
+  });
+  it("ponto de saída salvo pela gestão vale sobre a sugestão da organização", () => {
+    const salvo = { nome: "Base Macaé", latitude: -22.37, longitude: -41.78 };
+    expect(rotaBaseDe(salvo, { nome: "Sede", latitude: -22.97, longitude: -42.03 })).toEqual(salvo);
+    expect(rotaBaseSalva(salvo)).toBe(true);
+    expect(rotaBaseSalva(null)).toBe(false);
+    expect(rotaBaseSalva({ nome: "x" })).toBe(false);
+  });
+  it("endereço da organização para sugerir: precisa de rua ou CEP", () => {
+    expect(enderecoOrganizacao({ address: "Rua A, 10", city: "Cabo Frio", state: "RJ", zip_code: "28900000" })).toBe("Rua A, 10, Cabo Frio - RJ, 28900-000");
+    expect(enderecoOrganizacao({ address: "", city: "Cabo Frio", state: "RJ", zip_code: "" })).toBeNull();
+    expect(enderecoOrganizacao(null)).toBeNull();
   });
   it("regiões do dia pela agenda de rota e consultor", () => {
     const areas = [

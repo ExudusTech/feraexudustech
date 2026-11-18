@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { addDays, addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, MapPin, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, MapPin, Pencil, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useEkkoaCoverageAreas } from "@/hooks/use-ekkoa-coverage-areas";
@@ -19,7 +19,8 @@ import { toast } from "@/hooks/use-toast";
 import { STATUS_LABEL } from "@/lib/visit-exec";
 import { corInfo } from "@/lib/ocorrencia-cores";
 import { OcorrenciaLegenda, OcorrenciaTipoBadge } from "@/components/agenda/OcorrenciaCores";
-import { DIAS_UTEIS, cidadeNaRegiao, distanciaKm, ordemDaRota, regioesDoDia, rotaBaseDe, temCoordenadas, type Ponto, type RotaBase } from "@/lib/rota";
+import { DIAS_UTEIS, ROTA_BASE_ORGANIZACAO, cidadeNaRegiao, distanciaKm, enderecoOrganizacao, ordemDaRota, regioesDoDia, rotaBaseDe, rotaBaseSalva, temCoordenadas, type Ponto, type RotaBase } from "@/lib/rota";
+import { baseAction } from "@/lib/base-instalada";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -57,6 +58,15 @@ function Enquadrar({ pontos, chave }: { pontos: Ponto[]; chave: string }) {
   }, [chave, map]);
   return null;
 }
+/** Centers on the departure point being edited so the manager can check it at street level. */
+function Focar({ ponto }: { ponto: Ponto | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (ponto) map.setView([ponto.latitude, ponto.longitude], Math.max(map.getZoom(), 16));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ponto?.latitude, ponto?.longitude, map]);
+  return null;
+}
 function EscolherNoMapa({ ativo, onPonto }: { ativo: boolean; onPonto: (p: Ponto) => void }) {
   useMapEvents({ click: (e) => { if (ativo) onPonto({ latitude: e.latlng.lat, longitude: e.latlng.lng }); } });
   return null;
@@ -77,6 +87,9 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
   const [soRota, setSoRota] = useState(true);
   const [editBase, setEditBase] = useState(false);
   const [novaBase, setNovaBase] = useState<RotaBase | null>(null);
+  const [enderecoTxt, setEnderecoTxt] = useState("");
+  const [enderecoAchado, setEnderecoAchado] = useState<string | null>(null);
+  const [buscando, setBuscando] = useState(false);
   const dia = addDays(semana, dow - 1);
   const diaStr = format(dia, "yyyy-MM-dd");
   const consultorId = consultor === "all" ? null : consultor;
@@ -84,9 +97,20 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
   const { data: areas = [] } = useEkkoaCoverageAreas();
   const { data: org } = useQuery({
     queryKey: ["rota-base", orgId], enabled: !!orgId,
-    queryFn: async () => (await supabase.from("organizations").select("rota_base").eq("id", orgId!).maybeSingle()).data,
+    queryFn: async () => (await supabase.from("organizations").select("rota_base, address, city, state, zip_code").eq("id", orgId!).maybeSingle()).data,
   });
-  const base = rotaBaseDe(org?.rota_base);
+  const baseSalva = rotaBaseSalva(org?.rota_base);
+  const enderecoOrg = enderecoOrganizacao(org);
+  // No saved point: suggest the organization's own address (geocoded on the server); Base Cabo Frio only if that fails.
+  const { data: sugerida = null } = useQuery({
+    queryKey: ["rota-base-sugerida", orgId, enderecoOrg], enabled: !!org && !baseSalva && !!enderecoOrg, staleTime: Infinity, retry: false,
+    queryFn: async (): Promise<RotaBase | null> => {
+      const r = await baseAction<{ ok: boolean; latitude?: number; longitude?: number }>({ action: "rota_base_sugerida" }).catch(() => null);
+      return r?.ok && r.latitude != null && r.longitude != null ? { nome: ROTA_BASE_ORGANIZACAO, latitude: r.latitude, longitude: r.longitude } : null;
+    },
+  });
+  const base = rotaBaseDe(org?.rota_base, sugerida);
+  const origemBase = baseSalva ? null : sugerida ? "Sugerido: endereço da organização (ainda não salvo)" : "Padrão (endereço da organização não encontrado)";
   const { data: clientes = [] } = useQuery({
     queryKey: ["rota-clientes", orgId], enabled: !!orgId,
     queryFn: async () => ((await supabase.from("clients").select("id, name, company, city, latitude, longitude, status").eq("organization_id", orgId!)).data ?? [])
@@ -145,10 +169,24 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
     const { error } = await (supabase as any).rpc("definir_rota_base", { _nome: novaBase.nome, _latitude: novaBase.latitude, _longitude: novaBase.longitude });
     if (error) { toast({ title: "Não foi possível salvar o ponto de saída", description: error.message, variant: "destructive" }); return; }
     toast({ title: "Ponto de saída salvo" });
-    setEditBase(false); setNovaBase(null);
+    setEditBase(false); setNovaBase(null); setEnderecoAchado(null);
     qc.invalidateQueries({ queryKey: ["rota-base", orgId] });
   };
   const baseMostrada = novaBase ?? base;
+  const buscarEndereco = async () => {
+    const endereco = enderecoTxt.trim();
+    if (endereco.length < 8) { toast({ title: "Digite o endereço completo", description: "Rua, número e cidade.", variant: "destructive" }); return; }
+    setBuscando(true);
+    try {
+      const r = await baseAction<{ latitude: number; longitude: number; endereco: string }>({ action: "rota_base_geocodificar", endereco });
+      setNovaBase({ nome: novaBase?.nome ?? base.nome, latitude: r.latitude, longitude: r.longitude });
+      setEnderecoAchado(r.endereco);
+    } catch (e) {
+      toast({ title: "Endereço não encontrado", description: e instanceof Error ? e.message : "Confira o endereço ou toque no mapa.", variant: "destructive" });
+    } finally { setBuscando(false); }
+  };
+  const abrirEdicao = () => { setEditBase(true); setNovaBase(null); setEnderecoAchado(null); setEnderecoTxt(enderecoOrg ?? ""); };
+  const fecharEdicao = () => { setEditBase(false); setNovaBase(null); setEnderecoAchado(null); };
 
   return (
     <div className="space-y-3 min-w-0">
@@ -189,10 +227,11 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
       </div>
 
       <div className="relative h-[55vh] min-h-[320px] md:h-[520px] rounded-lg overflow-hidden border">
-        <MapContainer center={[base.latitude, base.longitude]} zoom={10} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
-          <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <Enquadrar pontos={pontosEnquadrar} chave={`${diaStr}|${consultor}|${soRota}|${grupos.map((g) => g.ordem.length).join(",")}|${clientesNoMapa.length}`} />
-          <EscolherNoMapa ativo={editBase} onPonto={(p) => setNovaBase({ nome: novaBase?.nome ?? base.nome, ...p })} />
+        <MapContainer center={[base.latitude, base.longitude]} zoom={10} style={{ height: "100%", width: "100%" }} maxZoom={19}>
+          <TileLayer maxZoom={19} attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <Enquadrar pontos={pontosEnquadrar} chave={`${diaStr}|${consultor}|${soRota}|${grupos.map((g) => g.ordem.length).join(",")}|${clientesNoMapa.length}|${base.latitude},${base.longitude}`} />
+          <Focar ponto={editBase ? novaBase : null} />
+          <EscolherNoMapa ativo={editBase} onPonto={(p) => { setNovaBase({ nome: novaBase?.nome ?? base.nome, ...p }); setEnderecoAchado(null); }} />
           {clientesNoMapa.map((c: any) => (
             <CircleMarker key={c.id} center={[c.latitude, c.longitude]} radius={5} pathOptions={{ color: corCliente, weight: 1, fillOpacity: 0.5 }}>
               <Tooltip>{c.company || c.name}{c.city ? ` · ${c.city}` : ""}</Tooltip>
@@ -214,7 +253,7 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
           }))}
           <Marker position={[baseMostrada.latitude, baseMostrada.longitude]} icon={baseIcon}><Tooltip>{baseMostrada.nome} (saída)</Tooltip></Marker>
         </MapContainer>
-        {editBase && <div className="absolute top-2 inset-x-2 z-[1000] rounded-md border bg-card/95 p-2 text-xs text-center shadow">Toque no mapa para marcar o ponto de saída.</div>}
+        {editBase && <div className="absolute top-2 inset-x-2 z-[1000] rounded-md border bg-card/95 p-2 text-xs text-center shadow">Digite o endereço abaixo ou toque no mapa para marcar o ponto de saída.</div>}
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -224,18 +263,29 @@ export default function MapaRotas({ schedules, users, canViewAll, onOpen }: Prop
       </div>
       <OcorrenciaLegenda />
 
-      <div className="rounded-lg border p-3 space-y-2">
+      <div className="rounded-lg border p-3 space-y-2 min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 shrink-0" /><span className="text-muted-foreground">Ponto de saída:</span><span className="font-medium">{baseMostrada.nome}</span>
-          {podeEditarBase && !editBase && <Button size="sm" variant="ghost" className="ml-auto" onClick={() => { setEditBase(true); setNovaBase(null); }}><Pencil className="h-4 w-4 mr-1" />Alterar</Button>}
+          <MapPin className="h-4 w-4 shrink-0" /><span className="text-muted-foreground">Ponto de saída:</span><span className="font-medium break-words min-w-0">{baseMostrada.nome}</span>
+          {podeEditarBase && !editBase && <Button size="sm" variant="ghost" className="ml-auto" onClick={abrirEdicao}><Pencil className="h-4 w-4 mr-1" />Alterar</Button>}
         </div>
+        {!editBase && origemBase && <p className="text-xs text-muted-foreground">{origemBase}</p>}
         {editBase && (
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Input aria-label="Nome do ponto de saída" value={novaBase?.nome ?? base.nome} maxLength={80}
-              onChange={(e) => setNovaBase({ ...(novaBase ?? base), nome: e.target.value })} className="sm:max-w-xs" />
-            <div className="grid grid-cols-2 gap-2 sm:flex">
-              <Button variant="outline" onClick={() => { setEditBase(false); setNovaBase(null); }}>Cancelar</Button>
-              <Button onClick={salvarBase} disabled={!novaBase}>Salvar</Button>
+          <div className="space-y-2">
+            <form className="flex flex-col sm:flex-row gap-2" onSubmit={(e) => { e.preventDefault(); buscarEndereco(); }}>
+              <Input aria-label="Endereço completo do ponto de saída" placeholder="Rua, número, bairro, cidade" value={enderecoTxt} maxLength={200}
+                onChange={(e) => setEnderecoTxt(e.target.value)} className="min-w-0 sm:flex-1" autoComplete="street-address" />
+              <Button type="submit" variant="outline" disabled={buscando}>
+                {buscando ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Search className="h-4 w-4 mr-1" />}Buscar endereço
+              </Button>
+            </form>
+            {novaBase && <p className="text-xs text-muted-foreground break-words">{enderecoAchado ? `Encontrado: ${enderecoAchado}. Confira o ponto no mapa; se precisar, toque no lugar exato.` : "Ponto marcado no mapa."}</p>}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input aria-label="Nome do ponto de saída" value={novaBase?.nome ?? base.nome} maxLength={80}
+                onChange={(e) => setNovaBase({ ...(novaBase ?? base), nome: e.target.value })} className="min-w-0 sm:max-w-xs" />
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <Button variant="outline" onClick={fecharEdicao}>Cancelar</Button>
+                <Button onClick={salvarBase} disabled={!novaBase}>Salvar</Button>
+              </div>
             </div>
           </div>
         )}

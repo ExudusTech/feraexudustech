@@ -12,7 +12,7 @@ export function geocodeQuery(a: GeoAddress): string | null {
   return parts.length ? `${parts.join(", ")}, Brasil` : null;
 }
 
-export async function geocode(a: GeoAddress, fetcher: typeof fetch = fetch): Promise<{ lat: number; lng: number } | null> {
+export async function geocode(a: GeoAddress, fetcher: typeof fetch = fetch): Promise<{ lat: number; lng: number; endereco?: string | null } | null> {
   const key = (globalThis as any).Deno?.env.get("GOOGLE_MAPS_API_KEY");
   const q = geocodeQuery(a);
   if (!key || !q) return null;
@@ -26,7 +26,7 @@ export async function geocode(a: GeoAddress, fetcher: typeof fetch = fetch): Pro
     const types: string[] = top?.types ?? [];
     if (!top || types.some((t) => ["country", "administrative_area_level_1", "administrative_area_level_2", "locality"].includes(t))) return null;
     const { lat, lng } = top.geometry?.location ?? {};
-    return typeof lat === "number" && typeof lng === "number" ? { lat, lng } : null;
+    return typeof lat === "number" && typeof lng === "number" ? { lat, lng, endereco: typeof top.formatted_address === "string" ? top.formatted_address : null } : null;
   } catch { console.error("[geocode] failed"); return null; }
 }
 

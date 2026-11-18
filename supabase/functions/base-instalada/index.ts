@@ -6,7 +6,7 @@ import { acaoRevisitaErro, areaDoCliente, avaliacaoErro, enderecoImportado, ESTA
 import { addDias, ERRO_SEM_ROTA, maxPorDiaValido, planejarAtivacoes, type LinhaAtivacao } from "../_shared/ativacao.ts";
 const AVISO_SEM_ROTA = "Cidade sem rota cadastrada: não gera visita automática, fica em \"Aguardando data\"";
 import { googleOcupado } from "../_shared/google-calendar.ts";
-import { geocodeClient } from "../_shared/geocode.ts";
+import { geocode, geocodeClient } from "../_shared/geocode.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
 import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
@@ -21,7 +21,7 @@ const txt = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(
 const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : null;
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
 const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "importar_previa", "material_separado",
-  "ativacao_previa", "ativacao_criar", "agenda_cliente",
+  "ativacao_previa", "ativacao_criar", "agenda_cliente", "rota_base_geocodificar", "rota_base_sugerida",
   "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
@@ -77,6 +77,22 @@ Deno.serve(async (req) => {
         material_separado_em: separado ? new Date().toISOString() : null, material_separado_por: separado ? user.id : null }).eq("id", s.id);
       if (error) { console.error("[base-instalada] material", error.code); return json({ error: "Não foi possível salvar" }, 400); }
       return json({ ok: true });
+    }
+    case "rota_base_geocodificar": {
+      // Typed departure address → coordinates for the manager to check on the map; saving stays with definir_rota_base.
+      if (!privileged) return json({ error: "Somente a gestão pode alterar o ponto de saída" }, 403);
+      const endereco = txt(b.endereco, 200);
+      if (endereco.length < 8) return json({ error: "Digite o endereço completo (rua, número e cidade)" }, 400);
+      const p = await geocode({ endereco });
+      if (!p) return json({ error: "Endereço não encontrado. Confira rua, número e cidade, ou toque no mapa." }, 404);
+      return json({ ok: true, latitude: p.lat, longitude: p.lng, endereco: p.endereco ?? endereco });
+    }
+    case "rota_base_sugerida": {
+      // Without a saved departure point, suggest the organization's own address (read-only, nothing is saved).
+      const { data: o } = await admin.from("organizations").select("address, city, state, zip_code, rota_base").eq("id", org).maybeSingle();
+      if (!o || o.rota_base) return json({ ok: false });
+      const p = await geocode({ endereco: o.address, cidade: o.city, estado: o.state, cep: o.zip_code });
+      return json(p ? { ok: true, latitude: p.lat, longitude: p.lng, endereco: p.endereco ?? null } : { ok: false });
     }
     case "buscar_local": {
       const q = txt(b.q, 120);

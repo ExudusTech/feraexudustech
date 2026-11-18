@@ -127,8 +127,8 @@ export default function FieldOpsPanel() {
         <Card><CardHeader className="pb-2"><CardTitle className="text-base">Mapa dos check-ins de hoje</CardTitle></CardHeader>
           <CardContent>
             <div className="h-80 rounded-lg overflow-hidden">
-              <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
-                <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <MapContainer center={[-22.88, -42.02]} zoom={9} style={{ height: "100%", width: "100%" }} maxZoom={19}>
+                <TileLayer maxZoom={19} attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 {points.map((c) => (
                   <CircleMarker key={c.schedule_id} center={[c.latitude, c.longitude]} radius={9}
                     pathOptions={{ color: c.fora_do_raio ? "hsl(var(--destructive))" : c.destino_sem_coordenadas ? "hsl(var(--warning))" : "hsl(var(--primary))" }} eventHandlers={{ click: () => setSelected(c.schedule_id) }}>
