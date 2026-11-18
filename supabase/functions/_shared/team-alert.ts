@@ -66,7 +66,15 @@ export async function teamAlert(admin: Admin, orgId: string, event: string, mess
     const { data: recipients } = await admin.from("notification_recipients").select("id, nome, whatsapp, user_id")
       .eq("organization_id", orgId).eq("ativo", true).contains("eventos", [event]);
     const list: Array<{ id: string | null; nome: string; whatsapp: string | null; user_id: string | null }> = (recipients ?? []).map((r: any) => ({ ...r }));
-    for (const u of opts.extraUserIds ?? []) if (!list.some((r) => r.user_id === u)) list.push({ id: null, nome: "", whatsapp: null, user_id: u });
+    // Extra recipients still respect the on/off switch: a user with an inactive recipient row is skipped.
+    let extras = opts.extraUserIds ?? [];
+    if (extras.length) {
+      const { data: desligados } = await admin.from("notification_recipients").select("user_id")
+        .eq("organization_id", orgId).eq("ativo", false).in("user_id", extras);
+      const off = new Set((desligados ?? []).map((r: any) => r.user_id));
+      extras = extras.filter((u) => !off.has(u));
+    }
+    for (const u of extras) if (!list.some((r) => r.user_id === u)) list.push({ id: null, nome: "", whatsapp: null, user_id: u });
     if (!list.length) return;
     const ids = list.map((r) => r.user_id).filter(Boolean);
     if (ids.length) {
