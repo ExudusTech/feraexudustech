@@ -60,15 +60,18 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const { data: exec, refetch } = useQuery({
     queryKey: ["visit-exec", s?.id], enabled: !!s?.id && open,
     queryFn: async () => {
-      if (!s) return { checkin: null, evidencias: [], proximo: null };
-      const [ck, ev, pp] = await Promise.all([
+      if (!s) return { checkin: null, evidencias: [], proximo: null, aguardando: false };
+      const [ck, ev, pp, sc] = await Promise.all([
         (supabase as any).from("schedule_checkins").select("*").eq("schedule_id", s.id).maybeSingle(),
         (supabase as any).from("schedule_evidencias").select("*").eq("schedule_id", s.id).order("created_at"),
         (supabase as any).from("schedule_proximo_passo").select("*").eq("schedule_id", s.id).maybeSingle(),
+        (supabase as any).from("schedules").select("aguardando_localizacao").eq("id", s.id).maybeSingle(),
       ]);
       const tf = (s as any).operacao_material ? await (supabase as any).from("tarefas_faturamento").select("numero, status, numero_nota, pdf_path").eq("schedule_id", s.id).maybeSingle() : { data: null };
-      return { checkin: ck.data, evidencias: (ev.data ?? []) as any[], proximo: pp.data, tarefa: tf.data as any };
+      return { checkin: ck.data, evidencias: (ev.data ?? []) as any[], proximo: pp.data, tarefa: tf.data as any, aguardando: sc.data?.aguardando_localizacao === true };
     },
+    // While waiting for the WhatsApp location, poll so the block clears by itself when Flora records it.
+    refetchInterval: (q) => (q.state.data as any)?.aguardando ? 15_000 : false,
   });
   const [status, setStatus] = useState(s?.status ?? "agendado");
   useEffect(() => { setStatus(s?.status ?? "agendado"); }, [s?.id, s?.status]);
@@ -143,16 +146,14 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     const location = !retry && reusable ? lastLocation : await getPosition();
     const pos = location.position;
     setLastLocation(location); setBloqueioLocal(null);
-    // Only a commercial visit may start off-site with a justification; the others go straight to the server, which blocks and alerts the manager.
-    if (!pos && foraPermitido) {
-      setAskReason("Sem posição disponível: escreva uma justificativa para iniciar.");
-      if (retry || justificativa.trim().length < 3) return;
-    } else if (retry) { setAskReason(null); }
+    // 18/11: without a position the visit opens anyway, "aguardando localização" (sent later on Flora's WhatsApp).
+    if (retry) setAskReason(null);
     try {
-      const r = await visitAction<{ distancia_m: number | null; destino_sem_coordenadas?: boolean }>({ id: s.id, action: "checkin", geolocation_error: location.error, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
+      const r = await visitAction<{ distancia_m: number | null; destino_sem_coordenadas?: boolean; aguardando_localizacao?: boolean }>({ id: s.id, action: "checkin", geolocation_error: location.error, lat: pos?.lat, lng: pos?.lng, precisao: pos?.precisao, justificativa });
       setStatus("em_atendimento"); done();
       // Destination without coordinates: offer this position as the client/lead address (consultant confirms).
       if ((s.client_id || s.lead_id) && pos && r.destino_sem_coordenadas) setAskLoc(true);
+      if (r.aguardando_localizacao) { toast({ title: "Atendimento iniciado — aguardando localização", description: "Pode trabalhar normalmente. Para encerrar, envie sua localização pelo WhatsApp da Flora." }); return; }
       toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${formatDistancia(r.distancia_m)} do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
     } catch (e) {
       if (e instanceof VisitActionError && e.data?.bloqueado_local) { setAskReason(null); setBloqueioLocal(e.message); return; }
@@ -218,6 +219,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   if (pedeTeste && !resTeste) faltas.push({ label: "resultado do teste", alvo: "resultado" });
   if (ehSubstituicao && !substResultado) faltas.push({ label: "se o aparelho foi trocado", alvo: "resultado" });
   if (outroDia && !/^\d{2}:\d{2}$/.test(termino)) faltas.push({ label: "horário real de término", alvo: "resultado" });
+  const aguardandoLoc = status === "em_atendimento" && (exec?.aguardando ?? sx.aguardando_localizacao === true);
+  if (aguardandoLoc) faltas.unshift({ label: "sua localização no local", alvo: "localizacao" });
+  const codigoVisita = sx.ocorrencia_codigo ? `#${sx.ocorrencia_codigo}` : `#V-${s.id.slice(0, 8)}`;
+  const linkLocalizacao = waLink(waNumero(WHATSAPP_PADRAO) ?? "5522992668769", `Minha localização para a visita ${codigoVisita}`);
   const irPara = (alvo: FaltaAlvo) => {
     if (alvo === "registro") setRegistroAberto(true);
     setTimeout(() => document.getElementById(`visita-${alvo}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
@@ -254,6 +259,8 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         {exec?.checkin && (
           <p className="text-sm">Check-in {new Date(exec.checkin.checkin_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
             {exec.checkin.distancia_m !== null ? ` · ${formatDistancia(exec.checkin.distancia_m)} do endereço` : exec.checkin.latitude == null ? " · sem localização" : ""}
+            {exec.checkin.localizacao_origem === "whatsapp" && " (pelo WhatsApp)"}
+            {aguardandoLoc && <Badge variant="outline" className="ml-2 border-warning text-warning">Localização pendente</Badge>}
             {exec.checkin.geolocation_error && <span className="block text-muted-foreground">{locationErrorMessage(exec.checkin.geolocation_error)}</span>}
             {exec.checkin.fora_do_raio && <Badge variant="destructive" className="ml-2">Fora do local</Badge>}
             {exec.checkin.destino_sem_coordenadas && exec.checkin.latitude != null && <Badge variant="outline" className="ml-2 border-warning text-warning">Local do cliente sem coordenadas</Badge>}
@@ -262,7 +269,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {(status === "agendado" || status === "confirmado") && (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.{!foraPermitido && " Este tipo de visita só começa no local do cliente."}</p>
+            <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.{!foraPermitido && " Este tipo de visita só começa no local do cliente."} Sem GPS, a visita abre mesmo assim e aguarda sua localização pelo WhatsApp da Flora para poder encerrar.</p>
             {bloqueioLocal && <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
               <p className="text-destructive">{bloqueioLocal}</p>
               {/WhatsApp da Flora/.test(bloqueioLocal) && <Button asChild variant="outline" className="w-full min-h-11">
@@ -290,6 +297,21 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
         {status === "em_atendimento" && (
           <div className="space-y-4">
+            {aguardandoLoc && (
+              <div id="visita-localizacao" role="alert" className="rounded-lg border border-warning p-3 space-y-2 text-sm">
+                <p className="font-medium text-warning">Aguardando sua localização</p>
+                <p>{exec?.checkin?.fora_do_raio && exec.checkin.distancia_m != null
+                  ? `A última localização ficou a ${formatDistancia(exec.checkin.distancia_m)} do cliente. Esta visita só encerra no local: chegue ao cliente e envie a localização de novo.`
+                  : "Você pode trabalhar normalmente (pontos, ativação, avaliação). A visita só encerra depois que sua localização chegar."}</p>
+                <ol className="list-decimal pl-5 text-muted-foreground space-y-0.5">
+                  <li>Toque no botão abaixo para abrir o WhatsApp da Flora.</li>
+                  <li>Toque no clipe (📎) → Localização → Enviar localização atual.</li>
+                  <li>Volte aqui: a marca some sozinha quando a Flora registrar.</li>
+                </ol>
+                <Button asChild variant="outline" className="w-full min-h-11">
+                  <a href={linkLocalizacao} target="_blank" rel="noopener noreferrer"><MapPin className="h-4 w-4" />Enviar localização pelo WhatsApp da Flora</a></Button>
+                <Button variant="ghost" className="w-full min-h-11" disabled={busy} onClick={() => { refetch(); qc.invalidateQueries({ queryKey: ["schedules"] }); }}>Já enviei — atualizar</Button>
+              </div>)}
             {askLoc && (
               <div className="rounded-lg border p-3 space-y-2">
                 <p className="text-sm">Este é o endereço do cliente? O cadastro não tem coordenadas; se você está no local, use sua posição atual (fica registrado que veio do check-in).</p>

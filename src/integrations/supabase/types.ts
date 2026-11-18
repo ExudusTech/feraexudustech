@@ -8278,6 +8278,7 @@ export type Database = {
       }
       schedules: {
         Row: {
+          aguardando_localizacao: boolean
           aparelhos_previstos: string[]
           assigned_to: string | null
           atraso_alertado_em: string | null
@@ -8354,6 +8355,7 @@ export type Database = {
           zip_code: string | null
         }
         Insert: {
+          aguardando_localizacao?: boolean
           aparelhos_previstos?: string[]
           assigned_to?: string | null
           atraso_alertado_em?: string | null
@@ -8430,6 +8432,7 @@ export type Database = {
           zip_code?: string | null
         }
         Update: {
+          aguardando_localizacao?: boolean
           aparelhos_previstos?: string[]
           assigned_to?: string | null
           atraso_alertado_em?: string | null

@@ -7,16 +7,17 @@ import * as prontidao from "../../supabase/functions/_shared/prontidao";
 import * as coleta from "../../supabase/functions/_shared/coleta";
 
 const id = "8261d0f0-4287-427e-b90b-52c705ed4b58";
-async function execute(body: Record<string, unknown>) {
+async function execute(body: Record<string, unknown>, extra: Record<string, unknown> = {}) {
   const saved: Record<string, unknown>[] = [];
-  const schedule = { id, organization_id: "org", status: "agendado", assigned_to: "consultant", client_id: "client", lead_id: null, latitude: -22.88, longitude: -42.02 };
+  const updates: Record<string, unknown>[] = [];
+  const schedule = { id, organization_id: "org", status: "agendado", assigned_to: "consultant", client_id: "client", lead_id: null, latitude: -22.88, longitude: -42.02, ...extra };
   const from = (table: string) => {
     const result = { data: table === "schedules" ? schedule : table === "user_roles" ? [{ role: "vendedor" }] : table === "profiles" ? { name: "Consultor" } : { raio_checkin_m: 300 }, error: null };
     const chain: any = {
       select: () => chain, eq: () => chain, maybeSingle: async () => result,
       insert: async (row: Record<string, unknown>) => { if (table === "schedule_checkins") saved.push(row); return { error: null }; },
-      update: () => chain,
-      then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+      update: (row: Record<string, unknown>) => { if (table === "schedules") updates.push(row); return chain; },
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(table === "profiles" ? { data: [], error: null } : result).then(resolve),
     };
     return chain;
   };
@@ -28,7 +29,7 @@ async function execute(body: Record<string, unknown>) {
   new Function(...Object.keys(deps), js)(...Object.values(deps));
   if (!handler) throw new Error("Missing request handler");
   const response = await handler(new Request("http://localhost/checkin", { method: "POST", headers: { Authorization: "Bearer test", "Content-Type": "application/json" }, body: JSON.stringify({ id, action: "checkin", ...body }) }));
-  return { response, saved };
+  return { response, saved, updates };
 }
 
 describe("check-in function persistence", () => {
@@ -38,10 +39,31 @@ describe("check-in function persistence", () => {
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ latitude: null, longitude: null, geolocation_error: error, sem_permissao: error === "PERMISSION_DENIED" });
   });
-  it("missing position without justification never inserts", async () => {
-    const { response, saved } = await execute({ geolocation_error: "TIMEOUT" });
-    expect(response.status).toBe(422);
+  it("18/11: missing position opens the visit 'aguardando localização' without a justification", async () => {
+    const { response, saved, updates } = await execute({ geolocation_error: "TIMEOUT" });
+    expect(response.status).toBe(200);
+    expect((await response.json()).aguardando_localizacao).toBe(true);
+    expect(saved[0]).toMatchObject({ latitude: null, longitude: null, geolocation_error: "TIMEOUT" });
+    expect(updates[0]).toMatchObject({ status: "em_atendimento", aguardando_localizacao: true });
+  });
+  it.each(["PERMISSION_DENIED", "POSITION_UNAVAILABLE", "TIMEOUT"])("18/11: a maintenance visit without GPS (%s) also opens, awaiting location", async (error) => {
+    const { response, updates } = await execute({ geolocation_error: error }, { schedule_type: "manutencao" });
+    expect(response.status).toBe(200);
+    expect(updates[0]).toMatchObject({ aguardando_localizacao: true });
+  });
+  it("app GPS inside the radius opens without the pending mark", async () => {
+    const { updates } = await execute({ lat: -22.88, lng: -42.02 }, { schedule_type: "manutencao" });
+    expect(updates[0]).toMatchObject({ aguardando_localizacao: false });
+  });
+  it("app GPS off-site still blocks a maintenance start (only commercial may be off-site)", async () => {
+    const { response, saved } = await execute({ lat: -22.0, lng: -42.02 }, { schedule_type: "manutencao" });
+    expect(response.status).toBe(423);
     expect(saved).toHaveLength(0);
+  });
+  it("18/11: check-out is refused while the visit awaits location", async () => {
+    const { response } = await execute({ action: "checkout", resultado: "concluida", proximo: "follow_up" }, { status: "em_atendimento", aguardando_localizacao: true });
+    expect(response.status).toBe(423);
+    expect((await response.json()).aguardando_localizacao).toBe(true);
   });
   it("recovered position persists coordinates, accuracy and diagnostic without a reason", async () => {
     const { response, saved } = await execute({ lat: -22.88, lng: -42.02, precisao: 18, geolocation_error: "TIMEOUT" });

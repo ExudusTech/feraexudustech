@@ -249,8 +249,9 @@ function ProdutoBusca({ label, produtos, value, onChange, prioridade = [] }: { l
 }
 
 /** Occurrence code + "information pending" seal, used in Agenda, Hoje and the manager panel. */
-export function OcorrenciaTag({ s }: { s: { ocorrencia_codigo?: string | null; coleta_status?: string | null; status?: string } }) {
+export function OcorrenciaTag({ s }: { s: { ocorrencia_codigo?: string | null; coleta_status?: string | null; status?: string; aguardando_localizacao?: boolean | null } }) {
   return <>
+    {s.status === "em_atendimento" && s.aguardando_localizacao && <Badge variant="outline" className="border-warning text-warning">Localização pendente</Badge>}
     {s.ocorrencia_codigo && <span className="text-xs text-muted-foreground font-mono">#{s.ocorrencia_codigo}</span>}
     {s.coleta_status === "pendente" && <Badge variant="outline" className="border-warning text-warning">Informações pendentes</Badge>}
   </>;

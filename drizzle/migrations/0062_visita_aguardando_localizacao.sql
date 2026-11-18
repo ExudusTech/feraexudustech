@@ -1,0 +1,4 @@
+ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS aguardando_localizacao boolean NOT NULL DEFAULT false;
+COMMENT ON COLUMN public.schedules.aguardando_localizacao IS 'Visit started without app GPS (or a technical visit whose WhatsApp location was off-site): open, but check-out is blocked until the consultant sends an on-site location to Flora.';
+COMMENT ON COLUMN public.schedules.wa_latitude IS 'DEPRECATED (18/11): pre-check-in WhatsApp location release was removed; locations now go to the open visit awaiting location.';
+CREATE INDEX IF NOT EXISTS schedules_aguardando_localizacao_idx ON public.schedules (assigned_to) WHERE aguardando_localizacao AND status = 'em_atendimento';

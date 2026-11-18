@@ -3,7 +3,7 @@ import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { fotoPrincipal, fotoRefPath, listaFotosRef, normalizarFotosRef, trocarFotoRef } from "@/lib/fotos-referencia";
-import { checkinBloqueadoMensagem, evaluateCheckin, posicaoWhatsapp, WA_LOCALIZACAO_MIN } from "../../supabase/functions/_shared/visit-exec";
+import { checkinBloqueadoMensagem } from "../../supabase/functions/_shared/visit-exec";
 
 describe("fotos de referência do aparelho (até 3: Frente, Lado, Plaqueta)", () => {
   it("keeps only the three known slots", () => {
@@ -28,26 +28,9 @@ describe("fotos de referência do aparelho (até 3: Frente, Lado, Plaqueta)", ()
   });
 });
 
-describe("GPS: localização pelo WhatsApp libera o check-in", () => {
-  const now = Date.parse("2026-11-11T14:00:00Z");
-  const s = { wa_latitude: -22.9, wa_longitude: -42.0, wa_localizacao_em: "2026-11-11T13:50:00Z", wa_localizacao_por: "u1" };
-  it("same consultant within 30 minutes stands in for the app GPS", () => {
-    expect(WA_LOCALIZACAO_MIN).toBe(30);
-    expect(posicaoWhatsapp(s, "u1", now)).toEqual({ lat: -22.9, lng: -42.0 });
-  });
-  it("another user, an old location or a missing one never counts", () => {
-    expect(posicaoWhatsapp(s, "u2", now)).toBeNull();
-    expect(posicaoWhatsapp({ ...s, wa_localizacao_em: "2026-11-11T13:29:00Z" }, "u1", now)).toBeNull();
-    expect(posicaoWhatsapp({ ...s, wa_latitude: null }, "u1", now)).toBeNull();
-    expect(posicaoWhatsapp({}, "u1", now)).toBeNull();
-  });
-  it("inside the radius it passes, outside it stays blocked", () => {
-    const target = { lat: -22.9, lng: -42.0 };
-    expect(evaluateCheckin(posicaoWhatsapp(s, "u1", now), target, 300).precisa_justificativa).toBe(false);
-    expect(evaluateCheckin(posicaoWhatsapp({ ...s, wa_latitude: -22.95 }, "u1", now), target, 300).precisa_justificativa).toBe(true);
-  });
-  it("the app block without GPS tells the consultant to send the location on WhatsApp", () => {
-    expect(checkinBloqueadoMensagem(null, "A visita de manutenção")).toContain("Sem GPS? Envie sua localização pelo WhatsApp da Flora");
+describe("GPS: mensagem de bloqueio", () => {
+  it("off-site block names the distance; without location it points to Flora's WhatsApp", () => {
+    expect(checkinBloqueadoMensagem(null, "A visita de manutenção")).toContain("WhatsApp da Flora");
     expect(checkinBloqueadoMensagem(312000, "A visita de manutenção")).toContain("312 km");
   });
 });
@@ -60,7 +43,7 @@ function harness(tables: Record<string, any[]>) {
     let op = "read", value: any; const f: Array<(r: any) => boolean> = [];
     const rows = () => (tables[table] ?? []).filter((r) => f.every((fn) => fn(r)));
     const chain: any = {
-      select: () => chain, order: () => chain, limit: () => chain, gte: () => chain, lte: () => chain, ilike: () => chain,
+      select: () => chain, order: () => chain, limit: () => chain, gte: () => chain, lte: () => chain, ilike: () => chain, contains: () => chain,
       eq: (k: string, v: any) => { f.push((r) => r[k] === v); return chain; },
       in: (k: string, v: any[]) => { f.push((r) => v.includes(r[k])); return chain; },
       update: (v: any) => { op = "update"; value = v; return chain; }, insert: (v: any) => { op = "insert"; value = v; return chain; },
@@ -78,38 +61,60 @@ function harness(tables: Record<string, any[]>) {
 }
 const org = "7fd8333b-578a-4db8-b1be-fdcb8339d4e8";
 const chat = "3DF9D839DDCF463A3A350ADF91C40B89-5522999990003";
-const base = (lat: number) => ({
+const visita = (over: Record<string, unknown> = {}) => ({ id: "s-man", organization_id: org, assigned_to: "tec", status: "em_atendimento", aguardando_localizacao: true,
+  schedule_type: "manutencao", ocorrencia_codigo: "OC-000010", checkin_em: "2026-11-11T13:00:00Z", title: "Manutenção", latitude: -22.9, longitude: -42.0,
+  clients: { name: "Hotel Mar" }, ...over });
+const base = (schedules: any[]) => ({
   profiles: [{ user_id: "tec", name: "Paulo", phone: "5522999990003", organization_id: org, is_active: true }],
   user_roles: [{ user_id: "tec", role: "consultor_tecnico" }],
   organizations: [{ id: org, raio_checkin_m: 300 }],
-  schedules: [{ id: "s-man", organization_id: org, assigned_to: "tec", status: "agendado", scheduled_date: "2026-11-11", start_time: "10:00:00", title: "Manutenção",
-    latitude: lat, longitude: -42.0, clients: { name: "Hotel Mar" } }],
-  schedule_checkins: [],
+  schedules,
+  schedule_checkins: [{ id: "ck", schedule_id: "s-man" }],
 });
+const escritas = (h: ReturnType<typeof harness>, table: string) => h.writes.filter((x) => x.table === table && x.op === "update");
 
-describe("mcp registrar_localizacao_checkin antes do check-in", () => {
-  it("inside the radius: saves the WhatsApp location on today's visit and releases the app check-in", async () => {
-    const h = harness(base(-22.9));
+describe("18/11: localização pelo WhatsApp vai para a visita aberta aguardando localização", () => {
+  it("inside the radius: 'no local', clears the pending mark on that visit", async () => {
+    const h = harness(base([visita()]));
     const r = await h.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9005, longitude: -42.0 });
     expect(r.success).toBe(true);
-    expect(r.data).toMatchObject({ checkin_liberado: true, dentro_do_raio: true, validade_minutos: 30 });
-    expect(r.message).toContain("Check-in liberado");
-    const w = h.writes.find((x) => x.table === "schedules");
-    expect(w.ids).toEqual(["s-man"]);
-    expect(w.value).toMatchObject({ wa_latitude: -22.9005, wa_longitude: -42.0, wa_localizacao_por: "tec" });
+    expect(r.data).toMatchObject({ status_localizacao: "no_local", aguardando_localizacao: false, pode_encerrar: true, codigo: "#OC-000010" });
+    expect(escritas(h, "schedules")[0]).toMatchObject({ value: { aguardando_localizacao: false }, ids: ["s-man"] });
+    expect(escritas(h, "schedule_checkins")[0].value).toMatchObject({ latitude: -22.9005, fora_do_raio: false, localizacao_origem: "whatsapp" });
   });
-  it("outside the radius: location saved but the check-in stays blocked", async () => {
-    const h = harness(base(-22.0));
+  it("maintenance far away: 'fora do local' in km, stays blocked to close", async () => {
+    const h = harness(base([visita()]));
+    const r = await h.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.0, longitude: -42.0 });
+    expect(r.data).toMatchObject({ status_localizacao: "fora_do_local", fora_do_raio: true, aguardando_localizacao: true, pode_encerrar: false });
+    expect(r.message).toMatch(/km do cliente — fora do local/);
+    expect(r.message).toContain("só encerra no local");
+    expect(escritas(h, "schedules")[0].value).toMatchObject({ aguardando_localizacao: true });
+  });
+  it("commercial visit far away: 'fora do local' but may close", async () => {
+    const h = harness(base([visita({ schedule_type: "visita_comercial", ocorrencia_tipo: null })]));
+    const r = await h.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.0, longitude: -42.0 });
+    expect(r.data).toMatchObject({ status_localizacao: "fora_do_local", aguardando_localizacao: false, pode_encerrar: true });
+  });
+  it("several waiting: the cited #OC wins, without one the most recent (and says which)", async () => {
+    const dois = [visita({ id: "s-old", ocorrencia_codigo: "OC-000007", checkin_em: "2026-11-11T09:00:00Z", clients: { name: "Padaria Sol" } }), visita()];
+    const h1 = harness(base(dois));
+    const r1 = await h1.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9, longitude: -42.0, texto: "localização da OC 7" });
+    expect(r1.data.codigo).toBe("#OC-000007");
+    expect(escritas(h1, "schedules")[0].ids).toEqual(["s-old"]);
+    const h2 = harness(base(dois));
+    const r2 = await h2.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9, longitude: -42.0 });
+    expect(r2.data.codigo).toBe("#OC-000010");
+    expect(r2.message).toContain("usei a mais recente: #OC-000010 Hotel Mar");
+  });
+  it("never guesses by distance or time: visits not awaiting location are ignored", async () => {
+    const h = harness(base([visita({ aguardando_localizacao: false }), visita({ id: "s-ag", status: "agendado" })]));
     const r = await h.route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9, longitude: -42.0 });
-    expect(r.data).toMatchObject({ checkin_liberado: false, dentro_do_raio: false });
-    expect(r.message).toContain("só é liberado no local");
-  });
-  it("mcp uses the same 30-minute window as the app check-in", () => {
-    expect(source).toContain(`const WA_LOCALIZACAO_MIN = ${WA_LOCALIZACAO_MIN};`);
-  });
-  it("no visit today: refuses", async () => {
-    const t = base(-22.9); t.schedules[0].scheduled_date = "2026-11-12";
-    const r = await harness(t).route("registrar_localizacao_checkin", { chat_id: chat, latitude: -22.9, longitude: -42.0 });
     expect(r.success).toBe(false);
+    expect(r.message).toContain("aguardando localização");
+    expect(h.writes.filter((w) => w.op === "update")).toHaveLength(0);
+  });
+  it("the old 30-minute release is gone", () => {
+    expect(source).not.toContain("WA_LOCALIZACAO_MIN");
+    expect(source).not.toContain("wa_latitude");
   });
 });

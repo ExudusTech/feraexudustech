@@ -4724,44 +4724,120 @@ function destinoVisita(s: any): [number, number] | null {
   return s.latitude != null ? [s.latitude, s.longitude] : s.clients?.latitude != null ? [s.clients.latitude, s.clients.longitude]
     : s.leads?.latitude != null ? [s.leads.latitude, s.leads.longitude] : null;
 }
-/** Minutes a WhatsApp location keeps releasing the app check-in (same value as WA_LOCALIZACAO_MIN in _shared/visit-exec.ts). */
-const WA_LOCALIZACAO_MIN = 30;
+/** Same rules as permiteCheckinForaDoLocal/isTechnical in _shared/visit-exec.ts (mcp cannot import it in the test harness). */
+function visitaPermiteFora(type?: string | null, subtype?: string | null, ocorrencia?: string | null): boolean {
+  if (ocorrencia && ocorrencia !== "primeira_visita") return false;
+  const t = `${type ?? ""} ${subtype ?? ""}`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/manutenc|instalac|teste|entrega|reposic|retirada/.test(t)) return false;
+  return (type ?? "visita_comercial") === "visita_comercial" || (!type && !subtype);
+}
+/** "#OC-000123", "OC 123", "oc123" → 123; null without a code. */
+function numeroOcorrencia(v: unknown): number | null {
+  const m = /\boc[\s#:-]*0*(\d{1,7})\b/i.exec(typeof v === "string" ? v : "");
+  return m ? Number(m[1]) : null;
+}
 
+/** Background alert to checkin_fora_do_local subscribers plus active gestores (inactive recipient rows are skipped), deduped per visit. */
+async function alertarForaDoLocal(supabase: ReturnType<typeof getClient>, scheduleId: string, codigo: string, message: string): Promise<void> {
+  try {
+    const { data: isDemo } = await (supabase as any).rpc("demo_envolvido", { _ids: [scheduleId] });
+    if (isDemo === true) return;
+  } catch { /* lookup only */ }
+  const { data: prior } = await supabase.from("notification_logs").select("id").eq("organization_id", NITSCLEAN_ORG_ID).eq("event_type", "checkin_fora_do_local")
+    .contains("payload", { schedule_id: scheduleId, whatsapp: true }).limit(1);
+  if (Array.isArray(prior) && prior.length) return;
+  const { data: subs } = await supabase.from("notification_recipients").select("id, nome, whatsapp, user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", true)
+    .contains("eventos", ["checkin_fora_do_local"]);
+  const { data: desligados } = await supabase.from("notification_recipients").select("user_id").eq("organization_id", NITSCLEAN_ORG_ID).eq("ativo", false);
+  const off = new Set(arr(desligados).map((r) => r.user_id).filter(Boolean));
+  const { data: gs } = await supabase.from("user_roles").select("user_id").eq("role", "gestor");
+  const gestoresIds = arr(gs).map((g) => g.user_id).filter((id) => id && !off.has(id));
+  const userIds = [...new Set([...arr(subs).map((r) => r.user_id).filter(Boolean), ...gestoresIds])];
+  const { data: profiles } = userIds.length ? await supabase.from("profiles").select("user_id, name, phone, is_active").eq("organization_id", NITSCLEAN_ORG_ID).in("user_id", userIds) : { data: [] };
+  const byUser = new Map(arr(profiles).map((p) => [p.user_id, p]));
+  const destinos = new Map<string, { id: string | null; nome: string }>();
+  for (const r of arr(subs)) {
+    const p: any = r.user_id ? byUser.get(r.user_id) : null;
+    const fone = r.user_id ? (p && p.is_active !== false ? p.phone : null) : r.whatsapp;
+    if (fone) destinos.set(fone, { id: r.id, nome: p?.name ?? r.nome });
+  }
+  for (const id of gestoresIds) {
+    const p: any = byUser.get(id);
+    if (p?.phone && p.is_active !== false && !destinos.has(p.phone)) destinos.set(p.phone, { id: null, nome: p.name ?? "Gestor" });
+  }
+  const texto = `${message}\n\nCódigo ${codigo} — responda aqui para a Flora ajudar ou abra o link.`;
+  for (const [fone, d] of destinos) {
+    let status = "FAILED"; let errorMessage: string | null = null;
+    try {
+      if (!GPTMAKER_API_TOKEN || !GPTMAKER_WHATSAPP_CHANNEL_ID) throw new Error("CONFIG_MISSING");
+      if (!/^\d{8,15}$/.test(fone)) throw new Error("INVALID_PHONE");
+      const res = await fetch(`https://api.gptmaker.ai/v2/channel/${GPTMAKER_WHATSAPP_CHANNEL_ID}/start-conversation`, { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${GPTMAKER_API_TOKEN}` }, body: JSON.stringify({ phone: fone, message: texto }), signal: AbortSignal.timeout(10000) });
+      if (res.ok) status = "SENT"; else errorMessage = `HTTP ${res.status}`;
+      await res.body?.cancel();
+    } catch (e) { errorMessage = e instanceof Error && ["CONFIG_MISSING", "INVALID_PHONE"].includes(e.message) ? e.message : "DELIVERY_FAILED"; }
+    await supabase.from("notification_logs").insert({ organization_id: NITSCLEAN_ORG_ID, event_type: "checkin_fora_do_local", recipient_id: d.id, recipient_name: d.nome,
+      channel: "WHATSAPP", destination: fone, payload: { schedule_id: scheduleId, whatsapp: true, codigo, message: texto }, status, error_message: errorMessage });
+  }
+}
+
+/**
+ * 18/11: a visit started without app GPS stays open "aguardando localização"; the location sent here goes to THAT open visit of this user
+ * (the cited #OC when several wait, otherwise the most recent, named in the answer). No distance guessing, no time window.
+ */
 async function registrarLocalizacaoCheckin(params: Record<string, unknown>): Promise<McpResponse> {
   return withTeam(async (u, supabase) => {
     const lat = Number(params.latitude), lng = Number(params.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return fail("Localização inválida");
+    const { data: abertas } = await supabase.from("schedules").select("id, title, status, schedule_type, schedule_subtype, ocorrencia_tipo, ocorrencia_codigo, checkin_em, lead_id, latitude, longitude, aguardando_localizacao, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id)")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id).eq("status", "em_atendimento").eq("aguardando_localizacao", true).order("checkin_em", { ascending: false }).limit(20);
+    const lista = arr(abertas).sort((a, b) => String(b.checkin_em ?? "").localeCompare(String(a.checkin_em ?? "")));
+    const nomeDe = (v: any) => v.clients?.name ?? v.leads?.empresa_nome ?? v.leads?.company ?? v.title ?? "cliente";
+    const codDe = (v: any) => visitCode(v.id, v.ocorrencia_codigo);
+    if (!lista.length) {
+      return fail("Você não tem visita aberta aguardando localização.", "Toque em Iniciar no Fera; se o GPS falhar, a visita abre e você manda a localização aqui.");
+    }
+    const citado = numeroOcorrencia(params.codigo) ?? numeroOcorrencia(params.texto);
+    let alvo: any = lista[0];
+    if (citado !== null) {
+      alvo = lista.find((v) => numeroOcorrencia(v.ocorrencia_codigo) === citado);
+      if (!alvo) return fail(`A ocorrência OC-${String(citado).padStart(6, "0")} não está aguardando localização. Aguardando: ${lista.map((v) => `${codDe(v)} ${nomeDe(v)}`).join("; ")}.`);
+    }
     const { data: org } = await supabase.from("organizations").select("raio_checkin_m").eq("id", NITSCLEAN_ORG_ID).maybeSingle();
     const raio = Number((org as any)?.raio_checkin_m ?? 300) || 300;
-    const s = await visitaEmAndamento(supabase, u);
-    if (s) {
-      const dest = destinoVisita(s);
-      const distancia = dest ? metrosEntre([lat, lng], dest) : null;
-      const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
-        fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
-        localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
-      if (error) return fail(dbFail("registrar localização", error));
-      return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
-        link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente` : "Localização registrada (cliente sem coordenadas)");
-    }
-    // 11/11: no GPS in the app blocks technical check-ins; the WhatsApp location stands in for it on today's open visit nearest to the consultant.
-    const { data: abertas } = await supabase.from("schedules").select("id, title, start_time, latitude, longitude, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude)")
-      .eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id).eq("scheduled_date", spToday()).in("status", ["agendado", "confirmado"]).order("start_time").limit(20);
-    const lista = ((abertas ?? []) as any[]).map((v) => { const d = destinoVisita(v); return { v, dist: d ? metrosEntre([lat, lng], d) : null }; });
-    if (!lista.length) return fail("Você não tem visita para iniciar hoje.", "Confira sua agenda no Fera");
-    const alvo = lista.filter((x) => x.dist !== null).sort((a, b) => a.dist! - b.dist!)[0] ?? lista[0];
+    const dest = destinoVisita(alvo);
+    const distancia = dest ? metrosEntre([lat, lng], dest) : null;
+    const permiteFora = visitaPermiteFora(alvo.schedule_type, alvo.schedule_subtype, alvo.ocorrencia_tipo);
+    const fora = distancia !== null && distancia > raio;
+    const aguardando = fora && !permiteFora;
+    const status = distancia === null ? "sem_destino" : fora ? "fora_do_local" : "no_local";
     const now = new Date().toISOString();
-    const { error } = await supabase.from("schedules").update({ wa_latitude: lat, wa_longitude: lng, wa_localizacao_em: now, wa_localizacao_por: u.user_id })
-      .eq("id", alvo.v.id).eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id);
+    const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia, fora_do_raio: fora, destino_sem_coordenadas: !dest,
+      localizacao_origem: "whatsapp", localizacao_whatsapp_em: now }).eq("schedule_id", alvo.id);
     if (error) return fail(dbFail("registrar localização", error));
-    const cliente = alvo.v.clients?.name ?? alvo.v.leads?.empresa_nome ?? alvo.v.leads?.company ?? alvo.v.title ?? "cliente";
-    const liberado = alvo.dist === null || alvo.dist <= raio;
-    const msg = alvo.dist === null
-      ? `Localização recebida para ${cliente} (endereço sem coordenadas). Volte ao Fera e toque em Iniciar nos próximos ${WA_LOCALIZACAO_MIN} min.`
-      : liberado ? `Localização recebida: você está a ${distanciaTexto(alvo.dist)} de ${cliente}. Check-in liberado: volte ao Fera e toque em Iniciar nos próximos ${WA_LOCALIZACAO_MIN} min.`
-      : `Você está a ${distanciaTexto(alvo.dist)} de ${cliente}. O check-in só é liberado no local (até ${distanciaTexto(raio)}). Chegue ao cliente e envie a localização de novo.`;
-    return ok({ codigo: visitCode(alvo.v.id), distancia_m: alvo.dist, dentro_do_raio: alvo.dist !== null && alvo.dist <= raio, checkin_liberado: liberado,
-      destino_sem_coordenadas: alvo.dist === null, validade_minutos: WA_LOCALIZACAO_MIN, link: feraLink(`/agenda?agendamento=${alvo.v.id}`) }, msg);
+    const { error: e2 } = await supabase.from("schedules").update({ aguardando_localizacao: aguardando }).eq("id", alvo.id).eq("organization_id", NITSCLEAN_ORG_ID).eq("assigned_to", u.user_id);
+    if (e2) return fail(dbFail("registrar localização", e2));
+    const cliente = nomeDe(alvo), codigo = codDe(alvo);
+    const tipo = alvo.ocorrencia_tipo === "ativacao_base" ? "A ativação da base" : "Esta visita";
+    const bg: Promise<unknown>[] = [];
+    if (fora) {
+      const consultor = u.nome ?? "Consultor";
+      const message = [aguardando ? "🚫 Localização fora do local (visita não pode encerrar)" : "📍 Check-in fora do local", `Cliente: ${cliente}`, `Consultor: ${consultor}`,
+        `Distância: ${distanciaTexto(distancia!)} do endereço (localização pelo WhatsApp)`, `Ver no Fera: ${feraLink(`/agenda?agendamento=${alvo.id}`)}`].join("\n");
+      bg.push(alertarForaDoLocal(supabase, alvo.id, codigo, message).catch(() => console.error("[mcp] fora do local alert failed")));
+    }
+    if (alvo.lead_id) {
+      bg.push(Promise.resolve(supabase.from("lead_timeline").insert({ organization_id: NITSCLEAN_ORG_ID, lead_id: alvo.lead_id, pessoa_id: alvo.leads?.pessoa_id ?? null, tipo: "visita", origem: "flora",
+        resumo: `Localização pelo WhatsApp: ${status === "sem_destino" ? "cliente sem coordenadas (distância não verificada)" : `${distanciaTexto(distancia!)} do endereço — ${fora ? "fora do local" : "no local"}`}`, referencia_id: alvo.id })));
+    }
+    if (bg.length) (globalThis as any).EdgeRuntime?.waitUntil?.(Promise.all(bg).then(() => undefined, () => undefined));
+    const qual = lista.length > 1 && citado === null ? ` (usei a mais recente: ${codigo} ${cliente}; se era outra, mande a localização de novo com o código, ex.: #OC-000123)` : ` (${codigo} ${cliente})`;
+    const msg = status === "sem_destino" ? `Localização registrada${qual}. O endereço do cliente não tem coordenadas, então a distância não foi verificada. Pode seguir e encerrar no Fera.`
+      : !fora ? `Localização recebida: você está a ${distanciaTexto(distancia!)} do cliente — no local${qual}. Pode encerrar a visita no Fera quando terminar.`
+      : aguardando ? `Você está a ${distanciaTexto(distancia!)} do cliente — fora do local${qual}. ${tipo} só encerra no local: chegue ao cliente e mande a localização de novo. O gestor foi avisado.`
+      : `Localização recebida: ${distanciaTexto(distancia!)} do cliente — fora do local${qual}. Visita comercial pode seguir; o gestor foi avisado.`;
+    return ok({ codigo, cliente, status_localizacao: status, distancia_m: distancia, fora_do_raio: fora, aguardando_localizacao: aguardando, pode_encerrar: !aguardando,
+      link: feraLink(`/agenda?agendamento=${alvo.id}`) }, msg);
   }, params, isField);
 }
 
@@ -6599,7 +6675,7 @@ const TEAM_MANIFEST = [
   { name: "consultar_cliente_ou_lead", description: "EQUIPE: resumo de cliente/lead (contatos, último histórico, pontos instalados, próxima visita, link). Vendedor/consultor vê só a própria carteira.", parameters: { type: "object", required: ["chat_id", "termo"], properties: { ...CHAT, termo: { type: "string", description: "Nome da empresa" } } } },
   { name: "criar_lead_equipe", description: "EQUIPE: cria lead (empresa + cidade + 1 contato) em nome do usuário.", parameters: { type: "object", required: ["chat_id", "empresa", "cidade", "contato_nome"], properties: { ...CHAT, empresa: { type: "string" }, cidade: { type: "string" }, endereco: { type: "string" }, cnpj: { type: "string" }, contato_nome: { type: "string" }, contato_telefone: { type: "string" }, cargo: { type: "string" } } } },
   { name: "agendar_visita_equipe", description: "EQUIPE: agenda visita com as mesmas validações do Fera (cliente obrigatório fora da comercial, CNPJ quando há nota, conflito, feriado, agenda Google). Vendedor só visita comercial.", parameters: { type: "object", required: ["chat_id", "tipo", "data", "horario"], properties: { ...CHAT, tipo: { type: "string", enum: TEAM_TYPES }, data: { type: "string" }, horario: { type: "string", description: "HH:MM" }, client_id: { type: "string" }, lead_id: { type: "string" }, operacao_material: { type: "string", enum: ["instalacao_teste", "instalacao_definitiva", "entrega", "substituicao", "manutencao_reposicao"] }, itens: { type: "array", items: { type: "object", properties: { descricao: { type: "string" }, quantidade: { type: "string" } } } }, consultor_id: { type: "string", description: "Só gestor" }, observacao: { type: "string" } } } },
-  { name: "registrar_localizacao_checkin", description: "EQUIPE: plano B quando o GPS do app falha — com visita em andamento grava a localização no check-in; antes do check-in, libera o Iniciar no app (30 min) se a localização estiver dentro do raio da visita de hoje mais próxima.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" } } } },
+  { name: "registrar_localizacao_checkin", description: "EQUIPE: quando o GPS do app falha, a visita abre 'aguardando localização'; esta localização vai para essa visita aberta (com várias, a do código #OC citado; sem código, a mais recente) e diz se ficou no local ou fora.", parameters: { type: "object", required: ["chat_id", "latitude", "longitude"], properties: { ...CHAT, latitude: { type: "number" }, longitude: { type: "number" }, codigo: { type: "string", description: "Código da ocorrência (#OC-…) quando houver mais de uma visita aguardando" } } } },
   { name: "registrar_nota_visita", description: "EQUIPE: nota da visita em andamento a partir da transcrição do áudio. 1ª chamada devolve resumo + codigo_confirmacao (NÃO grava); só depois do 'sim' chame com confirmar=true e o mesmo texto.", parameters: { type: "object", required: ["chat_id", "texto"], properties: { ...CHAT, texto: { type: "string" }, proximo_passo: { type: "string" }, confirmar: { type: "boolean" }, codigo_confirmacao: { type: "string" }, empresa: { type: "string", description: "Sem visita aberta: estabelecimento visitado" }, cidade: { type: "string", description: "Sem visita aberta: cidade" } } } },
   { name: "assumir_atendimento", description: "EQUIPE: assume um atendimento (código #A-…).", parameters: { type: "object", required: ["chat_id", "codigo"], properties: { ...CHAT, codigo: { type: "string" } } } },
   { name: "resolver_atendimento", description: "EQUIPE: resolve um atendimento com resolução e resultado.", parameters: { type: "object", required: ["chat_id", "codigo", "resolucao", "resultado"], properties: { ...CHAT, codigo: { type: "string" }, resolucao: { type: "string" }, resultado: { type: "string", enum: RESULTADOS_ATENDIMENTO } } } },
