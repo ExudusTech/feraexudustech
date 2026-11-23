@@ -6202,18 +6202,21 @@ function perguntaDePendencia(texto: string, params: Record<string, unknown>): "l
   if (PERGUNTA_AGENDA.test(t)) return "minha_agenda";
   return null;
 }
+/** Active org user (not the asker) whose first name (3+ letters) appears as a whole word in the text; undefined otherwise. */
+async function consultorCitado(u: TeamUser, texto: string): Promise<string | undefined> {
+  const t = foldTxt(texto);
+  const { data: perfis } = await getClient().from("profiles").select("user_id, name, is_active").eq("organization_id", NITSCLEAN_ORG_ID).limit(200);
+  const outro = arr(perfis).filter((p) => p.is_active !== false && p.user_id !== u.user_id && typeof p.name === "string")
+    .find((p) => { const primeiro = foldTxt(p.name).split(" ")[0].replace(/[^a-z0-9]/g, ""); return primeiro.length >= 3 && new RegExp(`\\b${primeiro}\\b`).test(t); });
+  return outro?.name;
+}
 async function agendaPedida(u: TeamUser, texto: string, dataExplicita: unknown, consultorExplicito: unknown): Promise<{ acao: "minha_agenda" | "agenda_equipe"; data: string; consultor?: string } | null> {
   const t = foldTxt(texto);
   if (!PEDE_AGENDA.test(t) || PEDE_NUMEROS.test(t) || ehTempoFunil(texto)) return null;
   const hoje = spToday(), amanha = addDiasIso(hoje, 1);
   const data = diaRelativo(texto, hoje) ?? validDate(dataExplicita) ?? hoje;
   let consultor = typeof consultorExplicito === "string" && consultorExplicito.trim() ? consultorExplicito.trim() : undefined;
-  if (!consultor && !PEDE_EQUIPE.test(t)) {
-    const { data: perfis } = await getClient().from("profiles").select("user_id, name, is_active").eq("organization_id", NITSCLEAN_ORG_ID).limit(200);
-    const outro = arr(perfis).filter((p) => p.is_active !== false && p.user_id !== u.user_id && typeof p.name === "string")
-      .find((p) => { const primeiro = foldTxt(p.name).split(" ")[0].replace(/[^a-z0-9]/g, ""); return primeiro.length >= 3 && new RegExp(`\\b${primeiro}\\b`).test(t); });
-    if (outro) consultor = outro.name;
-  }
+  if (!consultor && !PEDE_EQUIPE.test(t)) consultor = await consultorCitado(u, texto);
   const equipe = !!consultor || PEDE_EQUIPE.test(t);
   // Field roles keep their own today/tomorrow agenda answer (with what to take), which is already an agenda.
   if (!equipe && visaoIndicadores(u.papeis) === "campo" && ehAgendaCampo(texto) && (data === hoje || data === amanha)) return null;
@@ -6242,7 +6245,11 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   // Unscheduled visit (anexar_coleta / registrar_nota): establishment and city may also come as top-level fields.
   for (const k of ["empresa", "cidade"]) if (typeof params[k] === "string" && (params[k] as string).trim() && p[k] === undefined) p[k] = (params[k] as string).trim();
   if (acao === "consultar" && !p.termo && typeof params.texto === "string") p.termo = params.texto.trim();
-  if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && !params.texto.includes(":")) p.consultor = params.texto.trim();
+  // Only a first name matching an active org user filters the team agenda; the rest of the sentence ("da equipe amanhã") never does.
+  if (acao === "agenda_equipe" && !p.consultor && typeof params.texto === "string" && params.texto.trim()) {
+    const citado = await consultorCitado(user, params.texto);
+    if (citado) p.consultor = citado;
+  }
   let pedidoOriginal: string | null = null;
   if (acao === "indicadores" && typeof params.texto === "string") {
     const agenda = await agendaPedida(user, params.texto, p.data, p.consultor);
@@ -6259,6 +6266,11 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
   if ((acao === "minha_agenda" || acao === "agenda_equipe") && typeof params.texto === "string") {
     const rel = diaRelativo(params.texto, spToday());
     if (rel) p.data = rel;
+  }
+  // Booking: a relative day today or later is computed here too; ontem/anteontem never become a booking date (current flow decides).
+  if (acao === "agendar_visita" && typeof params.texto === "string") {
+    const hoje = spToday(), rel = diaRelativo(params.texto, hoje);
+    if (rel && rel >= hoje) p.data = rel;
   }
   if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
     const alvo = typeof p.termo === "string" ? p.termo : typeof p.empresa === "string" ? p.empresa : null;

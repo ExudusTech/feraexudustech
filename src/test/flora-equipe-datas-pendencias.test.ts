@@ -21,7 +21,7 @@ function tables(): Record<string, any[]> {
     ],
     user_roles: [{ user_id: "u1", role: "vendedor" }, { user_id: "u2", role: "super_admin" }],
     schedules: [visita("19", "2026-11-19", "u2", "Pousada Dezenove"), visita("20", "2026-11-20", "u2", "Hotel Vinte"), visita("25", "2026-11-25", "u2", "Bar Vinte e Cinco"),
-      visita("18", "2026-11-18", "u1", "Loja Hoje")],
+      visita("18", "2026-11-18", "u1", "Loja Hoje"), visita("19m", "2026-11-19", "u1", "Padaria do Marcos")],
     atendimentos: [], tarefas_faturamento: [], lead_timeline: [], leads: [], clients: [], lead_stages: [], ekkoa_coverage_areas: [],
   };
 }
@@ -45,10 +45,11 @@ function harness() {
     EdgeRuntime: { waitUntil: () => {} }, fetch: vi.fn(), AbortSignal: { timeout: () => undefined }, console: { warn: vi.fn(), error: vi.fn(), log: vi.fn() },
     Response, Request, URL, Blob, performance, TextEncoder, crypto, Date, Intl, Uint8Array, DataView, Uint32Array, atob, btoa });
   vm.runInContext(ts.transpileModule(source.replace(/^import .*createClient.*;$/m, ""), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText, context);
-  return (acao: string, texto: string, extra: Record<string, unknown> = {}, phone = PHONES.ph): Promise<any> => {
+  const route = (acao: string, texto: string, extra: Record<string, unknown> = {}, phone = PHONES.ph): Promise<any> => {
     context.params = { chat_id: chat(phone), acao, texto, ...extra };
     return vm.runInContext("routeTool('flora_equipe', params)", context);
   };
+  return Object.assign(route, { context });
 }
 
 describe("datas relativas: o servidor calcula, a data da Flora é ignorada (hoje = qua 18/11/2026 16:09)", () => {
@@ -117,5 +118,59 @@ describe("pergunta de pendências/agenda enviada como anexar_coleta ou registrar
   it("com código da ocorrência continua em anexar_coleta", async () => {
     const r = await route("anexar_coleta", "o que falta?", { codigo: "#OC-000105" });
     expect(r.data?.acao).toBe("anexar_coleta");
+  });
+});
+
+describe("agenda_equipe: só um nome de usuário ativo filtra o consultor (hoje = qua 18/11/2026)", () => {
+  const route = harness();
+  it("'agenda da equipe amanhã' traz toda a equipe em 19/11", async () => {
+    const r = await route("agenda_equipe", "agenda da equipe amanhã", { data: "2026-11-20" });
+    expect(r.data.acao).toBe("agenda_equipe");
+    expect(r.data.data).toBe("2026-11-19");
+    expect(r.data.consultores.map((c: any) => c.consultor).sort()).toEqual(["Marcos Serafim", "PH Nascimento"]);
+  });
+  it("'agenda do Marcos amanhã' filtra só o Marcos", async () => {
+    const r = await route("agenda_equipe", "agenda do Marcos amanhã");
+    expect(r.data.consultores.map((c: any) => c.consultor)).toEqual(["Marcos Serafim"]);
+    expect(r.data.mensagem_para_equipe).toContain("Padaria do Marcos");
+    expect(r.data.mensagem_para_equipe).not.toContain("Pousada Dezenove");
+  });
+  it("nome que não é de usuário ('agenda do João amanhã') não filtra: equipe toda", async () => {
+    const r = await route("agenda_equipe", "agenda do João amanhã");
+    expect(r.data.consultores).toHaveLength(2);
+  });
+});
+
+describe("agendar_visita pela Flora equipe: data relativa calculada pelo servidor (hoje = qua 18/11/2026)", () => {
+  const route = harness();
+  const real = vm.runInContext("TEAM_TOOLS.agendar_visita_equipe", route.context);
+  const recebido: any[] = [];
+  const espiar = () => vm.runInContext("TEAM_TOOLS", route.context).agendar_visita_equipe = async (p: any) => { recebido.push(p); return { success: true, message: "Visita agendada", data: { data: p.data } }; };
+  const dados = { tipo: "comercial", horario: "10:00", client_id: "c1" };
+  it.each([
+    ["agendar visita comercial amanhã 10h", "2026-11-19"], ["agenda pra hoje às 10h", "2026-11-18"],
+    ["marca depois de amanhã", "2026-11-20"], ["visita na sexta 10h", "2026-11-20"], ["visita na segunda-feira", "2026-11-23"],
+  ])("'%s' → %s, ignorando a data da Flora", async (texto, esperado) => {
+    espiar(); recebido.length = 0;
+    await route("agendar_visita", texto, { data: "2026-12-01", dados });
+    expect(recebido[0].data).toBe(esperado);
+  });
+  it("sem referência relativa vale a data da Flora", async () => {
+    espiar(); recebido.length = 0;
+    await route("agendar_visita", "agendar visita dia 25 às 10h", { data: "2026-11-25", dados });
+    expect(recebido[0].data).toBe("2026-11-25");
+  });
+  it("'ontem' sem data da Flora continua pedindo a data", async () => {
+    espiar(); recebido.length = 0;
+    const r = await route("agendar_visita", "agendar a visita de ontem 10h", { dados });
+    expect(r.success).toBe(false);
+    expect(r.data.faltam).toEqual(["data"]);
+    expect(recebido).toHaveLength(0);
+  });
+  it("'anteontem' com data passada da Flora continua dando 'Data no passado'", async () => {
+    vm.runInContext("TEAM_TOOLS", route.context).agendar_visita_equipe = real;
+    const r = await route("agendar_visita", "agendar a visita de anteontem", { data: "2026-11-16", dados });
+    expect(r.success).toBe(false);
+    expect(r.message).toBe("Data no passado");
   });
 });
