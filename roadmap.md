@@ -1,4 +1,6 @@
 # Tasks
+- [x] 23/11: Flora equipe (datas relativas no servidor, pendências fora de anexar_coleta), painel com tarefas abertas e funil pelas etapas atuais; testes; mcp publicado.
+- [ ] Conferir o painel logado no celular (blocked: sem sessão de gestor no ambiente).
 - [x] Histórico do funil e das propostas (triggers, marcos, backfill estimado), métricas puras + card "Tempo do funil" em Relatórios, perguntas de tempo na Flora Equipe, histórico no cenário demo; 664 testes; funções publicadas.
 - [ ] Conferir o card "Tempo do funil" logado e com o cenário demo recriado (blocked: sem sessão do PH no ambiente; precisa do clique do PH).
 - [x] Indicadores por período (flora_equipe acao=indicadores): período livre + anterior, recorte vendedor/cidade/tipo, permissões por papel, texto curto com links, boletim PNG 1080×1350 (resvg + Montserrat) com fallback; testes; mcp publicado.

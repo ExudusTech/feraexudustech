@@ -6172,22 +6172,41 @@ const PEDE_AGENDA = /\bagenda\b|compromisso|\bvisitas?\b|o que (eu )?(tenho|temo
 const PEDE_NUMEROS = /resumo|numero|indicador|resultado|desempenho|boletim|panorama|balanco|relatorio|ranking|quant[oa]s?\b|como (foi|foram|estamos|esta|estao|fomos|anda|andam|vai|vao)\b|funil|grafico|dashboard|tempo|ciclo|taxa|percent|\bmeta/;
 const PEDE_EQUIPE = /\b(equipe|time|todos|todo mundo|pessoal|geral|consultores|vendedores)\b/;
 const DIAS_SEMANA_TXT = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"];
-function diaDaAgenda(texto: string, hoje: string): string {
+/** Day named relatively in the user's text (hoje, amanhã, depois de amanhã, ontem, anteontem, a weekday), computed on the
+ * São Paulo calendar; null when the text has no relative reference. Such a reference always beats the date the Flora sends. */
+function diaRelativo(texto: string, hoje: string): string | null {
   const t = foldTxt(texto);
   if (/depois de amanha/.test(t)) return addDiasIso(hoje, 2);
-  if (/amanha/.test(t)) return addDiasIso(hoje, 1);
-  if (/anteontem/.test(t)) return addDiasIso(hoje, -2);
-  if (/ontem/.test(t)) return addDiasIso(hoje, -1);
+  if (/\bamanha\b/.test(t)) return addDiasIso(hoje, 1);
+  if (/\banteontem\b/.test(t)) return addDiasIso(hoje, -2);
+  if (/\bontem\b/.test(t)) return addDiasIso(hoje, -1);
   if (/\bhoje\b/.test(t)) return hoje;
-  const dow = DIAS_SEMANA_TXT.findIndex((d) => new RegExp(`\\b${d}\\b`).test(t));
+  const dow = DIAS_SEMANA_TXT.findIndex((d) => new RegExp(`\\b${d}\\b(?!\\s+(vez|visita|via|opcao|chance)\\b)`).test(t));
   if (dow >= 0) { const atual = new Date(`${hoje}T12:00:00Z`).getUTCDay(); return addDiasIso(hoje, (dow - atual + 7) % 7); }
-  return hoje;
+  return null;
+}
+
+// anexar_coleta / registrar_nota whose text is only a question about the user's own pendências/agenda (no visit content).
+const PERGUNTA_PENDENCIA = /\b(o )?q(ue)? (eu )?(tenho|tem|ha|ficou|esta|ta) (de |em )?pendentes?\b|\bminhas pendencias\b|\bquais (sao )?(as )?(minhas )?pendencias\b|\btenho (alguma |algo )?(pendencia|pendente)s?\b|\bo q(ue)? (ainda )?(me )?falta\b/;
+const PERGUNTA_AGENDA = /\bminha agenda\b|\bminhas visitas\b|\bqual (e )?(a )?agenda\b|\bo q(ue)? (eu )?tenho (pra |para )?(hoje|amanha|depois de amanha|segunda|terca|quarta|quinta|sexta|sabado|domingo)\b/;
+const CONTEUDO_VISITA = /\b(visitei|visitamos|fui|passei|instalei|instalamos|deixei|deixamos|levei|ofereci|oferecemos|comprou|compraram|quer|querem|pediu|pediram|gostou|gostaram|falei|conversei|aparelhos?|refis?|refil|unidades?|caixas?|litros?|galao|galoes|cliente|responsavel|dono|gerente|estabelecimento)\b/;
+/** Conservative: only short, single-line questions without names, numbers or visit words are rerouted; anything else stays a visit note. */
+function perguntaDePendencia(texto: string, params: Record<string, unknown>): "listar_pendencias" | "minha_agenda" | null {
+  const bruto = texto.trim();
+  if (!bruto || bruto.length > 80 || /[\r\n]/.test(bruto) || /\d/.test(bruto)) return null;
+  if (params.confirmar === true || ["codigo", "codigo_confirmacao", "empresa", "cidade"].some((k) => typeof params[k] === "string" && (params[k] as string).trim())) return null;
+  if (bruto.split(/\s+/).slice(1).some((w) => /^[^\p{L}]*\p{Lu}/u.test(w))) return null;
+  const t = foldTxt(bruto);
+  if (CONTEUDO_VISITA.test(t)) return null;
+  if (PERGUNTA_PENDENCIA.test(t)) return "listar_pendencias";
+  if (PERGUNTA_AGENDA.test(t)) return "minha_agenda";
+  return null;
 }
 async function agendaPedida(u: TeamUser, texto: string, dataExplicita: unknown, consultorExplicito: unknown): Promise<{ acao: "minha_agenda" | "agenda_equipe"; data: string; consultor?: string } | null> {
   const t = foldTxt(texto);
   if (!PEDE_AGENDA.test(t) || PEDE_NUMEROS.test(t) || ehTempoFunil(texto)) return null;
   const hoje = spToday(), amanha = addDiasIso(hoje, 1);
-  const data = validDate(dataExplicita) ?? diaDaAgenda(texto, hoje);
+  const data = diaRelativo(texto, hoje) ?? validDate(dataExplicita) ?? hoje;
   let consultor = typeof consultorExplicito === "string" && consultorExplicito.trim() ? consultorExplicito.trim() : undefined;
   if (!consultor && !PEDE_EQUIPE.test(t)) {
     const { data: perfis } = await getClient().from("profiles").select("user_id, name, is_active").eq("organization_id", NITSCLEAN_ORG_ID).limit(200);
@@ -6231,6 +6250,15 @@ async function floraEquipe(params: Record<string, unknown>): Promise<McpResponse
       pedidoOriginal = acao; acao = agenda.acao; tool = FLORA_EQUIPE_ACOES[acao];
       p.data = agenda.data; delete p.consultor; if (agenda.consultor) p.consultor = agenda.consultor;
     }
+  }
+  if ((acao === "anexar_coleta" || acao === "registrar_nota") && typeof params.texto === "string") {
+    const destino = perguntaDePendencia(params.texto, params);
+    if (destino) { pedidoOriginal = acao; acao = destino; tool = FLORA_EQUIPE_ACOES[acao]; }
+  }
+  // A relative day in the user's text (hoje, amanhã, ontem, weekday…) is computed here; the Flora's date counts only without one.
+  if ((acao === "minha_agenda" || acao === "agenda_equipe") && typeof params.texto === "string") {
+    const rel = diaRelativo(params.texto, spToday());
+    if (rel) p.data = rel;
   }
   if (acao === "agendar_visita" && !p.client_id && !p.lead_id) {
     const alvo = typeof p.termo === "string" ? p.termo : typeof p.empresa === "string" ? p.empresa : null;

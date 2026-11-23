@@ -3,37 +3,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Target } from "lucide-react";
+import { useLeadStages } from "@/components/settings/LeadStagesSettings";
+import { funilPorEtapa, type PipelineLead } from "@/lib/lead-pipeline";
 
 interface Props {
-  leads: { id: string; stage: string }[] | undefined;
+  leads: PipelineLead[] | undefined;
 }
-
-const STAGE_LABELS: Record<string, string> = {
-  novo: "Novo",
-  contato: "Contato",
-  qualificado: "Qualificado",
-  proposta: "Proposta",
-  negociacao: "Negociação",
-  fechado_ganho: "Ganho",
-  fechado_perdido: "Perdido",
-};
 
 const chartConfig = {
   quantidade: { label: "Leads", color: "hsl(0, 72%, 51%)" },
 };
 
-export default function LeadsPipelineChart({ leads }: Props) {
-  const data = useMemo(() => {
-    const counts: Record<string, number> = {};
-    leads?.forEach(l => {
-      counts[l.stage] = (counts[l.stage] || 0) + 1;
-    });
+const curto = (v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v);
 
-    return Object.entries(STAGE_LABELS).map(([key, label]) => ({
-      name: label,
-      quantidade: counts[key] || 0,
-    }));
-  }, [leads]);
+export default function LeadsPipelineChart({ leads }: Props) {
+  const { data: stages = [], isLoading } = useLeadStages();
+  const data = useMemo(() => (isLoading ? [] : funilPorEtapa(stages, leads ?? [])), [stages, leads, isLoading]);
+  const altura = Math.max(280, data.length * 32);
 
   return (
     <Card>
@@ -44,11 +30,11 @@ export default function LeadsPipelineChart({ leads }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
+        <ChartContainer config={chartConfig} className="w-full aspect-auto" style={{ height: altura }}>
           <BarChart data={data} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={12} width={80} />
+            <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} fontSize={11} width={110} interval={0} tickFormatter={curto} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Bar dataKey="quantidade" fill="var(--color-quantidade)" radius={[0, 4, 4, 0]} />
           </BarChart>

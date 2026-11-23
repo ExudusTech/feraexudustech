@@ -27,6 +27,12 @@ export function buildColumns<L extends PipelineLead>(stages: PipelineStage[], le
   return orphans.length ? [...cols, { stage: null, leads: orphans }] : cols;
 }
 
+/** Dashboard funnel bars: the organization's active stages in configured order, counted like the kanban (stage_id, legacy
+ * fallback); leads in no active stage go to a final "Sem etapa" bar, so the bars always add up to the total. */
+export function funilPorEtapa(stages: PipelineStage[], leads: PipelineLead[]): { name: string; quantidade: number }[] {
+  return buildColumns(stages, leads).map((c) => ({ name: c.stage?.nome ?? "Sem etapa", quantidade: c.leads.length }));
+}
+
 /** Number of leads currently in a stage (used to warn before deactivating it). */
 export function leadsInStage(stageId: string, leads: PipelineLead[]): number {
   return leads.filter((l) => l.stage_id === stageId).length;

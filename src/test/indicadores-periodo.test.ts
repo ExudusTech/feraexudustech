@@ -258,9 +258,10 @@ describe("indicadores com pedido de agenda (caso 18/11) vai para a consulta de a
     t.schedules.push({ id: "s19", organization_id: org, scheduled_date: "2026-11-19", status: "agendado", ocorrencia_tipo: "primeira_visita", assigned_to: "u2", start_time: "09:00:00", title: "Pousada Mar", ocorrencia_codigo: "OC-000119" } as any);
     return t;
   };
-  it("'Qual é a agenda de amanhã? Considerar 19/11/2026.' responde igual a minha agenda", async () => {
+  it("'Qual é a agenda de amanhã? Considerar 19/11/2026.' (18/11 16:09) responde igual a minha agenda", async () => {
+    vi.setSystemTime(new Date("2026-11-18T19:09:00Z"));
     const h = harness(comAgenda());
-    const r = await h.route(PHONES.ph, "Qual é a agenda de amanhã? Considerar 19/11/2026.");
+    const r = await h.route(PHONES.ph, "Qual é a agenda de amanhã? Considerar 19/11/2026.").finally(() => vi.setSystemTime(new Date("2026-11-10T14:00:00Z")));
     expect(r.data.acao).toBe("minha_agenda");
     expect(r.data.pedido_original).toBe("indicadores");
     expect(r.data.data).toBe("2026-11-19");

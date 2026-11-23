@@ -1,8 +1,7 @@
 import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import StatsCard from "@/components/cards/StatsCard";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Target, FileText, DollarSign, TrendingUp, Package, CheckCircle, Clock, HeadphonesIcon, Zap, Handshake, AlertTriangle } from "lucide-react";
+import { Users, Target, FileText, DollarSign, TrendingUp, Package, CheckCircle, HeadphonesIcon, Zap, Handshake, AlertTriangle } from "lucide-react";
 import { useClients } from "@/hooks/use-clients";
 import { useLeads } from "@/hooks/use-leads";
 import { useProposals } from "@/hooks/use-proposals";
@@ -24,6 +23,7 @@ import PainelAgora from "@/components/atendimentos/PainelAgora";
 import AgendaHoje from "@/components/atendimentos/AgendaHoje";
 import AtendimentoMetrics from "@/components/atendimentos/AtendimentoMetrics";
 import FieldOpsPanel from "@/components/dashboard/FieldOpsPanel";
+import TarefasPendentesCard from "@/components/dashboard/TarefasPendentesCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Dashboard() {
@@ -140,19 +140,7 @@ function AdminDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <LeadsPipelineChart leads={leads} />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Clock className="h-5 w-5 text-primary" />
-                Tarefas Pendentes
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-center h-[280px] text-muted-foreground text-sm">
-                Nenhuma tarefa pendente.
-              </div>
-            </CardContent>
-          </Card>
+          <TarefasPendentesCard />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
