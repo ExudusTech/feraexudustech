@@ -60,7 +60,7 @@ describe("escanear dentro da ocorrência aberta", () => {
     expect(acoesEtiqueta("instalacao_teste", null).acoes[0]).toBe("instalar");
   });
   it("aparelho ativo deste cliente na manutenção: avaliar, trocar de ponto, substituir, retirar", () => {
-    expect(acoesEtiqueta(null, { status: "ATIVO", deste_local: true }).acoes).toEqual(["avaliar", "trocar_ponto", "substituir", "retirar"]);
+    expect(acoesEtiqueta(null, { status: "ATIVO", deste_local: true }).acoes).toEqual(["avaliar", "trocar_ponto", "substituir", "trocar_etiqueta", "retirar"]);
     expect(acoesEtiqueta("substituicao", { status: "ATIVO", deste_local: true }).acoes[0]).toBe("substituir");
   });
   it("aparelho em teste não é retirado pelo QR (a nota de devolução devolve ao estoque)", () => {

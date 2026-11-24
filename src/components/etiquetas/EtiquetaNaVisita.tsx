@@ -13,7 +13,7 @@ import { useProductImageUrls } from "@/hooks/use-product-images";
 import { fotoPrincipal } from "@/lib/fotos-referencia";
 import { cn } from "@/lib/utils";
 import { baseAction, uploadVisitPhoto } from "@/lib/base-instalada";
-import { ACAO_ETIQUETA_LABEL, formatEtiqueta, type AcaoEtiqueta } from "@/lib/etiquetas";
+import { ACAO_ETIQUETA_LABEL, formatEtiqueta, MOTIVO_TROCA_LABEL, MOTIVOS_TROCA_ETIQUETA, type AcaoEtiqueta } from "@/lib/etiquetas";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
 
 interface Info { ativacao?: boolean; numero: number; aparelho: { id: string; status: string; status_label: string; local: string | null; aparelho: string | null; cliente: string | null; deste_local: boolean; product_id: string | null } | null; acoes: AcaoEtiqueta[]; aviso: string | null }
@@ -62,7 +62,8 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
   const [info, setInfo] = useState<Info | null>(null);
   const [acao, setAcao] = useState<AcaoEtiqueta | null>(null);
   const [busy, setBusy] = useState(false);
-  const [f, setF] = useState<{ local: string; previsto: string; produto: string; foto?: string; motivo: string; novo?: number; vincular: string; serie?: string; plaqueta?: string }>({ local: "", previsto: "", produto: "", motivo: "", vincular: "" });
+  const [f, setF] = useState<{ local: string; previsto: string; produto: string; foto?: string; motivo: string; novo?: number; vincular: string; serie?: string; plaqueta?: string; alvo?: string }>({ local: "", previsto: "", produto: "", motivo: "", vincular: "" });
+  const [trocaDireta, setTrocaDireta] = useState(false);
   const { data: pontos = [], refetch } = useQuery({
     queryKey: ["etiqueta-pontos", scheduleId], enabled: !!(clientId || leadId),
     queryFn: async () => {
@@ -72,6 +73,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
   });
   const previstos = pontos.filter((p) => p.status === "PREVISTO");
   const semNumero = pontos.filter((p) => ["ATIVO", "EM_TESTE"].includes(p.status) && !p.etiqueta_numero);
+  const comNumero = pontos.filter((p) => ["ATIVO", "EM_TESTE"].includes(p.status) && !!p.etiqueta_numero);
   const nomeProd = (id?: string | null) => products.find((p) => p.id === id)?.name;
 
   const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); } catch (e) {
@@ -82,7 +84,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
   });
   useEffect(() => { if (numeroInicial) consultar(numeroInicial); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [numeroInicial]);
   const pronto = (msg: string) => {
-    toast({ title: msg }); setInfo(null); setAcao(null); refetch(); onChanged?.();
+    toast({ title: msg }); setInfo(null); setAcao(null); setTrocaDireta(false); refetch(); onChanged?.();
     qc.invalidateQueries({ queryKey: ["checklist", scheduleId] }); qc.invalidateQueries({ queryKey: ["aparelho"] }); qc.invalidateQueries({ queryKey: ["estoque"] });
   };
   const foto = (file: File) => run(async () => { const path = await uploadVisitPhoto(orgId, scheduleId, file); setF((x) => ({ ...x, foto: path })); });
@@ -107,6 +109,9 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
     } else if (acao === "substituir" && ap) {
       await baseAction({ action: "etiqueta_substituir", schedule_id: scheduleId, comodato_id: ap.id, numero: f.novo, foto_path: f.foto, product_id: f.produto || undefined });
       pronto(`Substituído pelo aparelho nº ${formatEtiqueta(f.novo!)}`);
+    } else if (acao === "trocar_etiqueta" && (ap?.id || f.alvo)) {
+      await baseAction({ action: "etiqueta_trocar_etiqueta", schedule_id: scheduleId, comodato_id: ap?.id ?? f.alvo, numero: f.novo, motivo: f.motivo, foto_path: f.foto });
+      pronto(`Etiqueta trocada para o nº ${formatEtiqueta(f.novo!)}`);
     }
   });
   // Every evaluated point needs a photo (Ordem A): the OK button opens the camera and saves with it.
@@ -121,12 +126,45 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
     : acao === "vincular" ? (!f.vincular ? "Escolha o aparelho" : null)
     : acao === "trocar_ponto" ? (f.local.trim().length < 2 ? "Informe o novo local" : null)
     : acao === "retirar" ? (f.motivo.trim().length < 3 ? "Informe o motivo" : null)
-    : acao === "substituir" ? (!f.novo ? "Escaneie a etiqueta do aparelho novo" : !f.foto ? "Tire a foto do aparelho novo" : null) : null;
+    : acao === "substituir" ? (!f.novo ? "Escaneie a etiqueta do aparelho novo" : !f.foto ? "Tire a foto do aparelho novo" : null)
+    : acao === "trocar_etiqueta" ? (!(ap?.id || f.alvo) ? "Escolha o aparelho" : !f.novo ? "Escaneie a etiqueta nova" : !f.motivo ? "Escolha o motivo" : !f.foto ? "Tire a foto da etiqueta nova colada" : null) : null;
 
   return (
     <div className="space-y-2">
-      {!info && <Button type="button" variant="outline" className="w-full min-h-11" disabled={busy} onClick={() => setScan("principal")}>
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}Escanear etiqueta</Button>}
+      {!info && !trocaDireta && <div className="grid gap-2 sm:grid-cols-2">
+        <Button type="button" variant="outline" className="w-full min-h-11" disabled={busy} onClick={() => setScan("principal")}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}Escanear etiqueta</Button>
+        {comNumero.length > 0 && <Button type="button" variant="outline" className="w-full min-h-11" disabled={busy} onClick={() => {
+          setTrocaDireta(true); setAcao("trocar_etiqueta"); setF({ local: "", previsto: "", produto: "", motivo: "", vincular: "", alvo: comNumero.length === 1 ? comNumero[0].id : "" });
+        }}>Trocar etiqueta (danificada)</Button>}
+      </div>}
+      {trocaDireta && !info && (
+        <div className="rounded-md border p-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-sm">Trocar etiqueta (danificada)</p>
+            <Button type="button" variant="ghost" size="icon" aria-label="Fechar" onClick={() => { setTrocaDireta(false); setAcao(null); }}><X className="h-4 w-4" /></Button>
+          </div>
+          <div className="space-y-1">
+            <Label>Aparelho do cliente</Label>
+            <Select value={f.alvo ?? ""} onValueChange={(v) => setF((x) => ({ ...x, alvo: v }))}>
+              <SelectTrigger aria-label="Aparelho do cliente"><SelectValue placeholder="Escolha o aparelho" /></SelectTrigger>
+              <SelectContent>{comNumero.map((p) => <SelectItem key={p.id} value={p.id}>nº {formatEtiqueta(p.etiqueta_numero)} · {p.localizacao_interna || "Ponto"} — {nomeProd(p.product_id) ?? "Aparelho"}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <p className="text-sm">{f.novo ? <>Etiqueta nova: <strong>nº {formatEtiqueta(f.novo)}</strong></> : "Escaneie a etiqueta nova e livre."}</p>
+          <Button type="button" variant="outline" className="min-h-11" onClick={() => setScan("novo")}><QrCode className="h-4 w-4" />{f.novo ? "Escanear de novo" : "Escanear etiqueta nova"}</Button>
+          <Select value={f.motivo} onValueChange={(v) => setF((x) => ({ ...x, motivo: v }))}>
+            <SelectTrigger aria-label="Motivo da troca"><SelectValue placeholder="Motivo (molhou, rasgou...)" /></SelectTrigger>
+            <SelectContent>{MOTIVOS_TROCA_ETIQUETA.map((m) => <SelectItem key={m} value={m}>{MOTIVO_TROCA_LABEL[m]}</SelectItem>)}</SelectContent>
+          </Select>
+          <Foto label={f.foto ? "Foto da etiqueta nova ✓" : "Foto da etiqueta nova colada"} busy={busy} onFile={foto} />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" className="min-h-11 flex-1" disabled={busy || !!falta} onClick={executar}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}Confirmar troca</Button>
+            <Button type="button" variant="ghost" className="min-h-11" onClick={() => { setTrocaDireta(false); setAcao(null); }}>Voltar</Button>
+          </div>
+          {falta && <p className="text-xs text-warning">{falta}</p>}
+        </div>
+      )}
       {info && (
         <div className="rounded-md border p-2 space-y-2">
           <div className="flex items-start gap-2">
@@ -146,7 +184,7 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
             {info.acoes.filter((a) => a !== "avaliar").map((a) => (
               <Button key={a} type="button" variant="outline" className="min-h-11 h-auto whitespace-normal" onClick={() => {
                 setAcao(a); setF((x) => ({ ...x, local: a === "instalar" ? ap?.local ?? "" : "", produto: ap?.product_id ?? "" }));
-                if (a === "substituir") setScan("novo");
+                if (a === "substituir" || a === "trocar_etiqueta") setScan("novo");
               }}>{a === "instalar" && info.ativacao ? "Ativar aparelho já instalado" : ACAO_ETIQUETA_LABEL[a]}</Button>))}
           </div>}
           {acao === "instalar" && <div className="space-y-2">
@@ -189,6 +227,16 @@ export default function EtiquetaNaVisita({ scheduleId, orgId, clientId, leadId, 
             </Select>
             <Foto label={f.foto ? "Foto ✓" : "Foto do aparelho novo"} busy={busy} onFile={foto} />
             <p className="text-xs text-muted-foreground">O antigo sai do ponto e volta ao estoque quando a nota de devolução assinada chegar.</p>
+          </div>}
+          {acao === "trocar_etiqueta" && <div className="space-y-2">
+            <p className="text-sm">{f.novo ? <>Etiqueta nova: <strong>nº {formatEtiqueta(f.novo)}</strong></> : "Escaneie a etiqueta nova e livre."}</p>
+            <Button type="button" variant="outline" className="min-h-11" onClick={() => setScan("novo")}><QrCode className="h-4 w-4" />{f.novo ? "Escanear de novo" : "Escanear etiqueta nova"}</Button>
+            <Select value={f.motivo} onValueChange={(v) => setF((x) => ({ ...x, motivo: v }))}>
+              <SelectTrigger aria-label="Motivo da troca"><SelectValue placeholder="Motivo (molhou, rasgou...)" /></SelectTrigger>
+              <SelectContent>{MOTIVOS_TROCA_ETIQUETA.map((m) => <SelectItem key={m} value={m}>{MOTIVO_TROCA_LABEL[m]}</SelectItem>)}</SelectContent>
+            </Select>
+            <Foto label={f.foto ? "Foto da etiqueta nova ✓" : "Foto da etiqueta nova colada"} busy={busy} onFile={foto} />
+            <p className="text-xs text-muted-foreground">O aparelho continua o mesmo. A etiqueta antiga fica baixada para sempre.</p>
           </div>}
           {acao && <div className="flex flex-wrap gap-2">
             <Button type="button" className="min-h-11 flex-1" disabled={busy || !!falta} onClick={executar}>{busy && <Loader2 className="h-4 w-4 animate-spin" />}Confirmar</Button>

@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { PackageOpen } from "lucide-react";
+import { ChevronDown, PackageOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { MaterialSeparadoButton } from "@/components/agenda/MaterialPronto";
@@ -11,9 +13,10 @@ import { qtdAparelhos } from "@/lib/estoque";
 import SepararEtiqueta from "@/components/etiquetas/SepararEtiqueta";
 
 /** "Separar para <data>": material of upcoming visits not yet separated. `onlyMine` limits to the user's visits. */
-export default function SepararMaterial({ onlyMine }: { onlyMine?: boolean }) {
+export default function SepararMaterial({ onlyMine, defaultCollapsed = false }: { onlyMine?: boolean; defaultCollapsed?: boolean }) {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [open, setOpen] = useState(!defaultCollapsed);
   const today = format(new Date(), "yyyy-MM-dd");
   const { data = [] } = useQuery({
     queryKey: ["separar-material", user?.organization_id, onlyMine ? user?.id : "all"], enabled: !!user?.organization_id,
@@ -42,8 +45,19 @@ export default function SepararMaterial({ onlyMine }: { onlyMine?: boolean }) {
   for (const s of data) byDate.set(s.scheduled_date, [...(byDate.get(s.scheduled_date) ?? []), s]);
   return (
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><PackageOpen className="h-4 w-4" />Separar material ({data.length})</CardTitle></CardHeader>
-      <CardContent className="space-y-3">
+      <CardHeader className={open ? "pb-2" : "py-3"}>
+        <CardTitle className="text-base">
+          {defaultCollapsed ? (
+            <button type="button" className="flex w-full items-center gap-2 text-left min-h-9" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              <PackageOpen className="h-4 w-4 shrink-0" />Separar material ({data.length})
+              <ChevronDown className={cn("h-4 w-4 ml-auto transition-transform", open && "rotate-180")} />
+            </button>
+          ) : (
+            <span className="flex items-center gap-2"><PackageOpen className="h-4 w-4" />Separar material ({data.length})</span>
+          )}
+        </CardTitle>
+      </CardHeader>
+      {open && <CardContent className="space-y-3">
         {[...byDate].map(([d, list]) => (
           <div key={d} className="space-y-2">
             <p className="text-sm font-medium">Separar para {d.split("-").reverse().join("/")}</p>
@@ -56,7 +70,7 @@ export default function SepararMaterial({ onlyMine }: { onlyMine?: boolean }) {
                 <MaterialSeparadoButton scheduleId={s.id} separado={false} onDone={() => { qc.invalidateQueries({ queryKey: ["separar-material"] }); qc.invalidateQueries({ queryKey: ["schedules"] }); }} />
               </div>))}
           </div>))}
-      </CardContent>
+      </CardContent>}
     </Card>
   );
 }

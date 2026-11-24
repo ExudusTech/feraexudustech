@@ -133,3 +133,9 @@
 - [x] A) Cores por tipo (Agenda, Hoje, listas), legenda, contagem por cor no mês/semana
 - [x] B) Mapa de rotas na Agenda: clientes ativos, visitas do dia, filtro dia/consultor, regiões do dia, trilha real/sugerida, ponto de saída editável
 - [ ] Conferir logado com dados reais (blocked: sem conta do PH no ambiente de testes; conferido com dados de exemplo)
+## Fase A — 5 ajustes do teste de campo (24/11)
+- [x] 1) Aparelho duplicado na escolha (por ID + código de fábrica/SKU visível, compatível com rascunhos antigos)
+- [x] 2) Transcrição visível e editável logo após cada áudio (transcrever + editar_transcricao)
+- [x] 3) Tela Hoje reordenada (atrasadas/em andamento primeiro, sem duplicar, selo Atrasada, blocos auxiliares e Agora recolhidos)
+- [x] 4) Troca de etiqueta danificada com histórico de vigências (comodato_etiquetas), número antigo baixado, /q/ redireciona experiência, ficha /aparelho mostra histórico
+- [x] 5) Contato e decisor da visita com telefone e e-mail, vinculados em pessoas/empresa_contatos sem sobrescrever principal

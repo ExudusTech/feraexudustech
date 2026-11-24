@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ESTADO_CLASS, ESTADO_LABEL, MANUTENCAO_LABEL } from "@/lib/base-instalada";
-import { formatEtiqueta, parseEtiqueta, STATUS_APARELHO_LABEL } from "@/lib/etiquetas";
+import { avisoEtiquetaSubstituida, formatEtiqueta, MOTIVO_TROCA_LABEL, parseEtiqueta, STATUS_APARELHO_LABEL, type MotivoTrocaEtiqueta } from "@/lib/etiquetas";
 import { TIPO_MOV_LABEL } from "@/lib/estoque";
 import EtiquetaScanner from "@/components/etiquetas/EtiquetaScanner";
 import EtiquetaNaVisita from "@/components/etiquetas/EtiquetaNaVisita";
@@ -30,14 +30,25 @@ export default function Aparelho() {
     queryKey: ["aparelho", user?.organization_id, n], enabled: !!user?.organization_id && !!n,
     queryFn: async () => {
       const sb = supabase as any;
-      const { data: c } = await sb.from("comodatos").select("id, status, client_id, lead_id, product_id, refil_product_id, localizacao_interna, ultima_manutencao, proxima_manutencao, estado_atual, data_inicio, ativado_em, numero_serie, foto_plaqueta_path, clients(name, city), leads(empresa_nome, company, city), produto:products!comodatos_product_id_fkey(name), refil:products!comodatos_refil_product_id_fkey(name)")
+      const SEL = "id, status, etiqueta_numero, client_id, lead_id, product_id, refil_product_id, localizacao_interna, ultima_manutencao, proxima_manutencao, estado_atual, data_inicio, ativado_em, numero_serie, foto_plaqueta_path, clients(name, city), leads(empresa_nome, company, city), produto:products!comodatos_product_id_fkey(name), refil:products!comodatos_refil_product_id_fkey(name)";
+      let { data: c } = await sb.from("comodatos").select(SEL)
         .eq("organization_id", user!.organization_id).eq("etiqueta_numero", n).maybeSingle();
-      if (!c) return { c: null, eventos: [], abertas: [] };
-      const [ev, mov, ab] = await Promise.all([
+      let avisoSubstituida: string | null = null;
+      if (!c) {
+        const { data: vig } = await sb.from("comodato_etiquetas").select("comodato_id, fim_em")
+          .eq("organization_id", user!.organization_id).eq("numero", n).not("fim_em", "is", null).maybeSingle();
+        if (vig?.comodato_id) {
+          c = (await sb.from("comodatos").select(SEL).eq("organization_id", user!.organization_id).eq("id", vig.comodato_id).maybeSingle()).data;
+          if (c?.etiqueta_numero) avisoSubstituida = avisoEtiquetaSubstituida(vig.fim_em, c.etiqueta_numero);
+        }
+      }
+      if (!c) return { c: null, eventos: [], abertas: [], etiquetas: [], avisoSubstituida: null };
+      const [ev, mov, ab, etqs] = await Promise.all([
         sb.from("schedule_evidencias").select("id, created_at, tipo, estado, itens, observacoes, schedules(ocorrencia_codigo, title)").eq("comodato_id", c.id).order("created_at", { ascending: false }).limit(60),
         sb.from("stock_movements").select("id, created_at, tipo, quantidade, motivo").eq("comodato_id", c.id).order("created_at", { ascending: false }).limit(30),
         sb.from("schedules").select("id, title, assigned_to, ocorrencia_codigo, operacao_material").eq("organization_id", user!.organization_id).eq("status", "em_atendimento")
           .eq(c.client_id ? "client_id" : "lead_id", c.client_id ?? c.lead_id).limit(5),
+        sb.from("comodato_etiquetas").select("id, numero, inicio_em, fim_em, motivo").eq("comodato_id", c.id).order("inicio_em", { ascending: false }),
       ]);
       const eventos = [
         ...((ev.data ?? []) as any[]).map((e) => ({ id: e.id, em: e.created_at, estado: e.estado, texto: e.tipo === "evento" ? e.observacoes
@@ -46,18 +57,20 @@ export default function Aparelho() {
         ...((mov.data ?? []) as any[]).map((m) => ({ id: m.id, em: m.created_at, estado: null, texto: `Estoque: ${TIPO_MOV_LABEL[m.tipo] ?? m.tipo} (${m.quantidade > 0 ? "+" : ""}${m.quantidade})${m.motivo ? ` — ${m.motivo}` : ""}`, ref: null })),
       ].sort((a, b) => b.em.localeCompare(a.em));
       const abertas = ((ab.data ?? []) as any[]).filter((s) => privilegiado || s.assigned_to === user!.id);
-      return { c, eventos, abertas };
+      return { c, eventos, abertas, etiquetas: (etqs.data ?? []) as any[], avisoSubstituida };
     },
   });
   const c = data?.c as any;
+  const numeroAtual = c?.etiqueta_numero ?? n;
   const local = c?.clients?.name ?? c?.leads?.empresa_nome ?? c?.leads?.company;
   const aberta = data?.abertas?.[0];
 
   return (
-    <AppLayout title={n ? `Aparelho nº ${formatEtiqueta(n)}` : "Etiqueta inválida"} subtitle="Etiqueta numerada do aparelho"
+    <AppLayout title={numeroAtual ? `Aparelho nº ${formatEtiqueta(numeroAtual)}` : "Etiqueta inválida"} subtitle="Etiqueta numerada do aparelho"
       actions={<Button variant="outline" className="min-h-11" onClick={() => setScan(true)}><QrCode className="h-4 w-4 mr-2" />Escanear etiqueta</Button>}>
       <div className="space-y-4 max-w-3xl">
         {!n && <p className="text-sm text-muted-foreground">Este endereço não tem um número de etiqueta válido.</p>}
+        {data?.avisoSubstituida && <Card className="border-warning"><CardContent className="p-3 text-sm text-warning font-medium">{data.avisoSubstituida}</CardContent></Card>}
         {n && !isLoading && !c && <Card><CardContent className="p-4 text-sm space-y-1">
           <p className="font-medium">Etiqueta nº {formatEtiqueta(n)} ainda não está ligada a nenhum aparelho.</p>
           <p className="text-muted-foreground">Ela é ligada ao escanear na separação do material ou na instalação, dentro da ocorrência aberta.</p></CardContent></Card>}
@@ -81,10 +94,24 @@ export default function Aparelho() {
           <Card><CardHeader className="pb-2"><CardTitle className="text-base">Ações</CardTitle></CardHeader><CardContent className="space-y-2">
             {aberta ? <>
               <p className="text-sm text-muted-foreground">Ocorrência aberta: {aberta.title}{aberta.ocorrencia_codigo ? ` #${aberta.ocorrencia_codigo}` : ""}</p>
-              <EtiquetaNaVisita scheduleId={aberta.id} orgId={user!.organization_id!} clientId={c.client_id} leadId={c.client_id ? null : c.lead_id} numeroInicial={n} onChanged={() => refetch()}
+              <EtiquetaNaVisita scheduleId={aberta.id} orgId={user!.organization_id!} clientId={c.client_id} leadId={c.client_id ? null : c.lead_id} numeroInicial={numeroAtual} onChanged={() => refetch()}
                 onAvaliar={() => navigate(`/agenda?agendamento=${aberta.id}`)} />
             </> : <p className="text-sm text-muted-foreground">Para avaliar, trocar de ponto, retirar ou substituir, faça o check-in numa ocorrência deste cliente e escaneie de novo.</p>}
           </CardContent></Card>
+          {(data?.etiquetas?.length ?? 0) > 0 && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><QrCode className="h-4 w-4" />Histórico de etiquetas</CardTitle></CardHeader><CardContent className="space-y-2">
+              {data!.etiquetas.map((et: any) => (
+                <div key={et.id} className="flex flex-wrap items-center justify-between gap-2 text-sm border-b last:border-0 pb-2">
+                  <span className="font-mono font-medium">nº {formatEtiqueta(et.numero)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {dataBR(et.inicio_em)}{et.fim_em ? ` → ${dataBR(et.fim_em)}` : " (atual)"}
+                    {et.motivo ? ` · ${MOTIVO_TROCA_LABEL[et.motivo as MotivoTrocaEtiqueta] ?? et.motivo}` : ""}
+                  </span>
+                  <Badge variant={et.fim_em ? "secondary" : "outline"}>{et.fim_em ? "Baixada" : "Vigente"}</Badge>
+                </div>
+              ))}
+            </CardContent></Card>
+          )}
           <Card><CardHeader className="pb-2"><CardTitle className="text-base flex items-center gap-2"><History className="h-4 w-4" />Histórico do aparelho</CardTitle></CardHeader><CardContent className="space-y-2">
             {!data?.eventos.length && <p className="text-sm text-muted-foreground">Sem registros ainda.</p>}
             {data?.eventos.map((e) => (

@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
   let admin = createClient(url, serviceKey);
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
-  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar", "audios", "excluir_audio"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
+  if (!UUID.test(b.id ?? "") || !["concluir", "salvar", "confirmar", "pendencias", "resolver_agendar", "audios", "excluir_audio", "transcrever", "editar_transcricao"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
   // Identity: app user (JWT, caller-RLS read) or Flora path (service key + server-resolved user id).
   const interno = auth === `Bearer ${serviceKey}`;
@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     for (const e of evs ?? []) {
       let url: string | null = null;
       if (e.audio_path) { const { data: sg } = await admin.storage.from("visit-audio").createSignedUrl(e.audio_path, 3600); url = sg?.signedUrl ?? null; }
-      out.push({ id: e.id, tipo: e.tipo, criado_em: e.created_at, duracao_s: e.duracao_s, url, transcrito: !!e.transcricao, texto: e.tipo === "texto" ? (e.observacoes ?? e.transcricao) : null });
+      out.push({ id: e.id, tipo: e.tipo, criado_em: e.created_at, duracao_s: e.duracao_s, url, transcrito: !!e.transcricao, transcricao: e.tipo === "audio" ? (e.transcricao ?? null) : null, texto: e.tipo === "texto" ? (e.observacoes ?? e.transcricao) : null });
     }
     return json({ audios: out, pode_excluir: s.coleta_status !== "confirmada" });
   }
@@ -137,6 +137,31 @@ Deno.serve(async (req) => {
 
   try {
     switch (b.action) {
+      case "transcrever": {
+        if (!UUID.test(b.evidencia_id ?? "")) return json({ error: "Requisição inválida" }, 400);
+        const key = Deno.env.get("LOVABLE_API_KEY");
+        if (!key) return json({ error: "Transcrição indisponível (configuração)" }, 500);
+        const { data: ev } = await admin.from("schedule_evidencias").select("id, tipo, audio_path, transcricao")
+          .eq("id", b.evidencia_id).eq("schedule_id", s.id).eq("tipo", "audio").maybeSingle();
+        if (!ev) return json({ error: "Áudio não encontrado" }, 404);
+        if (ev.transcricao) return json({ ok: true, evidencia_id: ev.id, transcricao: ev.transcricao });
+        if (!ev.audio_path) return json({ error: "Arquivo de áudio indisponível" }, 404);
+        const { data: blob, error } = await admin.storage.from("visit-audio").download(ev.audio_path);
+        if (error || !blob) return json({ error: "Não foi possível ler o áudio" }, 502);
+        const t = (await transcrever(key, blob, ev.audio_path.split("/").pop() ?? "audio.webm")) || "(sem fala)";
+        await admin.from("schedule_evidencias").update({ transcricao: t }).eq("id", ev.id);
+        return json({ ok: true, evidencia_id: ev.id, transcricao: t });
+      }
+      case "editar_transcricao": {
+        if (!UUID.test(b.evidencia_id ?? "") || typeof b.transcricao !== "string") return json({ error: "Requisição inválida" }, 400);
+        const texto = b.transcricao.trim().slice(0, 8000);
+        if (!texto) return json({ error: "A transcrição não pode ficar vazia" }, 400);
+        const { data: ev } = await admin.from("schedule_evidencias").select("id")
+          .eq("id", b.evidencia_id).eq("schedule_id", s.id).eq("tipo", "audio").maybeSingle();
+        if (!ev) return json({ error: "Áudio não encontrado" }, 404);
+        await admin.from("schedule_evidencias").update({ transcricao: texto }).eq("id", ev.id);
+        return json({ ok: true, evidencia_id: ev.id, transcricao: texto });
+      }
       case "excluir_audio": {
         if (!UUID.test(b.evidencia_id ?? "")) return json({ error: "Requisição inválida" }, 400);
         const { data: ev } = await admin.from("schedule_evidencias").select("id, audio_path").eq("id", b.evidencia_id).eq("schedule_id", s.id).in("tipo", ["audio", "texto"]).maybeSingle();
@@ -228,6 +253,44 @@ Deno.serve(async (req) => {
             await admin.from("leads").update({ contact_name: r.contato.nome, ...(r.contato.telefone ? { contact_phone: r.contato.telefone } : {}), ...(r.contato.email ? { contact_email: r.contato.email } : {}) })
               .eq("id", s.lead_id).eq("organization_id", s.organization_id).is("contact_name", null);
           }
+        }
+        // 2a) Link visit contact & decision maker as company contacts (pessoas + empresa_contatos) without overwriting the primary contact.
+        const vincularPessoa = async (p?: { nome?: string; cargo?: string; telefone?: string; email?: string }) => {
+          const nome = p?.nome?.trim();
+          if (!nome || (!s.client_id && !s.lead_id)) return;
+          const tel = (p?.telefone ?? "").replace(/\D/g, "");
+          const mail = (p?.email ?? "").trim().toLowerCase();
+          let pessoaId: string | null = null;
+          if (tel.length >= 8) {
+            const { data: ex } = await admin.from("pessoas").select("id").eq("organization_id", s.organization_id)
+              .or(`telefone.ilike.%${tel.slice(-8)}%,whatsapp.ilike.%${tel.slice(-8)}%`).limit(1).maybeSingle();
+            pessoaId = ex?.id ?? null;
+          }
+          if (!pessoaId && mail) {
+            const { data: ex } = await admin.from("pessoas").select("id").eq("organization_id", s.organization_id)
+              .ilike("email", mail).limit(1).maybeSingle();
+            pessoaId = ex?.id ?? null;
+          }
+          if (!pessoaId) {
+            // If no phone/email, avoid creating a duplicate for the lead's existing contact with the same name.
+            if (!tel && !mail && s.leads?.contact_name && s.leads.contact_name.trim().toLowerCase() === nome.toLowerCase()) return;
+            const { data: nova } = await admin.from("pessoas").insert({ organization_id: s.organization_id, nome,
+              ...(p?.telefone ? { telefone: p.telefone.trim() } : {}), ...(mail ? { email: mail } : {}), ...(p?.cargo ? { cargo: p.cargo.trim() } : {}) })
+              .select("id").single();
+            pessoaId = nova?.id ?? null;
+          }
+          if (!pessoaId) return;
+          let q = admin.from("empresa_contatos").select("id").eq("organization_id", s.organization_id).eq("pessoa_id", pessoaId);
+          q = s.client_id ? q.eq("client_id", s.client_id) : q.eq("lead_id", s.lead_id);
+          const { data: jaLink } = await q.maybeSingle();
+          if (!jaLink) {
+            await admin.from("empresa_contatos").insert({ organization_id: s.organization_id, pessoa_id: pessoaId,
+              client_id: s.client_id ?? null, lead_id: s.client_id ? null : s.lead_id ?? null, principal: false, cargo: p?.cargo?.trim() || null });
+          }
+        };
+        await vincularPessoa(r.contato);
+        if (r.decisor?.nome && (r.decisor.nome.trim().toLowerCase() !== (r.contato?.nome ?? "").trim().toLowerCase() || (r.decisor.telefone && r.decisor.telefone !== r.contato?.telefone) || (r.decisor.email && r.decisor.email !== r.contato?.email))) {
+          await vincularPessoa(r.decisor);
         }
         // 3) Next visits (proposal/return = commercial; test/direct sale = technical with the points as items, only for a client).
         // 2b) Survey details go to the visit and the company (segment from the lead; decision maker/flow from the draft).

@@ -3916,6 +3916,70 @@ export type Database = {
           },
         ]
       }
+      comodato_etiquetas: {
+        Row: {
+          comodato_id: string
+          created_at: string
+          fim_em: string | null
+          foto_path: string | null
+          id: string
+          inicio_em: string
+          motivo: string | null
+          numero: number
+          organization_id: string
+          schedule_id: string | null
+          trocado_por: string | null
+        }
+        Insert: {
+          comodato_id: string
+          created_at?: string
+          fim_em?: string | null
+          foto_path?: string | null
+          id?: string
+          inicio_em?: string
+          motivo?: string | null
+          numero: number
+          organization_id: string
+          schedule_id?: string | null
+          trocado_por?: string | null
+        }
+        Update: {
+          comodato_id?: string
+          created_at?: string
+          fim_em?: string | null
+          foto_path?: string | null
+          id?: string
+          inicio_em?: string
+          motivo?: string | null
+          numero?: number
+          organization_id?: string
+          schedule_id?: string | null
+          trocado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comodato_etiquetas_comodato_id_fkey"
+            columns: ["comodato_id"]
+            isOneToOne: false
+            referencedRelation: "comodatos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodato_etiquetas_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comodato_etiquetas_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comodatos: {
         Row: {
           aparelho_descricao: string | null
@@ -8986,6 +9050,18 @@ export type Database = {
           _fim: number
           _inicio: number
           _largura: number
+        }
+        Returns: Json
+      }
+      trocar_etiqueta_comodato: {
+        Args: {
+          _comodato: string
+          _foto_path: string
+          _motivo: string
+          _novo_numero: number
+          _org: string
+          _schedule_id: string
+          _trocado_por: string
         }
         Returns: Json
       }

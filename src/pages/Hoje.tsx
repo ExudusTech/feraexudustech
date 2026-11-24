@@ -17,7 +17,7 @@ import LevarProximaVisita from "@/components/agenda/LevarProximaVisita";
 import SepararMaterial from "@/components/inventario/SepararMaterial";
 import { useOrganizationUsers } from "@/hooks/use-users";
 import { format } from "date-fns";
-import { isMine, pendentesAnteriores, porConsultor } from "@/lib/hoje";
+import { isMine, ordenarHoje, pendentesAnteriores, porConsultor } from "@/lib/hoje";
 import { OcorrenciaLegenda } from "@/components/agenda/OcorrenciaCores";
 
 /** Consultant's day: own visits in time order with Route/Call/WhatsApp and Start/Finish. */
@@ -34,11 +34,13 @@ export default function Hoje() {
   const [escopo, setEscopo] = useState<"minhas" | "equipe">("minhas");
   const equipe = gestor && escopo === "equipe";
   const today = format(new Date(), "yyyy-MM-dd");
+  const nowHHMM = format(new Date(), "HH:mm");
   const visiveis = useMemo(() => equipe ? schedules : schedules.filter((s) => isMine(s, user?.id)), [schedules, user?.id, equipe]);
+  const hojeOrdenadas = useMemo(() => ordenarHoje(visiveis, today, nowHHMM), [visiveis, today, nowHHMM]);
   const pendentes = useMemo(() => pendentesAnteriores(visiveis, today), [visiveis, today]);
-  const infoPendente = useMemo(() => visiveis.filter((s: any) => temPendenciaColeta(s)), [visiveis]);
-  const grupos = useMemo(() => porConsultor(visiveis.filter((s) => s.scheduled_date === today && s.status !== "cancelado"),
-    new Map(users.map((u: any) => [u.user_id, u.name]))), [visiveis, today, users]);
+  const jaListados = useMemo(() => new Set([...hojeOrdenadas.map((s) => s.id), ...pendentes.map((s) => s.id)]), [hojeOrdenadas, pendentes]);
+  const infoPendente = useMemo(() => visiveis.filter((s: any) => temPendenciaColeta(s) && !jaListados.has(s.id)), [visiveis, jaListados]);
+  const grupos = useMemo(() => porConsultor(hojeOrdenadas, new Map(users.map((u: any) => [u.user_id, u.name])), today, nowHHMM), [hojeOrdenadas, users, today, nowHHMM]);
   const leadInfo = useMemo(() => {
     const map = new Map<string, { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }>();
     leads.forEach((l: any) => map.set(l.id, { title: l.empresa_nome || l.company || l.title, contact_phone: l.contact_phone, maps_url: l.maps_url, whatsapp: l.pessoa?.whatsapp }));
@@ -56,14 +58,23 @@ export default function Hoje() {
   return (
     <AppLayout title="Hoje" subtitle={equipe ? "Visitas da equipe hoje" : "Suas visitas do dia"}>
       <div className="space-y-4 max-w-xl">
-        <PainelAgora compact />
+        <PainelAgora compact defaultCollapsed />
         <Button className="w-full min-h-12" variant="outline" onClick={() => setNovaOpen(true)}><Wrench className="h-4 w-4" />Nova visita de manutenção</Button>
-        <LevarProximaVisita />
-        <SepararMaterial onlyMine={!equipe} />
         {gestor && <div className="grid grid-cols-2 gap-2" role="tablist">{(["minhas", "equipe"] as const).map((k) => (
           <Button key={k} role="tab" aria-selected={escopo === k} variant={escopo === k ? "default" : "outline"} className="min-h-11" onClick={() => setEscopo(k)}>
             {k === "minhas" ? "Minhas" : "Equipe"}</Button>))}</div>}
         <OcorrenciaLegenda />
+        {equipe ? (grupos.length === 0 ? <p className="text-muted-foreground py-6 text-center">Nenhuma visita da equipe hoje.</p> :
+          grupos.map((g) => (<section key={g.id || "none"} className="space-y-2">
+            <h2 className="font-semibold">{g.nome} <span className="text-muted-foreground font-normal">({g.itens.length})</span></h2>
+            <MobileAgendaList todayOnly preserveOrder schedules={g.itens} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />
+          </section>)))
+          : <MobileAgendaList todayOnly preserveOrder schedules={hojeOrdenadas} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />}
+        {pendentes.length > 0 && <section className="space-y-2">
+          <h2 className="font-semibold text-warning">Em andamento / pendentes ({pendentes.length})</h2>
+          <p className="text-xs text-muted-foreground">Visitas de dias anteriores que ainda não foram encerradas.</p>
+          <MobileAgendaList noDateFilter preserveOrder schedules={pendentes} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />
+        </section>}
         {infoPendente.length > 0 && <section className="space-y-2" aria-label="Informações pendentes">
           <h2 className="font-semibold text-warning">Realizadas — informações pendentes ({infoPendente.length})</h2>
           {infoPendente.map((s: any) => (
@@ -86,17 +97,8 @@ export default function Hoje() {
               <p className="text-xs text-muted-foreground">Falta: {(s.coleta_pendencias ?? []).join(" / ") || "confirmar a coleta"}</p>
             </button>)))}
         </section>}
-        {pendentes.length > 0 && <section className="space-y-2">
-          <h2 className="font-semibold text-warning">Em andamento / pendentes ({pendentes.length})</h2>
-          <p className="text-xs text-muted-foreground">Visitas de dias anteriores que ainda não foram encerradas.</p>
-          <MobileAgendaList noDateFilter schedules={pendentes} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />
-        </section>}
-        {equipe ? (grupos.length === 0 ? <p className="text-muted-foreground py-6 text-center">Nenhuma visita da equipe hoje.</p> :
-          grupos.map((g) => (<section key={g.id || "none"} className="space-y-2">
-            <h2 className="font-semibold">{g.nome} <span className="text-muted-foreground font-normal">({g.itens.length})</span></h2>
-            <MobileAgendaList todayOnly schedules={g.itens} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />
-          </section>)))
-          : <MobileAgendaList todayOnly schedules={visiveis} leads={leadInfo} onOpen={(s) => setSelected(s.id)} onExecute={(s) => setSelected(s.id)} />}
+        <SepararMaterial onlyMine={!equipe} defaultCollapsed />
+        <LevarProximaVisita defaultCollapsed />
       </div>
       <VisitExecutionDialog open={!!current} onOpenChange={(o) => !o && setSelected(null)} schedule={current}
         clientName={current?.lead_id ? leadInfo.get(current.lead_id)?.title : (current as any)?.clients?.name ?? current?.title} />

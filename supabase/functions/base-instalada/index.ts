@@ -9,7 +9,7 @@ import { googleOcupado } from "../_shared/google-calendar.ts";
 import { geocode, geocodeClient } from "../_shared/geocode.ts";
 import { nextMaintenance } from "../_shared/visit-exec.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
-import { acoesEtiqueta, formatEtiqueta, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL } from "../_shared/etiquetas.ts";
+import { acoesEtiqueta, avisoEtiquetaSubstituida, formatEtiqueta, MOTIVO_TROCA_LABEL, MOTIVOS_TROCA_ETIQUETA, numeroEmLote, parseEtiqueta, STATUS_APARELHO_LABEL, type MotivoTrocaEtiqueta } from "../_shared/etiquetas.ts";
 import { qtdAparelhos } from "../_shared/estoque.ts";
 import { agendaDataErro, agendaDoPlano, proximaPassagem } from "../_shared/revisita.ts";
 import { agendarRevisitaCliente, contextoRevisita, hojeSP } from "../_shared/revisita-agendar.ts";
@@ -22,7 +22,7 @@ const num = (v: unknown) => typeof v === "number" && Number.isFinite(v) ? v : nu
 const uuidOrNull = (v: unknown) => typeof v === "string" && UUID.test(v) ? v : null;
 const ACTIONS = ["buscar_local", "nova_manutencao", "ponto_novo", "avaliar", "localizacao_cliente", "ocorrencia_status", "pedido_decidir", "importar", "importar_previa", "material_separado",
   "ativacao_previa", "ativacao_criar", "agenda_cliente", "rota_base_geocodificar", "rota_base_sugerida",
-  "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir"];
+  "etiqueta_info", "etiqueta_vincular", "etiqueta_separar", "etiqueta_desfazer_separacao", "etiqueta_instalar", "etiqueta_trocar_ponto", "etiqueta_retirar", "etiqueta_substituir", "etiqueta_trocar_etiqueta"];
 const MANUT: readonly string[] = MANUTENCOES_ACEITAS;
 
 Deno.serve(async (req) => {
@@ -460,12 +460,14 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
   const { admin, user, org } = x;
   const hoje = new Date(Date.now() - 3 * 3_600_000).toISOString().slice(0, 10);
   const usado = (n: number) => json({ error: `Etiqueta nº ${formatEtiqueta(n)} já pertence a outro aparelho` }, 409);
+  const baixada = (n: number) => json({ error: `Etiqueta nº ${formatEtiqueta(n)} foi baixada e não pode ser usada novamente` }, 409);
   // Fera controls the numbering: a new number must come from a released lot (or the demo range).
   const foraDoLote = async (n: number) => {
     const { data } = await admin.from("etiqueta_faixas").select("inicio, fim").eq("organization_id", org).lte("inicio", n).gte("fim", n).limit(1);
     return numeroEmLote(n, data ?? []) ? null : json({ error: `Etiqueta nº ${formatEtiqueta(n)} não pertence a nenhum lote liberado. Confira o número.` }, 409);
   };
   const porNumero = async (n: number) => (await admin.from("comodatos").select(ETQ).eq("organization_id", org).eq("etiqueta_numero", n).maybeSingle()).data as any;
+  const vigenciaBaixada = async (n: number) => (await admin.from("comodato_etiquetas").select("id, comodato_id, numero, fim_em, motivo").eq("organization_id", org).eq("numero", n).not("fim_em", "is", null).maybeSingle()).data as any;
   const doLocal = (s: any, c: any) => !!c && (s.client_id ? c.client_id === s.client_id : !c.client_id && c.lead_id === s.lead_id);
   const evento = (s: any, comodatoId: string, texto: string, foto?: string | null) => admin.from("schedule_evidencias").insert({ organization_id: s.organization_id,
     schedule_id: s.id, comodato_id: comodatoId, tipo: "evento", observacoes: texto.slice(0, 500), foto_path: foto || null, itens: [], autor_id: user.id });
@@ -495,7 +497,15 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
     case "etiqueta_info": {
       const n = parseEtiqueta(b.numero);
       if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
-      const c = await porNumero(n);
+      let c = await porNumero(n);
+      let avisoSubst: string | null = null;
+      if (!c) {
+        const vig = await vigenciaBaixada(n);
+        if (vig?.comodato_id) {
+          c = (await admin.from("comodatos").select(ETQ).eq("organization_id", org).eq("id", vig.comodato_id).maybeSingle()).data as any;
+          if (c?.etiqueta_numero) avisoSubst = avisoEtiquetaSubstituida(vig.fim_em, c.etiqueta_numero);
+        }
+      }
       let s: any = null;
       if (b.schedule_id) s = await x.loadVisit(b.schedule_id);
       const deste = s ? doLocal(s, c) : false;
@@ -510,12 +520,14 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         if (!c) { acoes = ["instalar", "vincular"]; aviso = "Ativação da base: o aparelho já está no cliente — não sai do estoque, sem nota."; }
         else if (c.status === "ENCERRADO") { acoes = []; aviso = "Esta etiqueta é de um aparelho do estoque. Na ativação, cole uma etiqueta nova no aparelho que já está no cliente."; }
       }
-      return json({ ok: true, numero: n, aparelho: ap, acoes, aviso: aviso ?? null, ativacao: s?.ocorrencia_tipo === OCORRENCIA_ATIVACAO });
+      const avisoFinal = [avisoSubst, aviso].filter(Boolean).join(" · ") || null;
+      return json({ ok: true, numero: c?.etiqueta_numero ?? n, aparelho: ap, acoes, aviso: avisoFinal, ativacao: s?.ocorrencia_tipo === OCORRENCIA_ATIVACAO });
     }
     case "etiqueta_vincular": {
       const { s, erro } = await visitaAberta(); if (erro) return erro;
       const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Número de etiqueta inválido" }, 400);
       if (await porNumero(n)) return usado(n);
+      if (await vigenciaBaixada(n)) return baixada(n);
       { const e = await foraDoLote(n); if (e) return e; }
       const p = await pontoDaVisita(s, b.comodato_id);
       if (!p || !["ATIVO", "EM_TESTE"].includes(p.status) || p.etiqueta_numero) return json({ error: "Escolha um aparelho instalado sem número" }, 404);
@@ -557,6 +569,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         const e = await salvar(admin.from("comodatos").update({ ...campos, product_id: pid, data_fim: null, retirada_schedule_id: null, origem: "campo" }).eq("id", c.id)); if (e) return e;
         return json({ ok: true, id: c.id, numero: n });
       }
+      if (await vigenciaBaixada(n)) return baixada(n);
       { const e = await foraDoLote(n); if (e) return e; }
       const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: org, ...campos, product_id: pid, quantidade: "1", etiqueta_numero: n, origem: "campo",
         periodicidade_manut: "mensal", created_by: user.id, notes: `Separado para: ${alvo.titulo}`.slice(0, 300) }).select("id").single();
@@ -613,6 +626,7 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
         const e = await salvar(admin.from("comodatos").update(c.status === "ENCERRADO" ? { ...campos, origem: "campo" } : campos).eq("id", c.id)); if (e) return e;
         id = c.id;
       } else {
+        if (await vigenciaBaixada(n)) return baixada(n);
         { const e = await foraDoLote(n); if (e) return e; }
         const { data: novo, error } = await admin.from("comodatos").insert({ organization_id: s.organization_id, ...campos, etiqueta_numero: n,
           origem: ativacao ? "base_existente" : "campo", created_by: user.id })
@@ -668,7 +682,10 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
       const c = await porNumero(n);
       if (c && !(c.status === "ENCERRADO" || (c.status === "SEPARADO" && (doLocal(s, c) || (!c.client_id && !c.lead_id))))) return usado(n);
-      if (!c) { const e = await foraDoLote(n); if (e) return e; }
+      if (!c) {
+        if (await vigenciaBaixada(n)) return baixada(n);
+        const e = await foraDoLote(n); if (e) return e;
+      }
       const prod = (await x.productOk(uuidOrNull(b.product_id)))?.id ?? c?.product_id ?? velho.product_id;
       // The removed device waits for the return invoice (RETIRADO keeps it out of stock until the signed return arrives).
       const e1 = await salvar(admin.from("comodatos").update({ status: "RETIRADO", data_fim: hoje, retirada_schedule_id: s.id }).eq("id", velho.id)); if (e1) return e1;
@@ -689,6 +706,31 @@ async function etiqueta(b: Record<string, any>, x: Ctx): Promise<Response> {
       await evento(s, velho.id, `🔁 Substituído pelo aparelho nº ${formatEtiqueta(n)} — aguardando nota de devolução`);
       await evento(s, id, `🔁 Instalado no lugar do aparelho ${velho.etiqueta_numero ? `nº ${formatEtiqueta(velho.etiqueta_numero)}` : "sem número"} (${velho.localizacao_interna ?? "ponto"})`, foto);
       return json({ ok: true, id, numero: n });
+    }
+    case "etiqueta_trocar_etiqueta": {
+      const { s, erro } = await visitaAberta(); if (erro) return erro;
+      const p = await pontoDaVisita(s, b.comodato_id);
+      if (!p || !["ATIVO", "EM_TESTE"].includes(p.status)) return json({ error: "Aparelho não encontrado neste cliente" }, 404);
+      if (!p.etiqueta_numero) return json({ error: "Este aparelho ainda não tem etiqueta vinculada" }, 409);
+      const n = parseEtiqueta(b.numero); if (!n) return json({ error: "Escaneie a etiqueta nova" }, 400);
+      if (n === p.etiqueta_numero) return json({ error: "Escaneie uma etiqueta diferente da atual" }, 400);
+      if (await porNumero(n)) return usado(n);
+      if (await vigenciaBaixada(n)) return baixada(n);
+      { const e = await foraDoLote(n); if (e) return e; }
+      const motivo = String(b.motivo ?? "").trim() as MotivoTrocaEtiqueta;
+      if (!MOTIVOS_TROCA_ETIQUETA.includes(motivo)) return json({ error: "Escolha o motivo da troca da etiqueta" }, 400);
+      const foto = txt(b.foto_path, 300);
+      if (!foto) return json({ error: "Tire a foto da etiqueta nova colada no aparelho" }, 400);
+      if (!fotoOk(s, foto)) return json({ error: "Foto inválida" }, 400);
+      const { error } = await admin.rpc("trocar_etiqueta_comodato", {
+        _org: org, _comodato: p.id, _novo_numero: n, _motivo: motivo, _foto_path: foto, _trocado_por: user.id, _schedule_id: s.id,
+      });
+      if (error) {
+        console.error("[base-instalada] trocar_etiqueta", error.code);
+        return json({ error: error.message || "Não foi possível trocar a etiqueta" }, 409);
+      }
+      await evento(s, p.id, `🏷️ Etiqueta trocada (${MOTIVO_TROCA_LABEL[motivo]}): nº ${formatEtiqueta(p.etiqueta_numero)} → nº ${formatEtiqueta(n)}`, foto);
+      return json({ ok: true, id: p.id, antigo: p.etiqueta_numero, numero: n });
     }
   }
   return json({ error: "Requisição inválida" }, 400);

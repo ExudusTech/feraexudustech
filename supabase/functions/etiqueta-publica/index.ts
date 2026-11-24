@@ -31,9 +31,18 @@ Deno.serve(async (req) => {
 
     // Organization: the one whose generated range contains the number (and has the device), else the device's, else the default tenant.
     const { data: faixas } = n ? await admin.from("etiqueta_faixas").select("organization_id").lte("inicio", n).gte("fim", n) : { data: [] };
-    const { data: aparelhos } = n ? await admin.from("comodatos").select("organization_id, status, client_id, lead_id, product_id").eq("etiqueta_numero", n).limit(5) : { data: [] };
+    const { data: aparelhos } = n ? await admin.from("comodatos").select("organization_id, status, client_id, lead_id, product_id, etiqueta_numero").eq("etiqueta_numero", n).limit(5) : { data: [] };
     const orgsFaixa = new Set((faixas ?? []).map((f: any) => f.organization_id));
-    const ap = (aparelhos ?? []).find((a: any) => orgsFaixa.has(a.organization_id)) ?? ((aparelhos ?? []).length === 1 ? aparelhos![0] : null);
+    let ap = (aparelhos ?? []).find((a: any) => orgsFaixa.has(a.organization_id)) ?? ((aparelhos ?? []).length === 1 ? aparelhos![0] : null);
+    // Retired label number: follow the validity history to the same device's current label (without exposing numbers to the public).
+    if (!ap && n) {
+      const { data: vigs } = await admin.from("comodato_etiquetas").select("organization_id, comodato_id").eq("numero", n).limit(5);
+      const vig = (vigs ?? []).find((v: any) => orgsFaixa.has(v.organization_id)) ?? ((vigs ?? []).length === 1 ? vigs![0] : null);
+      if (vig?.comodato_id) {
+        ap = (await admin.from("comodatos").select("organization_id, status, client_id, lead_id, product_id, etiqueta_numero").eq("id", vig.comodato_id).maybeSingle()).data;
+      }
+    }
+    const numeroRef = ap?.etiqueta_numero ?? n;
     const org = ap?.organization_id ?? (orgsFaixa.size === 1 ? [...orgsFaixa][0] : NITSCLEAN_ORG_ID);
     const { data: o } = await admin.from("organizations").select("proposta_config").eq("id", org).maybeSingle();
     const fone = waNumero((o?.proposta_config as any)?.whatsapp) ?? waNumero(WHATSAPP_PADRAO)!;
@@ -50,7 +59,7 @@ Deno.serve(async (req) => {
     const { data: campanhas } = await admin.from("qr_campanhas").select("nome, texto, inicio, fim, dias_semana, hora_inicio, hora_fim, segmentos, prioridade, padrao, ativo")
       .eq("organization_id", org).eq("ativo", true).limit(100);
     const agora = new Date();
-    const texto = n ? qrMensagem(campanhas ?? [], agora, vars, qrRef(n)).texto : qrRenderizar(QR_TEXTO_RESERVA, {}, agora);
+    const texto = numeroRef ? qrMensagem(campanhas ?? [], agora, vars, qrRef(numeroRef)).texto : qrRenderizar(QR_TEXTO_RESERVA, {}, agora);
     return json({ url: waLink(fone, texto) });
   } catch {
     console.error("[etiqueta-publica] erro");

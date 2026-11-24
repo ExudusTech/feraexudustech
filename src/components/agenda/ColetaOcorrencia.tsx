@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { enqueue, flushAudio, pending, pickMime } from "@/lib/audio-queue";
 import { visitAction } from "@/lib/visit-exec";
-import { aparelhosCompativeis, escolherProduto, itensDosPontos, PASSO_LABEL, pendenciasColeta, pontoPedeAparelho, precisaInstalacao, produtosCompativeis, resumoColeta, sugerirProdutos, tipoNotaPadrao, type ProdutoCompat, type RascunhoColeta } from "@/lib/coleta";
+import { aparelhosCompativeis, escolherProduto, itensDosPontos, PASSO_LABEL, pendenciasColeta, pontoPedeAparelho, precisaInstalacao, produtosCompativeis, resumoColeta, rotuloProduto, sugerirProdutos, tipoNotaPadrao, type ProdutoCompat, type RascunhoColeta } from "@/lib/coleta";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface Props { scheduleId: string; orgId: string; codigo?: string | null; tipo?: string | null; status?: string | null; rascunho?: RascunhoColeta | null; onChange: () => void }
@@ -39,10 +39,14 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
   useEffect(() => { setDraft(rascunho ?? null); }, [rascunho]);
   const [audios, setAudios] = useState<Audio[]>([]);
   const [podeExcluir, setPodeExcluir] = useState(true);
+  const [transcrevendo, setTranscrevendo] = useState<Record<string, boolean>>({});
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTexto, setEditTexto] = useState("");
+  const autoTranscribed = useRef<Set<string>>(new Set());
   const [ctx, setCtx] = useState<{ tem_cnpj?: boolean; segmento?: string | null }>({});
   const [produtos, setProdutos] = useState<Prod[]>([]);
   useEffect(() => {
-    (supabase as any).from("products").select("id, name, brand, is_dispenser, dispenser_family_id, compatible_dispenser_families").eq("organization_id", orgId).eq("is_active", true).order("name").limit(2000)
+    (supabase as any).from("products").select("id, name, brand, codigo_fabricante, sku, is_dispenser, dispenser_family_id, compatible_dispenser_families").eq("organization_id", orgId).eq("is_active", true).order("name").limit(2000)
       .then(({ data }: any) => setProdutos(data ?? []));
     coleta({ id: scheduleId, action: "pendencias" }).then((r) => setCtx({ tem_cnpj: r.tem_cnpj, segmento: r.segmento })).catch(() => {});
   }, [orgId, scheduleId]);
@@ -52,6 +56,26 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
     try { const r = await coleta<{ audios: Audio[]; pode_excluir: boolean }>({ id: scheduleId, action: "audios" }); setAudios(r.audios); setEnviados(r.audios.length); setPodeExcluir(r.pode_excluir); }
     catch { /* offline: keep the last list */ }
   }, [scheduleId]);
+  // Auto-transcribe each uploaded audio as soon as it arrives on the server.
+  useEffect(() => {
+    if (!navigator.onLine || status === "confirmada") return;
+    const pendentes = audios.filter((a) => a.tipo === "audio" && !a.transcrito && !autoTranscribed.current.has(a.id));
+    if (!pendentes.length) return;
+    pendentes.forEach((a) => {
+      autoTranscribed.current.add(a.id);
+      setTranscrevendo((m) => ({ ...m, [a.id]: true }));
+      coleta<{ transcricao: string }>({ id: scheduleId, action: "transcrever", evidencia_id: a.id })
+        .then((r) => setAudios((cur) => cur.map((x) => x.id === a.id ? { ...x, transcrito: true, transcricao: r.transcricao } : x)))
+        .catch(() => { autoTranscribed.current.delete(a.id); })
+        .finally(() => setTranscrevendo((m) => ({ ...m, [a.id]: false })));
+    });
+  }, [audios, scheduleId, status]);
+  const salvarTranscricao = (id: string) => run(async () => {
+    const r = await coleta<{ transcricao: string }>({ id: scheduleId, action: "editar_transcricao", evidencia_id: id, transcricao: editTexto });
+    setAudios((cur) => cur.map((x) => x.id === id ? { ...x, transcrito: true, transcricao: r.transcricao } : x));
+    setEditId(null);
+    toast({ title: "Transcrição atualizada" });
+  });
   const flush = useCallback(async () => { const n = await flushAudio(); if (n) onChange(); await refresh(); }, [onChange, refresh]);
   useEffect(() => {
     flush();
@@ -106,7 +130,7 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
   const inst = draft ? precisaInstalacao(draft) : null;
   const set = (fn: (d: RascunhoColeta) => void) => setDraft((cur) => { const d = structuredClone(cur ?? {}); fn(d); return d; });
   const aparelhos = produtos.filter((p) => p.is_dispenser);
-  const noCatalogo = (nome?: string) => !!nome && produtos.some((p) => p.name === nome);
+  const noCatalogo = (nome?: string, id?: string) => id ? produtos.some((p) => p.id === id) : !!nome && produtos.some((p) => p.name === nome);
 
   return (
     <section className="space-y-3 rounded-lg border p-3" aria-label="Coleta por áudio">
@@ -120,10 +144,28 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
         {audios.map((a) => <li key={a.id} className="rounded-md border p-2 space-y-1">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span>{new Date(a.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}{a.tipo === "audio" ? ` · ${fmtDur(a.duracao_s)}` : " · texto"}</span>
-            <span className="flex items-center gap-1">{a.tipo === "audio" && <Badge variant="outline" className={a.transcrito ? "border-success text-success" : ""}>{a.transcrito ? "Transcrito" : "Enviado"}</Badge>}
+            <span className="flex items-center gap-1">{a.tipo === "audio" && <Badge variant="outline" className={a.transcrito ? "border-success text-success" : ""}>{transcrevendo[a.id] ? "Transcrevendo..." : a.transcrito ? "Transcrito" : "Enviado"}</Badge>}
               {podeExcluir && <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="Excluir" onClick={() => excluir(a.id)} disabled={busy}><Trash2 className="h-4 w-4" /></Button>}</span>
           </div>
           {a.url ? <audio controls preload="none" src={a.url} className="w-full h-9" /> : a.texto ? <p className="text-sm">{a.texto}</p> : null}
+          {a.tipo === "audio" && (
+            editId === a.id ? (
+              <div className="space-y-2 pt-1">
+                <Textarea value={editTexto} onChange={(e) => setEditTexto(e.target.value)} rows={3} className="text-sm leading-relaxed" aria-label="Corrigir transcrição" />
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" className="min-h-11 flex-1" disabled={busy || !editTexto.trim()} onClick={() => salvarTranscricao(a.id)}>Salvar transcrição</Button>
+                  <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setEditId(null)}>Cancelar</Button>
+                </div>
+              </div>
+            ) : a.transcricao ? (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{a.transcricao}</p>
+                {podeExcluir && <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => { setEditId(a.id); setEditTexto(a.transcricao ?? ""); }}>Corrigir</Button>}
+              </div>
+            ) : transcrevendo[a.id] ? (
+              <p className="text-xs text-muted-foreground flex items-center gap-1 pt-1"><Loader2 className="h-3.5 w-3.5 animate-spin" />Transcrevendo áudio...</p>
+            ) : null
+          )}
         </li>)}
         {fila > 0 && <li className="rounded-md border border-dashed p-2 text-xs text-warning">{fila} áudio(s) na fila — enviados quando o sinal voltar</li>}
       </ul>}
@@ -140,9 +182,14 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div><Label>Contato</Label><Input value={draft.contato?.nome ?? ""} onChange={(e) => set((d) => { d.contato = { ...d.contato, nome: e.target.value }; })} /></div>
             <div><Label>Cargo</Label><Input value={draft.contato?.cargo ?? ""} onChange={(e) => set((d) => { d.contato = { ...d.contato, cargo: e.target.value }; })} /></div>
+            <div><Label>Telefone do contato</Label><Input inputMode="tel" placeholder="(22) 99999-9999" value={draft.contato?.telefone ?? ""} onChange={(e) => set((d) => { d.contato = { ...d.contato, telefone: e.target.value }; })} /></div>
+            <div><Label>E-mail do contato</Label><Input type="email" placeholder="opcional" value={draft.contato?.email ?? ""} onChange={(e) => set((d) => { d.contato = { ...d.contato, email: e.target.value }; })} /></div>
             <div><Label>Decisor</Label><Input value={draft.decisor?.nome ?? ""} onChange={(e) => set((d) => { d.decisor = { ...d.decisor, nome: e.target.value }; })} />
               <button type="button" className="mt-1 text-xs text-primary underline" disabled={!draft.contato?.nome}
-                onClick={() => set((d) => { d.decisor = { nome: d.contato?.nome, cargo: d.contato?.cargo }; })}>O contato é o decisor</button></div>
+                onClick={() => set((d) => { d.decisor = { nome: d.contato?.nome, cargo: d.contato?.cargo, telefone: d.contato?.telefone, email: d.contato?.email }; })}>O contato é o decisor</button></div>
+            <div><Label>Cargo do decisor</Label><Input value={draft.decisor?.cargo ?? ""} onChange={(e) => set((d) => { d.decisor = { ...d.decisor, cargo: e.target.value }; })} /></div>
+            <div><Label>Telefone do decisor</Label><Input inputMode="tel" placeholder="opcional" value={draft.decisor?.telefone ?? ""} onChange={(e) => set((d) => { d.decisor = { ...d.decisor, telefone: e.target.value }; })} /></div>
+            <div><Label>E-mail do decisor</Label><Input type="email" placeholder="opcional" value={draft.decisor?.email ?? ""} onChange={(e) => set((d) => { d.decisor = { ...d.decisor, email: e.target.value }; })} /></div>
             <div><Label>Fluxo de pessoas</Label><Input value={draft.fluxo_pessoas ?? ""} onChange={(e) => set((d) => { d.fluxo_pessoas = e.target.value; })} /></div>
             <div><Label>Produto atual</Label><Input value={draft.produto_atual ?? ""} onChange={(e) => set((d) => { d.produto_atual = e.target.value; })} /></div>
             <div><Label>Concorrente</Label><Input value={draft.concorrente ?? ""} onChange={(e) => set((d) => { d.concorrente = e.target.value; })} /></div>
@@ -154,18 +201,20 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
               <div key={i} className="space-y-2 rounded-md border p-2">
                 <div className="flex gap-1"><Input aria-label="Local" placeholder="Local (ex.: Banheiro feminino)" value={p.local ?? ""} onChange={(e) => set((d) => { d.pontos![i].local = e.target.value; })} />
                   <Button size="icon" variant="ghost" aria-label="Remover ponto" onClick={() => set((d) => { d.pontos!.splice(i, 1); })}><Trash2 className="h-4 w-4" /></Button></div>
-                <ProdutoBusca label="Produto / refil" produtos={produtos.filter((x) => !x.is_dispenser)} prioridade={p.sem_aparelho ? [] : produtosCompativeis(produtos, p.aparelho)}
-                  value={p.produto ?? ""} onChange={(v) => set((d) => { const pt = { ...d.pontos![i], produto: v }; d.pontos![i] = noCatalogo(v) ? escolherProduto(pt, produtos) : pt; })} />
+                <ProdutoBusca label="Produto / refil" produtos={produtos.filter((x) => !x.is_dispenser)} prioridade={p.sem_aparelho ? [] : produtosCompativeis(produtos, p.aparelho, p.aparelho_id)}
+                  value={p.produto ?? ""} selectedId={p.produto_id} onChange={(v, id) => set((d) => { const pt = { ...d.pontos![i], produto: v, produto_id: id }; d.pontos![i] = noCatalogo(v, id) ? escolherProduto(pt, produtos) : pt; })} />
                 <label className="flex items-center gap-2 text-sm min-h-9">
-                  <Checkbox checked={!!p.sem_aparelho} onCheckedChange={(c) => set((d) => { d.pontos![i].sem_aparelho = c === true; if (c === true) d.pontos![i].aparelho = undefined; })} />
+                  <Checkbox checked={!!p.sem_aparelho} onCheckedChange={(c) => set((d) => { d.pontos![i].sem_aparelho = c === true; if (c === true) { d.pontos![i].aparelho = undefined; d.pontos![i].aparelho_id = undefined; } })} />
                   Sem aparelho (ex.: detergente em galão)</label>
                 {!p.sem_aparelho && <>
-                  {(() => { const comp = aparelhosCompativeis(produtos, p.produto); return comp.length > 0 && <div className="flex flex-wrap gap-1">
+                  {(() => { const comp = aparelhosCompativeis(produtos, p.produto, p.produto_id); return comp.length > 0 && <div className="flex flex-wrap gap-1">
                     <span className="text-xs text-muted-foreground w-full">Aparelhos compatíveis:</span>
-                    {comp.map((a) => <button type="button" key={a.id} aria-pressed={p.aparelho === a.name}
-                      className={`rounded-full border px-3 py-1 text-xs min-h-8 ${p.aparelho === a.name ? "border-primary bg-primary/15 text-primary" : "hover:bg-accent"}`}
-                      onClick={() => set((d) => { d.pontos![i].aparelho = a.name; })}>{a.name}{a.brand ? ` · ${a.brand}` : ""}</button>)}</div>; })()}
-                  <ProdutoBusca label={pontoPedeAparelho(p, produtos) ? "Aparelho" : "Aparelho (opcional)"} produtos={aparelhos.length ? aparelhos : produtos} value={p.aparelho ?? ""} onChange={(v) => set((d) => { d.pontos![i].aparelho = v; })} />
+                    {comp.map((a) => { const sel = p.aparelho_id ? p.aparelho_id === a.id : p.aparelho === a.name; return (
+                      <button type="button" key={a.id} aria-pressed={sel}
+                        className={`rounded-full border px-3 py-1 text-xs min-h-8 ${sel ? "border-primary bg-primary/15 text-primary" : "hover:bg-accent"}`}
+                        onClick={() => set((d) => { d.pontos![i].aparelho = a.name; d.pontos![i].aparelho_id = a.id; })}>{rotuloProduto(a)}</button>); })}</div>; })()}
+                  <ProdutoBusca label={pontoPedeAparelho(p, produtos) ? "Aparelho" : "Aparelho (opcional)"} produtos={aparelhos.length ? aparelhos : produtos} value={p.aparelho ?? ""} selectedId={p.aparelho_id}
+                    onChange={(v, id) => set((d) => { d.pontos![i].aparelho = v; d.pontos![i].aparelho_id = id; })} />
                 </>}
                 <div className="w-32"><Label className="text-xs">Quantidade</Label><Input inputMode="numeric" value={p.quantidade ?? ""} onChange={(e) => set((d) => { d.pontos![i].quantidade = e.target.value; })} /></div>
               </div>))}
@@ -225,26 +274,26 @@ export default function ColetaOcorrencia({ scheduleId, orgId, codigo, tipo, stat
   );
 }
 
-interface Audio { id: string; tipo: string; criado_em: string; duracao_s: number | null; url: string | null; transcrito: boolean; texto: string | null }
-interface Prod extends ProdutoCompat { id: string; name: string; brand: string | null }
+interface Audio { id: string; tipo: string; criado_em: string; duracao_s: number | null; url: string | null; transcrito: boolean; transcricao: string | null; texto: string | null }
+interface Prod extends ProdutoCompat { id: string; name: string; brand: string | null; codigo_fabricante?: string | null; sku?: string | null }
 const fmtDur = (s?: number | null) => s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "—";
 
 /** Free text field with catalog suggestions (tolerant to transcription typos); shows the matched product and lets the seller swap it. */
-function ProdutoBusca({ label, produtos, value, onChange, prioridade = [] }: { label: string; produtos: Prod[]; value: string; onChange: (v: string) => void; prioridade?: Prod[] }) {
+function ProdutoBusca({ label, produtos, value, selectedId, onChange, prioridade = [] }: { label: string; produtos: Prod[]; value: string; selectedId?: string; onChange: (v: string, id?: string) => void; prioridade?: Prod[] }) {
   const [open, setOpen] = useState(false);
-  const noCatalogo = produtos.some((p) => p.name === value);
+  const noCatalogo = selectedId ? produtos.some((p) => p.id === selectedId) : produtos.some((p) => p.name === value);
   // Compatible products (from the chosen device) come first; any other product can still be typed.
   const prio = new Set(prioridade.map((p) => p.id));
   const busca = (n: number) => [...sugerirProdutos(produtos, value, 12)].sort((a, b) => Number(prio.has(b.id)) - Number(prio.has(a.id))).slice(0, n);
   const sug = value && !noCatalogo ? busca(4) : open ? (value ? busca(6) : prioridade.slice(0, 6)) : [];
   return <div>
     <Label className="text-xs">{label}</Label>
-    <Input value={value} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 200)} onChange={(e) => onChange(e.target.value)} placeholder={`${label} (busca no catálogo)`} />
+    <Input value={value} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 200)} onChange={(e) => onChange(e.target.value, undefined)} placeholder={`${label} (busca no catálogo)`} />
     {noCatalogo && <p className="text-xs text-success mt-0.5">✓ No catálogo</p>}
     {sug.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{!noCatalogo && value ? <span className="text-xs text-muted-foreground w-full">Encontrado no catálogo:</span>
       : !value && prioridade.length > 0 ? <span className="text-xs text-muted-foreground w-full">Compatíveis com o aparelho:</span> : null}
-      {sug.map((p) => <button type="button" key={p.id} className="rounded-full border px-2 py-0.5 text-xs hover:bg-accent" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(p.name); setOpen(false); }}>
-        {p.name}{p.brand ? ` · ${p.brand}` : ""}</button>)}</div>}
+      {sug.map((p) => <button type="button" key={p.id} className="rounded-full border px-2 py-0.5 text-xs hover:bg-accent" onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(p.name, p.id); setOpen(false); }}>
+        {rotuloProduto(p)}</button>)}</div>}
   </div>;
 }
 

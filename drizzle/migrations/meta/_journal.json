@@ -449,6 +449,13 @@
       "when": 1795028589817,
       "tag": "0063_restaurar_comentario_wa_latitude",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1795534767305,
+      "tag": "0064_comodato_etiquetas_vigencia",
+      "breakpoints": true
     }
   ]
 }

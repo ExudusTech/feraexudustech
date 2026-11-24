@@ -49,12 +49,21 @@ export function layoutEtiquetas(w: number, h: number, pagina = { w: 210, h: 297 
 }
 
 /** What a scan inside an open occurrence can do with the device found (or with a free number). */
-export type AcaoEtiqueta = "instalar" | "vincular" | "avaliar" | "trocar_ponto" | "retirar" | "substituir";
+export type AcaoEtiqueta = "instalar" | "vincular" | "avaliar" | "trocar_ponto" | "retirar" | "substituir" | "trocar_etiqueta";
 export interface AparelhoEtiqueta { status: string; deste_local: boolean }
 export const ACAO_ETIQUETA_LABEL: Record<AcaoEtiqueta, string> = {
   instalar: "Instalar e ativar", vincular: "Vincular a um ponto sem número", avaliar: "Avaliar", trocar_ponto: "Trocar de ponto",
-  retirar: "Retirar (volta ao estoque)", substituir: "Substituir por outro aparelho",
+  retirar: "Retirar (volta ao estoque)", substituir: "Substituir por outro aparelho", trocar_etiqueta: "Trocar etiqueta (danificada)",
 };
+export const MOTIVOS_TROCA_ETIQUETA = ["molhou", "rasgou", "ilegivel", "sumiu", "outro"] as const;
+export type MotivoTrocaEtiqueta = typeof MOTIVOS_TROCA_ETIQUETA[number];
+export const MOTIVO_TROCA_LABEL: Record<MotivoTrocaEtiqueta, string> = {
+  molhou: "Molhou", rasgou: "Rasgou", ilegivel: "Ilegível", sumiu: "Sumiu", outro: "Outro",
+};
+export function avisoEtiquetaSubstituida(fimEm: string | null | undefined, novoNumero: number): string {
+  const ddmm = fimEm ? fimEm.slice(5, 10).split("-").reverse().join("/") : "—";
+  return `Etiqueta substituída em ${ddmm} — este aparelho agora é o nº ${formatEtiqueta(novoNumero)}`;
+}
 export function acoesEtiqueta(operacao: string | null | undefined, ap: AparelhoEtiqueta | null): { acoes: AcaoEtiqueta[]; aviso?: string } {
   const instalacao = operacao === "instalacao_teste" || operacao === "instalacao_definitiva" || operacao === "entrega";
   if (!ap) return { acoes: instalacao ? ["instalar", "vincular"] : ["vincular", "instalar"] };
@@ -63,8 +72,8 @@ export function acoesEtiqueta(operacao: string | null | undefined, ap: AparelhoE
   if (!ap.deste_local) return { acoes: [], aviso: "Esta etiqueta pertence a um aparelho de outro cliente. Confira o número." };
   if (st === "SEPARADO" || st === "PREVISTO") return { acoes: ["instalar"] };
   if (st === "RETIRADO") return { acoes: [], aviso: "Aparelho já retirado, aguardando a nota de devolução." };
-  if (st === "EM_TESTE") return { acoes: ["avaliar", "trocar_ponto", "substituir"], aviso: "Aparelho em teste: para retirar, feche o teste como não aprovado (a nota de devolução devolve ao estoque)." };
-  return { acoes: operacao === "substituicao" ? ["substituir", "avaliar", "trocar_ponto", "retirar"] : ["avaliar", "trocar_ponto", "substituir", "retirar"] };
+  if (st === "EM_TESTE") return { acoes: ["avaliar", "trocar_ponto", "substituir", "trocar_etiqueta"], aviso: "Aparelho em teste: para retirar, feche o teste como não aprovado (a nota de devolução devolve ao estoque)." };
+  return { acoes: operacao === "substituicao" ? ["substituir", "avaliar", "trocar_ponto", "trocar_etiqueta", "retirar"] : ["avaliar", "trocar_ponto", "substituir", "trocar_etiqueta", "retirar"] };
 }
 
 export const STATUS_APARELHO_LABEL: Record<string, string> = {

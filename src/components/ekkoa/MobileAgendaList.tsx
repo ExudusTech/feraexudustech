@@ -12,6 +12,7 @@ import type { Schedule } from "@/hooks/use-schedules";
 import { fromNotes, mapsLink, normalizePhoneBR } from "@/lib/service-kind";
 import { OcorrenciaTipoBadge } from "@/components/agenda/OcorrenciaCores";
 import { corInfo } from "@/lib/ocorrencia-cores";
+import { isAtrasada } from "@/lib/hoje";
 
 interface LeadInfo { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }
 
@@ -25,20 +26,25 @@ interface Props {
   todayOnly?: boolean;
   /** Show the given schedules as-is (no day filter, no day header); the date is shown on each card. */
   noDateFilter?: boolean;
+  /** Keep the order passed by the caller instead of re-sorting by start_time. */
+  preserveOrder?: boolean;
   emptyText?: string;
 }
 
 /** Phone view: today/tomorrow visits sorted by time with large action buttons. */
-export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, todayOnly, noDateFilter, emptyText }: Props) {
+export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, todayOnly, noDateFilter, preserveOrder, emptyText }: Props) {
   const [dayState, setDay] = useState<"hoje" | "amanha">("hoje");
   const day = todayOnly ? "hoje" : dayState;
   const target = day === "hoje" ? new Date() : addDays(new Date(), 1);
+  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const nowHHMM = format(new Date(), "HH:mm");
   const items = useMemo(
-    () => schedules
-      .filter((s) => s.status !== "cancelado" && (noDateFilter || isSameDay(parseISO(s.scheduled_date), target)))
-      .sort((a, b) => (a.start_time ?? "99").localeCompare(b.start_time ?? "99")),
+    () => {
+      const filtered = schedules.filter((s) => s.status !== "cancelado" && (noDateFilter || isSameDay(parseISO(s.scheduled_date), target)));
+      return preserveOrder ? filtered : filtered.sort((a, b) => (a.start_time ?? "99").localeCompare(b.start_time ?? "99"));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schedules, day, noDateFilter],
+    [schedules, day, noDateFilter, preserveOrder],
   );
 
   return (
@@ -64,6 +70,7 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
                 <span className="text-2xl font-bold text-primary">{noDateFilter && <span className="text-base mr-2">{format(parseISO(s.scheduled_date), "dd/MM")}</span>}{s.start_time?.slice(0, 5) || "--:--"}</span>
                 <div className="flex gap-1 flex-wrap justify-end">
                   <OcorrenciaTipoBadge s={s as any} />
+                  {isAtrasada(s, todayStr, nowHHMM) && <Badge variant="destructive">Atrasada</Badge>}
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                   {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}
                   <OcorrenciaTag s={s as any} />

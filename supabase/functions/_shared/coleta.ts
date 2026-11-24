@@ -12,7 +12,7 @@ export const TIPOS_COM_COLETA: OcorrenciaTipo[] = ["primeira_visita", "venda_dir
 export function exigeColeta(tipo?: string | null): boolean { return TIPOS_COM_COLETA.includes(tipo as OcorrenciaTipo); }
 
 /** sem_aparelho: point served without a device (e.g. detergent in a gallon); never pending a device. */
-export interface PontoColeta { local?: string; aparelho?: string; produto?: string; quantidade?: string; sem_aparelho?: boolean }
+export interface PontoColeta { local?: string; aparelho?: string; aparelho_id?: string; produto?: string; produto_id?: string; quantidade?: string; sem_aparelho?: boolean }
 export interface OfertaColeta { produto?: string; reacao?: string }
 export interface PassoColeta { tipo?: "proposta" | "teste" | "venda_direta" | "retorno" | "perdido"; data?: string; observacao?: string }
 /** What a test installation / direct sale needs (asked at confirmation, never to close the visit). */
@@ -21,7 +21,7 @@ export interface InstalacaoColeta { tipo_nota?: string; cnpj?: string; itens?: {
 export interface LevantamentoColeta { porte?: string; banheiros_f?: string; banheiros_m?: string; banheiros_pne?: string; problema?: string; fornecedor?: string }
 export interface RascunhoColeta {
   contato?: { nome?: string; cargo?: string; telefone?: string; email?: string };
-  decisor?: { nome?: string; cargo?: string };
+  decisor?: { nome?: string; cargo?: string; telefone?: string; email?: string };
   pontos?: PontoColeta[];
   fluxo_pessoas?: string;
   dores?: string[];
@@ -52,39 +52,49 @@ export function itensDosPontos(r: RascunhoColeta | null | undefined): { descrica
 }
 
 /** Catalog fields for the existing device ↔ refill link (dispenser_family_id on devices, compatible_dispenser_families on refills). */
-export interface ProdutoCompat { id?: string; name?: string | null; brand?: string | null; is_dispenser?: boolean | null;
+export interface ProdutoCompat { id?: string; name?: string | null; brand?: string | null; codigo_fabricante?: string | null; sku?: string | null; is_dispenser?: boolean | null;
   dispenser_family_id?: string | null; compatible_dispenser_families?: string[] | null }
+/** Distinguishable product label: name + factory code (or SKU) + brand when available. */
+export function rotuloProduto(p: { name?: string | null; codigo_fabricante?: string | null; sku?: string | null; brand?: string | null }): string {
+  const cod = (p.codigo_fabricante ?? "").trim() || (p.sku ?? "").trim();
+  const extras = [cod, (p.brand ?? "").trim()].filter(Boolean).join(" · ");
+  return extras ? `${p.name ?? ""} (${extras})` : (p.name ?? "");
+}
 /** Families the named product/refill fits; null when the name is not a catalog product. */
-export function familiasDoProduto(catalogo: ProdutoCompat[] | undefined, produto: string | null | undefined): string[] | null {
-  if (!catalogo?.length || !has(produto)) return null;
-  const m = matchProduto(catalogo.filter((p) => !p.is_dispenser), produto!);
+export function familiasDoProduto(catalogo: ProdutoCompat[] | undefined, produto: string | null | undefined, produtoId?: string | null): string[] | null {
+  if (!catalogo?.length) return null;
+  const nonDisp = catalogo.filter((p) => !p.is_dispenser);
+  const byId = has(produtoId) ? nonDisp.find((p) => p.id === produtoId) : undefined;
+  const m = byId ?? (has(produto) ? matchProduto(nonDisp, produto!) : null);
   return m ? (m.compatible_dispenser_families ?? []).filter(Boolean) : null;
 }
 /** Devices (is_dispenser) whose family is in the product's compatible families. */
-export function aparelhosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, produto: string | null | undefined): T[] {
-  const fams = familiasDoProduto(catalogo, produto);
+export function aparelhosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, produto: string | null | undefined, produtoId?: string | null): T[] {
+  const fams = familiasDoProduto(catalogo, produto, produtoId);
   if (!fams?.length) return [];
   return (catalogo ?? []).filter((p) => p.is_dispenser && !!p.dispenser_family_id && fams.includes(p.dispenser_family_id));
 }
 /** Products/refills compatible with the named device's family (empty when the device is unknown or has no family). */
-export function produtosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, aparelho: string | null | undefined): T[] {
-  if (!catalogo?.length || !has(aparelho)) return [];
-  const d = matchProduto(catalogo.filter((p) => p.is_dispenser), aparelho!);
+export function produtosCompativeis<T extends ProdutoCompat>(catalogo: T[] | undefined, aparelho: string | null | undefined, aparelhoId?: string | null): T[] {
+  if (!catalogo?.length) return [];
+  const disps = catalogo.filter((p) => p.is_dispenser);
+  const byId = has(aparelhoId) ? disps.find((p) => p.id === aparelhoId) : undefined;
+  const d = byId ?? (has(aparelho) ? matchProduto(disps, aparelho!) : null);
   const fam = d?.dispenser_family_id;
   return fam ? catalogo.filter((p) => !p.is_dispenser && (p.compatible_dispenser_families ?? []).includes(fam)) : [];
 }
 /** A point asks for a device only when its product fits some device family and "Sem aparelho" is off. */
 export function pontoPedeAparelho(p: PontoColeta, catalogo: ProdutoCompat[] | undefined): boolean {
-  return !p.sem_aparelho && (familiasDoProduto(catalogo, p.produto)?.length ?? 0) > 0;
+  return !p.sem_aparelho && (familiasDoProduto(catalogo, p.produto, p.produto_id)?.length ?? 0) > 0;
 }
 /** After a product is chosen: no compatible family → "Sem aparelho" (only when no device was typed); one compatible device → filled in. */
 export function escolherProduto(p: PontoColeta, catalogo: ProdutoCompat[] | undefined): PontoColeta {
-  const fams = familiasDoProduto(catalogo, p.produto);
+  const fams = familiasDoProduto(catalogo, p.produto, p.produto_id);
   if (fams == null) return p;
   if (!fams.length) return has(p.aparelho) ? p : { ...p, sem_aparelho: true };
   const out: PontoColeta = { ...p, sem_aparelho: false };
-  const comp = aparelhosCompativeis(catalogo, p.produto);
-  if (!has(p.aparelho) && comp.length === 1 && comp[0].name) out.aparelho = comp[0].name;
+  const comp = aparelhosCompativeis(catalogo, p.produto, p.produto_id);
+  if (!has(p.aparelho) && comp.length === 1 && comp[0].name) { out.aparelho = comp[0].name; if (comp[0].id) out.aparelho_id = comp[0].id; }
   return out;
 }
 /** Applied to an AI-extracted draft: keeps the seller's "Sem aparelho" choices and applies the product rule to each point. */
@@ -162,8 +172,9 @@ export function limparRascunho(input: unknown): RascunhoColeta {
   const inst = o.instalacao && typeof o.instalacao === "object" ? o.instalacao : null;
   return {
     contato: { nome: s(o.contato?.nome), cargo: s(o.contato?.cargo), telefone: s(o.contato?.telefone, 30), email: s(o.contato?.email, 120) },
-    decisor: { nome: s(o.decisor?.nome), cargo: s(o.decisor?.cargo) },
-    pontos: arr(o.pontos, (p) => ({ local: s(p?.local), aparelho: s(p?.aparelho), produto: s(p?.produto), quantidade: s(p?.quantidade == null ? undefined : String(p.quantidade), 20),
+    decisor: { nome: s(o.decisor?.nome), cargo: s(o.decisor?.cargo), telefone: s(o.decisor?.telefone, 30), email: s(o.decisor?.email, 120) },
+    pontos: arr(o.pontos, (p) => ({ local: s(p?.local), aparelho: s(p?.aparelho), ...(s(p?.aparelho_id, 60) ? { aparelho_id: s(p?.aparelho_id, 60) } : {}),
+      produto: s(p?.produto), ...(s(p?.produto_id, 60) ? { produto_id: s(p?.produto_id, 60) } : {}), quantidade: s(p?.quantidade == null ? undefined : String(p.quantidade), 20),
       ...(typeof p?.sem_aparelho === "boolean" ? { sem_aparelho: p.sem_aparelho } : {}) })),
     fluxo_pessoas: s(o.fluxo_pessoas, 300),
     dores: arr(o.dores, (x) => s(x, 200) ?? "").filter(Boolean),
@@ -186,7 +197,7 @@ export const RASCUNHO_JSON_SCHEMA = {
   required: ["contato", "decisor", "pontos", "fluxo_pessoas", "dores", "produto_atual", "concorrente", "produtos_oferecidos", "proximos_passos", "observacoes", "levantamento"],
   properties: {
     contato: { type: "object", additionalProperties: false, required: ["nome", "cargo", "telefone", "email"], properties: { nome: str, cargo: str, telefone: str, email: str } },
-    decisor: { type: "object", additionalProperties: false, required: ["nome", "cargo"], properties: { nome: str, cargo: str } },
+    decisor: { type: "object", additionalProperties: false, required: ["nome", "cargo", "telefone", "email"], properties: { nome: str, cargo: str, telefone: str, email: str } },
     pontos: { type: "array", items: { type: "object", additionalProperties: false, required: ["local", "aparelho", "produto", "quantidade"], properties: { local: str, aparelho: str, produto: str, quantidade: str } } },
     fluxo_pessoas: str, dores: { type: "array", items: str }, produto_atual: str, concorrente: str,
     produtos_oferecidos: { type: "array", items: { type: "object", additionalProperties: false, required: ["produto", "reacao"], properties: { produto: str, reacao: str } } },

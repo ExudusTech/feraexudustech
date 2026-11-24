@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Headset, MessageCircle, ExternalLink, Hand, CheckCircle2 } from "lucide-react";
+import { Headset, MessageCircle, ExternalLink, Hand, CheckCircle2, ChevronDown } from "lucide-react";
 import { useAtendimentos, useAtendimentoAction, type Atendimento } from "@/hooks/use-atendimentos";
 import { useHumanService } from "@/hooks/use-human-service";
 import { esperaMinutos, nivel, ordenarAgora } from "@/lib/atendimento-metrics";
@@ -24,28 +24,40 @@ export function formatEspera(min: number) {
 }
 
 /** "Agora": open service requests, most urgent first, with quick actions. */
-export default function PainelAgora(props: { compact?: boolean }) {
+export default function PainelAgora(props: { compact?: boolean; defaultCollapsed?: boolean }) {
   const { canAccessRoute } = usePermissions();
   return canAccessRoute("/atendimentos") ? <Painel {...props} /> : null;
 }
 
-function Painel({ compact = false }: { compact?: boolean }) {
+function Painel({ compact = false, defaultCollapsed = false }: { compact?: boolean; defaultCollapsed?: boolean }) {
   const { data = [] } = useAtendimentos({ abertos: true });
   const svc = useHumanService();
   const action = useAtendimentoAction();
   const [resolving, setResolving] = useState<Atendimento | null>(null);
+  const [open, setOpen] = useState(!defaultCollapsed);
   const items = useMemo(() => ordenarAgora(data, svc), [data, svc]);
   if (compact && items.length === 0) return null;
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg"><Headset className="h-5 w-5 text-primary" />Agora
-          <Badge variant="secondary">{items.length}</Badge>
-          <Link to="/atendimentos" className="ml-auto text-sm font-normal text-primary hover:underline">Ver todos</Link>
+      <CardHeader className={open ? "pb-3" : "py-3"}>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          {defaultCollapsed ? (
+            <button type="button" className="flex items-center gap-2 flex-1 text-left min-h-9" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+              <Headset className="h-5 w-5 text-primary shrink-0" />Agora
+              <Badge variant="secondary">{items.length}</Badge>
+              <ChevronDown className={cn("h-4 w-4 ml-auto transition-transform", open && "rotate-180")} />
+            </button>
+          ) : (
+            <>
+              <Headset className="h-5 w-5 text-primary" />Agora
+              <Badge variant="secondary">{items.length}</Badge>
+              <Link to="/atendimentos" className="ml-auto text-sm font-normal text-primary hover:underline">Ver todos</Link>
+            </>
+          )}
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      {open && <CardContent>
         {items.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum atendimento em aberto.</p> : (
           <ul className="space-y-2">
             {items.slice(0, compact ? 5 : 20).map((a) => {
@@ -74,7 +86,7 @@ function Painel({ compact = false }: { compact?: boolean }) {
             })}
           </ul>
         )}
-      </CardContent>
+      </CardContent>}
       <ResolveDialog atendimento={resolving} onClose={() => setResolving(null)} />
     </Card>
   );

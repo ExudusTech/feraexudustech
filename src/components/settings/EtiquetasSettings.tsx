@@ -24,12 +24,14 @@ export default function EtiquetasSettings() {
     queryKey: ["etiqueta-faixas", user?.organization_id], enabled: !!user?.organization_id,
     queryFn: async () => {
       const sb = supabase as any;
-      const [f, o, u] = await Promise.all([
+      const [f, o, u, v] = await Promise.all([
         sb.from("etiqueta_faixas").select("id, inicio, fim, largura_mm, altura_mm, created_at, gerado_por, status, impresso_em").eq("organization_id", user!.organization_id).order("inicio", { ascending: false }),
         sb.from("organizations").select("name, trading_name").eq("id", user!.organization_id).maybeSingle(),
         sb.from("comodatos").select("etiqueta_numero").eq("organization_id", user!.organization_id).not("etiqueta_numero", "is", null).lt("etiqueta_numero", 900001).limit(20000),
+        sb.from("comodato_etiquetas").select("numero").eq("organization_id", user!.organization_id).lt("numero", 900001).limit(20000),
       ]);
-      return { lotes: (f.data ?? []) as any[], marca: String(o.data?.trading_name || o.data?.name || "NitsClean"), usados: ((u.data ?? []) as any[]).map((r) => r.etiqueta_numero as number) };
+      const usados = [...new Set([...((u.data ?? []) as any[]).map((r) => r.etiqueta_numero as number), ...((v.data ?? []) as any[]).map((r) => r.numero as number)])];
+      return { lotes: (f.data ?? []) as any[], marca: String(o.data?.trading_name || o.data?.name || "NitsClean"), usados };
     },
   });
   const [qtd, setQtd] = useState("500"); const [w, setW] = useState("50"); const [h, setH] = useState("30");
