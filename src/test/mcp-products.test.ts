@@ -26,6 +26,10 @@ const catalog = [
   { id: "sc5", name: "SUMA CALC D5", brand: "DIVERSEY", category: "Desincrustante", fornecedor: "DIVERSEY", unit: "GL", description: "Detergente desincrustante ácido para remoção de incrustações inorgânicas. Indicado para: Cozinhas." },
   { id: "ac", name: "LIMPADOR ACIDO PISO SHOCK 5L", brand: "OLEAK", category: "Limpadores", fornecedor: null, unit: "UN", description: null },
   { id: "dl", name: "DRAX LAVA LOUÇAS", brand: "DIVERSEY", category: "Lavagem mecânica - detergente líquido", fornecedor: "DIVERSEY", unit: "GL", description: "Desincrustante alcalino para lavagem mecânica de louças e copos. Indicado para: Cozinhas." },
+  { id: "dx", name: "DRAX", brand: "DIVERSEY", category: "Desengraxante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengraxante industrial", specifications: { segmentos: ["Indústria"] } },
+  { id: "sp", name: "SOLUPAN LIQUIDO", brand: "DIVERSEY", category: "Desengraxante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengraxante alcalino pesado", specifications: { segmentos: ["Indústria"] } },
+  { id: "tt", name: "TITAN SU 103", brand: "DIVERSEY", category: "Desengraxante", fornecedor: "DIVERSEY", unit: "GL", description: "Desengraxante para máquinas", specifications: { segmentos: ["Indústria"] } },
+  { id: "vx", name: "VIREX II 256", brand: "DIVERSEY", category: "Limpeza e desinfecção hospitalar", fornecedor: "DIVERSEY", unit: "GL", description: "Desinfetante hospitalar", specifications: { segmentos: ["Saúde"] } },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
 function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
@@ -251,5 +255,47 @@ describe("consultar_produto — necessidade e mensagem de solução", () => {
     const r = await harness().route("consultar_produto", { termo: "Drastic W4C" });
     expect(r.data.correspondencia).toBe("total");
     expect(r.data.produtos.map((p: any) => p.id)).toEqual(["dr"]);
+  });
+});
+
+describe("consultar_produto — novas necessidades, segmentos e parcial restrito", () => {
+  it("caso real: limpeza de máquinas e equipamentos industriais → necessidade com DRAX/SOLUPAN/TITAN", async () => {
+    const r = await harness().route("consultar_produto", { termo: "limpeza de máquinas e equipamentos industriais" });
+    expect(r.data).toMatchObject({ encontrado: false, correspondencia: "necessidade", produtos: [] });
+    const ids = r.data.similares.map((p: any) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["dx", "sp", "tt"]));
+    expect(ids).not.toContain("ek1");
+    expect(ids).not.toContain("ek2");
+    expect(r.data.mensagem_para_lead).toContain("linha de desengraxantes Diversey");
+  });
+  it("produto para lavanderia de hotel → Clax", async () => {
+    const r = await harness().route("consultar_produto", { termo: "produto para lavanderia de hotel" });
+    const all = [...(r.data.produtos ?? []), ...(r.data.similares ?? [])];
+    expect(all.some((p: any) => /clax/i.test(p.nome))).toBe(true);
+    expect(r.data.mensagem_para_lead).toContain("linha Clax para lavanderia");
+  });
+  it("desinfetante para clínica → Oxivir/Virex", async () => {
+    const r = await harness().route("consultar_produto", { termo: "desinfetante para clínica" });
+    const ids = [...(r.data.produtos ?? []), ...(r.data.similares ?? [])].map((p: any) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["ox", "vx"]));
+    expect(r.data.mensagem_para_lead).toContain("Oxivir/Virex");
+  });
+  it("papel toalha continua papel; toalha de banho vai para lavanderia (Clax)", async () => {
+    const papel = await harness().route("consultar_produto", { termo: "papel toalha" });
+    expect(papel.data.produtos.map((p: any) => p.id)).toEqual(["3"]);
+    const banho = await harness().route("consultar_produto", { termo: "lavar toalha de banho" });
+    expect(banho.data.correspondencia).toBe("necessidade");
+    expect(banho.data.similares.some((p: any) => /clax/i.test(p.nome))).toBe(true);
+  });
+  it("limpeza geral → correspondencia nenhuma, similares vazios, sem Ekkoa", async () => {
+    const r = await harness().route("consultar_produto", { termo: "limpeza geral" });
+    expect(r.data).toMatchObject({ encontrado: false, correspondencia: "nenhuma", produtos: [], similares: [] });
+    expect(r.data.mensagem_para_lead).toContain("o consultor avalia no local e indica o produto certo.");
+  });
+  it("sinônimo de segmento: restaurante → Cozinhas", async () => {
+    const r = await harness().route("consultar_produto", { termo: "produtos para restaurante" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("segmento");
+    expect(r.data.produtos.map((p: any) => p.id)).toContain("d1");
   });
 });

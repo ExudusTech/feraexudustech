@@ -2238,6 +2238,10 @@ async function obterPromocaoVigente(_params: Record<string, unknown>): Promise<M
 }
 
 const PRODUCT_GENERIC_WORDS = new Set(["produto", "produtos", "para", "de", "da", "do", "das", "dos", "linha", "e", "com", "o", "a", "os", "as", "um", "uma", "coisa", "coisas", "item", "itens", "algo", "tipo"]);
+const PARTIAL_GENERIC_WORDS = new Set([
+  ...PRODUCT_GENERIC_WORDS,
+  "limpeza", "limpar", "qualidade", "geral", "profissional", "profissionais", "equipamento", "equipamentos", "uso",
+]);
 // Generic need/segment phrasing ("produtos para hotel", "limpeza de cozinha", "coisas para banheiro") never counts as a named product.
 const PRODUCT_GENERIC_TERM = /^(produtos?|coisas?|itens?|item|algo|opcoes|algum|alguma|material|materiais)\b|^limpeza (de|da|do|para)\b|\bpara (o |a |os |as )?(hotel|hoteis|hotelaria|cozinhas?|banheiros?|restaurantes?|lavanderias?|hospita\w*|clinicas?|escritorios?|pisos?|limpeza)\b/;
 const PRODUCT_SEARCH_FIELDS = ["name", "brand", "category", "fornecedor", "linha_produto", "description"] as const;
@@ -2313,6 +2317,24 @@ function productSegments(p: Record<string, unknown>): string[] {
   return list.map((x) => foldProductText(x)).filter(Boolean);
 }
 
+function productApplication(p: Record<string, unknown>): string {
+  const spec = p.specifications as Record<string, unknown> | null;
+  const raw = spec?.aplicacao ?? spec?.aplicacoes;
+  if (Array.isArray(raw)) return raw.map(foldProductText).filter(Boolean).join(" ");
+  return foldProductText(raw);
+}
+
+const SEGMENT_SYNONYMS: { padrao: RegExp; segmentos: string[]; linha: string }[] = [
+  { padrao: /\b(restaurantes?|bar|bares|lanchonetes?|padarias?|cozinha industrial)\b/, segmentos: ["cozinha"], linha: "linha Diversey para cozinhas profissionais" },
+  { padrao: /\b(clinicas?|hospita(?:l|is|lar)|consultorios?|laboratorios?)\b/, segmentos: ["saude", "hospitalar"], linha: "linha hospitalar Diversey (Oxivir/Virex)" },
+  { padrao: /\b(hote(?:l|is)|pousadas?|hotelaria)\b/, segmentos: ["hotelaria", "lavanderia", "cozinha"], linha: "linha Diversey para hotelaria, lavanderia e cozinhas" },
+  { padrao: /\bcondominios?\b/, segmentos: ["areas publicas", "banheiros e vestiarios"], linha: "linha Diversey para condomínios e áreas comuns" },
+  { padrao: /\b(escolas?|escritorios?)\b/, segmentos: ["escritorios e salas de aula"], linha: "linha Diversey para escritórios e salas de aula" },
+  { padrao: /\b(mercados?|supermercados?)\b/, segmentos: ["supermercado"], linha: "linha Diversey para supermercados" },
+  { padrao: /\b(industrias?|industrial|industriais|fabricas?)\b/, segmentos: ["industria"], linha: "linha de higiene industrial Diversey" },
+  { padrao: /\blavanderias?\b/, segmentos: ["lavanderia"], linha: "linha Clax para lavanderia" },
+];
+
 function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Record<string, unknown>> {
   const groups = new Map<string, Array<Record<string, unknown>>>();
   for (const p of list) { const k = foldProductText(p.category); if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(p); }
@@ -2323,11 +2345,29 @@ function pickVaried(list: Array<Record<string, unknown>>, n: number): Array<Reco
 
 // Need/ambiente words → product text (category, name, description, segments) that solves it.
 // Order = priority for the lead message; alvo patterns are strongest first (used for ranking).
-const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: string; evitar?: RegExp }[] = [
+const PRODUCT_NEEDS: { termo?: RegExp; frase?: RegExp; evitarFrase?: RegExp; alvo: RegExp[]; assunto: string; linha?: string; marca?: string; evitar?: RegExp }[] = [
+  { frase: /\b(maquina de lavar loucas?|lava loucas?)\b/,
+    alvo: [/lavagem mecanica/, /lava louca/], assunto: "louça em máquina", linha: "linha Diversey para lavagem mecânica", marca: "diversey" },
+  { termo: /^(maquinas?|equipamentos?|graxas?|oleos?|pecas?|motores?|oficinas?|desengrax\w*)$/,
+    evitarFrase: /\b(maquina de lavar loucas?|lava loucas?)\b/,
+    alvo: [/desengrax/, /desengordur/], assunto: "desengraxe de máquinas e equipamentos", linha: "linha de desengraxantes Diversey", marca: "diversey" },
+  { termo: /^(industrias?|industrial|industriais|fabricas?|producao|tanques?|sanitiza\w*)$/,
+    frase: /\blinhas? de producao\b/,
+    alvo: [/\bindustria\b/, /sanitiz|desinfet.*industria|desengrax|piso/], assunto: "higiene industrial", linha: "linha de higiene industrial Diversey", marca: "diversey" },
+  { termo: /^(roupas?|enxoval|enxovais|lencol|lencois|lavanderias?)$/,
+    frase: /\b(lavagem de roupas?|toalhas? de (banho|rosto))\b/,
+    alvo: [/\bclax\b|lavanderia/, /detergente|alvejante|amaciante/], assunto: "lavanderia profissional", linha: "linha Clax para lavanderia", marca: "diversey" },
+  { termo: /^(hospital|hospitais|hospitalar|clinicas?|consultorios?|laboratorios?)$/,
+    frase: /\bdesinfec\w* hospitalar\b/,
+    alvo: [/limpeza e desinfeccao hospitalar|desinfeccao hospitalar|\boxivir\b|\bvirex\b/, /desinfeccao|hospitalar/], assunto: "desinfecção hospitalar", linha: "linha hospitalar Diversey (Oxivir/Virex)", marca: "diversey" },
+  { termo: /^(hortifruti|frutas?|legumes?|verduras?)$/,
+    alvo: [/frutas legumes e verduras|hortifruti/], assunto: "higienização de frutas, legumes e verduras", linha: "linha Diversey para hortifrúti", marca: "diversey" },
+  { termo: /^(carpetes?|tapetes?)$/,
+    alvo: [/limpa carpetes|carpete/], assunto: "limpeza de carpetes e tapetes", linha: "linha Diversey para carpetes", marca: "diversey" },
   { termo: /^(rejunt\w*|limo|limos[ao]|bolor\w*|mofo\w*|encardid\w*|azulej\w*|ceramic\w*|porcelanat\w*|incrust\w*|calcari\w*|crostas?|ferrugem|manchad[oa]s?)$/,
     alvo: [/desincrust/, /acido/, /limpeza pesada|limpador em creme/], assunto: "limpeza pesada de rejunte, limo e encardido", marca: "diversey",
     evitar: /lavagem mecanica|louca|maquina|lavanderia/ },
-  { termo: /^(gordur\w*|engordurad\w*|oleos?|graxas?|chapas?|fornos?|fogao|fogoes|coifas?|exaustor\w*)$/,
+  { termo: /^(gordur\w*|engordurad\w*|chapas?|fornos?|fogao|fogoes|coifas?|exaustor\w*)$/,
     alvo: [/desengordur|chapas e fornos/, /desengrax/, /limpeza pesada/], assunto: "remover gordura", marca: "diversey" },
   { termo: /^(banheir\w*|sanitari\w*|vasos?|privadas?|vestiari\w*|mictori\w*|lavabos?)$/,
     alvo: [/banheiro|sanitari|mictorio/, /desincrust|acido/], assunto: "limpeza e higiene de banheiros", marca: "diversey" },
@@ -2335,19 +2375,23 @@ const PRODUCT_NEEDS: { termo: RegExp; alvo: RegExp[]; assunto: string; marca?: s
   { termo: /^(cozinh\w*|loucas?|panelas?)$/, alvo: [/cozinha/, /louca|desengordur/], assunto: "limpeza de cozinha", marca: "diversey" },
   { termo: /^(vidros?|janelas?|espelhos?|vitrine\w*)$/, alvo: [/vidro/], assunto: "limpeza de vidros" },
   { termo: /^(papel|papeis|toalh\w*|guardanap\w*|higienic\w*|dispenser\w*|papeleira\w*|suportes?)$/,
+    evitarFrase: /\b(toalhas? de (banho|rosto)|enxoval|enxovais|roupas?)\b/,
     alvo: [/dispenser|papel|toalha|guardanapo/], assunto: "papel e dispensers" },
   { termo: /^(maos?|sabonet\w*|alcool|antissep\w*)$/, alvo: [/sabonete|lavagem de maos|antissepsia|alcool/], assunto: "higiene das mãos" },
   { termo: ODOR_WORD, alvo: [ODOR_CATEGORY], assunto: "controle de odores e aromatização", marca: "ekkoa" },
   { termo: /^(ambientes?|salas?|recepca\w*|escritori\w*|halls?|quartos?)$/, alvo: [/recepc|escritorio|areas publicas/, /uso geral/], assunto: "limpeza dos ambientes", marca: "diversey" },
 ];
 const MSG_SOLUCAO = "Temos solução profissional para isso; o consultor avalia no local e indica o produto certo.";
-const mensagemSolucao = (assunto?: string | null) => assunto
-  ? `Temos solução profissional para ${assunto}; o consultor avalia no local e indica o produto certo.` : MSG_SOLUCAO;
+const mensagemSolucao = (assunto?: string | null, linha?: string | null) => assunto
+  ? `Temos solução profissional para ${assunto}${linha ? ` (${linha})` : ""}; o consultor avalia no local e indica o produto certo.` : MSG_SOLUCAO;
 const needText = (p: Record<string, unknown>) =>
-  [p.category, p.name, p.description].map(foldProductText).join(" ") + " " + productSegments(p).join(" ");
+  [p.category, p.name, p.description, productApplication(p)].map(foldProductText).join(" ") + " " + productSegments(p).join(" ");
 /** Up to 3 products for the need words of a term (rejunte/limo → desincrustantes Diversey), best score first, varied. */
-function produtosPorNecessidade(products: Array<Record<string, unknown>>, words: string[]) {
-  const rules = PRODUCT_NEEDS.filter(rule => words.some(w => rule.termo.test(w)));
+function produtosPorNecessidade(products: Array<Record<string, unknown>>, words: string[], termFold: string) {
+  const rules = PRODUCT_NEEDS.filter(rule =>
+    !(rule.evitarFrase?.test(termFold)) &&
+    ((rule.frase?.test(termFold) ?? false) || (rule.termo ? words.some(w => rule.termo!.test(w)) : false))
+  );
   if (!rules.length) return null;
   const scored = products.map(p => {
     const text = needText(p);
@@ -2363,7 +2407,7 @@ function produtosPorNecessidade(products: Array<Record<string, unknown>>, words:
   const top = scored.length ? scored[0].score : 0;
   const best = pickVaried(scored.filter(x => x.score === top).map(x => x.p), 3);
   for (const x of scored) if (best.length < 3 && !best.includes(x.p)) best.push(x.p);
-  return { assunto: rules[0].assunto, produtos: best };
+  return { assunto: rules[0].assunto, linha: rules[0].linha ?? null, produtos: best };
 }
 /** Subject shared by every suggestion (all aromatizadores → odores), for the lead message. */
 function assuntoDasSugestoes(list: Array<Record<string, unknown>>): string | null {
@@ -2459,25 +2503,41 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     if (descMatch.length) return respondFound("segmento", pickVaried(rankByCategory(descMatch), 5), false);
     found = [];
     if (!found.length) {
-      // 3. Segment
+      // 3a. Need/ambiente words (máquinas/desengraxe, indústria, lavanderia/Clax, hospitalar, rejunte, gordura…) → up to 3 suggestions.
+      // A brand word ("lysoform perfumado") keeps the partial brand match instead of a need suggestion.
+      const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo?.test(w));
+      const namesBrand = sigWords.some(w => !isNeedWord(w) && products.some(p =>
+        foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
+      const need = namesBrand ? null : produtosPorNecessidade(products, sigWords, termFold);
+      if (need?.produtos.length) {
+        const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
+        return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
+          similares: need.produtos.map((p) => fmt(p, urls)), necessidade: need.assunto,
+          mensagem_para_lead: mensagemSolucao(need.assunto, need.linha), imagem_enviada: false } };
+      }
+      // 3b. Direct segment match
       const segTerm = sigWords.join(" ");
       if (segTerm.length >= 4) {
         const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
         if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
       }
-      // 3b. Need/ambiente words (rejunte, limo, azulejo, piso, cozinha, gordura, odor…) → up to 3 suggestions.
-      // A brand word ("lysoform perfumado") keeps the partial brand match instead of a need suggestion.
-      const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo.test(w));
-      const namesBrand = sigWords.some(w => !isNeedWord(w) && products.some(p =>
-        foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
-      const need = namesBrand ? null : produtosPorNecessidade(products, sigWords);
-      if (need?.produtos.length) {
-        const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
-        return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
-          similares: need.produtos.map((p) => fmt(p, urls)), necessidade: need.assunto,
-          mensagem_para_lead: mensagemSolucao(need.assunto), imagem_enviada: false } };
+      // 3c. Segment synonyms (restaurante → Cozinhas, hotel → Hotelaria/Lavanderias/Cozinhas, etc.)
+      const segSyn = SEGMENT_SYNONYMS.find((s) => s.padrao.test(termFold));
+      if (segSyn) {
+        const bySyn = products.filter((p) => productSegments(p).some((seg) => segSyn.segmentos.some((t) => seg.includes(t) || t.includes(seg))));
+        if (bySyn.length) {
+          const res = await respondFound("segmento", pickVaried(rankByCategory(bySyn), 5), false);
+          (res.data as Record<string, unknown>).linha_sugerida = segSyn.linha;
+          return res;
+        }
       }
-      found = products.filter((p) => { const h = haystack(p); return words.some((w) => h.includes(w)); });
+      // 3d. Partial match: ignore generic words and match only in name, category or application (never description alone).
+      const partialWords = words.filter((w) => !PARTIAL_GENERIC_WORDS.has(w));
+      const partialHaystack = (p: Record<string, unknown>) =>
+        `${foldProductText(p.name)} ${foldProductText(p.category)} ${productApplication(p)}`;
+      found = partialWords.length
+        ? products.filter((p) => { const h = partialHaystack(p); return partialWords.some((w) => h.includes(w)); })
+        : [];
       correspondencia = "parcial";
     }
   } else {
@@ -4007,7 +4067,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: hotel, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (banheiro, rejunte, limo, azulejo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial/nenhuma/necessidade retornam produtos=[], similares (até 3) e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: restaurante, clínica, hotel, condomínio, escola, supermercado, indústria, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (desengraxe de máquinas/equipamentos/oficina, higiene industrial, lavanderia profissional/Clax, desinfecção hospitalar/clínica, lava-louças, hortifrúti, carpetes, banheiro, rejunte, limo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial ignora palavras genéricas (limpeza, geral, profissional, produto, equipamento sem necessidade) e só casa em nome, categoria ou aplicação (nunca só na descrição); se não sobrar nada, retorna correspondencia=nenhuma, similares=[] e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {
