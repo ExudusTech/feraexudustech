@@ -63,6 +63,72 @@ export function checkinBloqueadoMensagem(distancia: number | null, tipo: string)
     : `Check-in bloqueado: você está a ${formatDistancia(distancia)} do endereço do cliente. ${tipo} só começa no local — chegue ao cliente e tente de novo.`;
 }
 
+export interface CheckoutLocEval {
+  ok: boolean;
+  distancia_m: number | null;
+  sem_localizacao: boolean;
+  fora_do_raio: boolean;
+  destino_sem_coordenadas: boolean;
+  liberado: boolean;
+  referencia?: "cliente" | "checkin";
+}
+
+/**
+ * 24/11: check-out requires location within org radius of the client/lead address OR,
+ * when a commercial check-in was done off-site with justification, within radius of the check-in position.
+ * Manager release (liberado=true) bypasses the block while still recording distance when available.
+ */
+export function evaluateCheckoutLocation(
+  pos: { lat?: number | null; lng?: number | null } | null,
+  target: { lat?: number | null; lng?: number | null },
+  checkinPos: { lat?: number | null; lng?: number | null } | null,
+  checkinForaComJustificativa: boolean,
+  raio = 300,
+  liberado = false,
+): CheckoutLocEval {
+  const valid = (v: unknown, limit: number): v is number => typeof v === "number" && Number.isFinite(v) && Math.abs(v) <= limit;
+  const hasPos = valid(pos?.lat, 90) && valid(pos?.lng, 180);
+  const hasTarget = valid(target?.lat, 90) && valid(target?.lng, 180);
+  const hasCk = checkinForaComJustificativa && valid(checkinPos?.lat, 90) && valid(checkinPos?.lng, 180);
+  const distTarget = hasPos && hasTarget ? distanceMeters(pos!.lat!, pos!.lng!, target.lat!, target.lng!) : null;
+  const distCk = hasPos && hasCk ? distanceMeters(pos!.lat!, pos!.lng!, checkinPos!.lat!, checkinPos!.lng!) : null;
+  if (liberado) {
+    return { ok: true, distancia_m: distTarget ?? distCk, sem_localizacao: !hasPos, fora_do_raio: false, destino_sem_coordenadas: !hasTarget && !hasCk, liberado: true };
+  }
+  if (!hasPos) {
+    return { ok: false, distancia_m: null, sem_localizacao: true, fora_do_raio: false, destino_sem_coordenadas: !hasTarget && !hasCk, liberado: false };
+  }
+  if (distTarget !== null && distTarget <= raio) {
+    return { ok: true, distancia_m: distTarget, sem_localizacao: false, fora_do_raio: false, destino_sem_coordenadas: false, liberado: false, referencia: "cliente" };
+  }
+  if (distCk !== null && distCk <= raio) {
+    return { ok: true, distancia_m: distCk, sem_localizacao: false, fora_do_raio: false, destino_sem_coordenadas: false, liberado: false, referencia: "checkin" };
+  }
+  if (!hasTarget && !hasCk) {
+    return { ok: true, distancia_m: null, sem_localizacao: false, fora_do_raio: false, destino_sem_coordenadas: true, liberado: false };
+  }
+  const dist = distTarget !== null && distCk !== null ? Math.min(distTarget, distCk) : (distTarget ?? distCk);
+  return { ok: false, distancia_m: dist, sem_localizacao: false, fora_do_raio: true, destino_sem_coordenadas: false, liberado: false };
+}
+
+export function checkoutBloqueadoMensagem(distancia: number | null): string {
+  return distancia === null
+    ? "Check-out bloqueado: sem a sua localização não dá para confirmar que você está no local. Ative a localização e tente de novo. Sem GPS? Envie sua localização pelo WhatsApp da Flora e toque em Encerrar de novo."
+    : `Check-out bloqueado: você está a ${formatDistancia(distancia)} do local da visita. Volte ao local e tente de novo, ou peça liberação ao gestor.`;
+}
+
+export function checkoutBloqueadoAlertMessage(v: VisitInfo & { distancia: number | null; geolocation_error?: string | null }): string {
+  return ["🚫 Check-out bloqueado fora do local", `Cliente: ${clean(v.cliente) || "Não informado"}`, `Consultor: ${clean(v.consultor)}`, `Tipo: ${clean(v.tipo)}`,
+    v.distancia === null ? `Localização: indisponível${v.geolocation_error ? ` (${clean(v.geolocation_error)})` : ""}` : `Distância: ${formatDistancia(v.distancia)} do local`,
+    `Ver no Fera: ${FERA_URL}/agenda?agendamento=${v.id}`, "", "(Mensagem automática — não responda aqui; abra o link.)"].join("\n");
+}
+
+export function visitaAbertaMensagem(aberta: { ocorrencia_codigo?: string | null; cliente?: string | null }): string {
+  const cod = aberta.ocorrencia_codigo ? `#${aberta.ocorrencia_codigo}` : "em andamento";
+  const cli = clean(aberta.cliente) || "cliente";
+  return `Encerre a visita ${cod} (${cli}) antes de iniciar outra`;
+}
+
 /** Minutes a location sent to Flora on WhatsApp keeps standing in for the app GPS (mcp embeds the same value). */
 export const WA_LOCALIZACAO_MIN = 30;
 export interface WaLocalizacao { wa_latitude?: number | null; wa_longitude?: number | null; wa_localizacao_em?: string | null; wa_localizacao_por?: string | null }

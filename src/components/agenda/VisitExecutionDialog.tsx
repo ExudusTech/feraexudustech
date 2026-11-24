@@ -31,7 +31,7 @@ import { OPERACAO_LABEL, TIPO_NOTA_LABEL, itensTexto, type OperacaoMaterial, typ
 import { useCreateSchedule } from "@/hooks/use-schedules";
 import { locationErrorMessage, RECENT_POSITION_MS, type LocationResult } from "@/lib/geolocation";
 import ColetaOcorrencia from "@/components/agenda/ColetaOcorrencia";
-import { OCORRENCIA_LABEL, exigeColeta, type OcorrenciaTipo } from "@/lib/coleta";
+import { OCORRENCIA_LABEL, exigeColeta, pendenciasColeta, type OcorrenciaTipo } from "@/lib/coleta";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useNavigate } from "react-router-dom";
 import { precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE, type ResultadoTeste } from "@/lib/teste-notas";
@@ -103,6 +103,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   useEffect(() => { setPeriodicidade(null); }, [s?.id]);
   const foraPermitido = permiteCheckinForaDoLocal(s?.schedule_type, s?.schedule_subtype, (s as any)?.ocorrencia_tipo);
   const [bloqueioLocal, setBloqueioLocal] = useState<string | null>(null);
+  const [visitaAberta, setVisitaAberta] = useState<{ id: string; msg: string } | null>(null);
+  const [bloqueioCheckout, setBloqueioCheckout] = useState<string | null>(null);
+  const [liberarCheckoutMotivo, setLiberarCheckoutMotivo] = useState("");
   const proximoEfetivo = comColeta ? "coleta" : ehAtivacao ? (periodicidade ? "plano" : "") : usaPlano ? (plano || frequencia ? "plano" : "") : proximo === "teste" ? "novo_agendamento" : proximo;
   const [pts, setPts] = useState({ pending: 0, total: 0 });
   const onPts = useCallback((pending: number, total: number) => setPts({ pending, total }), []);
@@ -125,7 +128,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   const pedeTeste = !!s && precisaResultadoTeste(s as any, emTeste);
   const ehSubstituicao = sx?.operacao_material === "substituicao";
   useEffect(() => {
-    setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false);
+    setAskReason(null); setJustificativa(""); setLastLocation(null); setShowNao(false); setVisitaAberta(null); setBloqueioCheckout(null); setLiberarCheckoutMotivo("");
     const d = s?.id ? readDraft<Record<string, any>>(`encerrar:${s.id}`) : null;
     setResultado(d?.resultado ?? ""); setResumo(d?.resumo ?? ""); setProximo(d?.proximo ?? ""); setDataAlvo(d?.dataAlvo ?? "");
     setMotivoPerda(d?.motivoPerda ?? ""); setDescricao(d?.descricao ?? ""); setObs(d?.obs ?? ""); setConfPerdido(false);
@@ -142,7 +145,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
     const reusable = lastLocation && (!lastLocation.position || Date.now() - lastLocation.position.timestamp <= RECENT_POSITION_MS);
     const location = !retry && reusable ? lastLocation : await getPosition();
     const pos = location.position;
-    setLastLocation(location); setBloqueioLocal(null);
+    setLastLocation(location); setBloqueioLocal(null); setVisitaAberta(null);
     // Only a commercial visit may start off-site with a justification; the others go straight to the server, which blocks and alerts the manager.
     if (!pos && foraPermitido) {
       setAskReason("Sem posição disponível: escreva uma justificativa para iniciar.");
@@ -155,6 +158,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       if ((s.client_id || s.lead_id) && pos && r.destino_sem_coordenadas) setAskLoc(true);
       toast({ title: "Atendimento iniciado", description: r.distancia_m !== null ? `${formatDistancia(r.distancia_m)} do endereço` : r.destino_sem_coordenadas ? "Local do cliente sem coordenadas: distância não verificada" : undefined });
     } catch (e) {
+      if (e instanceof VisitActionError && e.data?.visita_aberta_id) { setVisitaAberta({ id: String(e.data.visita_aberta_id), msg: e.message }); return; }
       if (e instanceof VisitActionError && e.data?.bloqueado_local) { setAskReason(null); setBloqueioLocal(e.message); return; }
       if (e instanceof VisitActionError && e.data?.precisa_justificativa) { setAskReason(e.message); return; }
       if (e instanceof VisitActionError && e.data?.bloqueado_nota) { setBloqueioNota(e.message); return; }
@@ -176,8 +180,18 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
 
   const checkout = () => run(async () => {
     const ehTeste = !comColeta && proximo === "teste";
-    const r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: comColeta ? undefined : proximoEfetivo, data_alvo: dataAlvo || null,
-      motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, resultado_teste: pedeTeste ? resTeste : undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, periodicidade_dias: ehAtivacao ? periodicidade : undefined, termino: outroDia ? termino : undefined });
+    setBloqueioCheckout(null);
+    const locOut = await getPosition();
+    const posOut = locOut.position;
+    let r: { duracao_min: number };
+    try {
+      r = await visitAction<{ duracao_min: number }>({ id: s!.id, action: "checkout", resultado, resumo, proximo: comColeta ? undefined : proximoEfetivo, data_alvo: dataAlvo || null,
+        motivo_perda: motivoPerda, confirmar_perdido: proximo === "perdido", substituicao_resultado: substResultado || undefined, resultado_teste: pedeTeste ? resTeste : undefined, descricao: ehTeste ? `Instalação de teste: ${itensTexto(teste.itens)}` : descricao, frequencia: frequencia || undefined, periodicidade_dias: ehAtivacao ? periodicidade : undefined, termino: outroDia ? termino : undefined,
+        lat: posOut?.lat, lng: posOut?.lng, geolocation_error: locOut.error });
+    } catch (e) {
+      if (e instanceof VisitActionError && e.data?.bloqueado_local) { setBloqueioCheckout(e.message); return; }
+      throw e;
+    }
     if (ehTeste) {
       await createSchedule.mutateAsync({ title: `Instalação de teste — ${clientName || s!.title}`, scheduled_date: dataAlvo, start_time: s!.start_time,
         end_time: null, schedule_type: "visita_tecnica", schedule_subtype: "INSTALACAO", client_id: s!.client_id, lead_id: s!.lead_id,
@@ -197,8 +211,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
       toast({ title: "Visita encerrada", description: `Próxima revisita: ${rv.data.split("-").reverse().join("/")} — ${rv.aparelhos?.length ?? 0} aparelho(s) vencem nela${rv.status === "anexada" ? " (junto com a visita já marcada)" : ""}` });
       return;
     }
-    const cp = (r as any).coleta_pendente as string[] | undefined;
-    toast({ title: cp?.length ? "Realizada — informações pendentes" : "Visita encerrada", description: cp?.length ? `Falta: ${cp.slice(0, 3).join(", ")}${cp.length > 3 ? "…" : ""}` : `Duração: ${r.duracao_min} min` });
+    toast({ title: "Visita encerrada", description: `Duração: ${r.duracao_min} min` });
   });
   const naoRealizado = () => run(async () => {
     await visitAction({ id: s!.id, action: "nao_realizado", motivo: naoMotivo, observacao: obs });
@@ -208,8 +221,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
   if (!s) return null;
   const fotos = (exec?.evidencias ?? []).filter((e) => e.foto_path).length;
   const finished = ["concluido", "nao_realizado", "cancelado"].includes(status);
+  const coletaPend = comColeta ? pendenciasColeta(sx.ocorrencia_tipo, sx.coleta_rascunho) : [];
   const faltas = faltasDetalhadas({ finished, resultado, resumo, proximo: proximoEfetivo, pendingPoints: pts.pending, totalPoints: pts.total,
-    fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano });
+    fotoObrigatoria, fotos, dataAlvo, motivoPerda, tecnico: usaPlano,
+    comColeta, coletaConfirmada: sx.coleta_status === "confirmada", coletaPendencias: coletaPend });
   if (proximo === "teste" && !usaPlano && !comColeta) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataAlvo) || dataAlvo <= spDate(new Date())) faltas.push({ label: "data da instalação de teste", alvo: "proximo" });
     if (!teste.itens.length) faltas.push({ label: "itens da instalação de teste", alvo: "proximo" });
@@ -263,6 +278,10 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         {(status === "agendado" || status === "confirmado") && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">Ao iniciar, o Fera registra sua localização uma única vez para confirmar a chegada ao cliente.{!foraPermitido && " Este tipo de visita só começa no local do cliente."}</p>
+            {visitaAberta && <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
+              <p className="text-destructive">{visitaAberta.msg}</p>
+              <Button variant="outline" className="w-full min-h-11" onClick={() => { onOpenChange(false); navigate(`/agenda?agendamento=${visitaAberta.id}`); }}>Abrir visita aberta</Button>
+            </div>}
             {bloqueioLocal && <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
               <p className="text-destructive">{bloqueioLocal}</p>
               {/WhatsApp da Flora/.test(bloqueioLocal) && <Button asChild variant="outline" className="w-full min-h-11">
@@ -311,7 +330,9 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                       await visitAction({ id: s.id, action: "devolucao_assinada", foto_path: path }); done(); toast({ title: "Assinatura registrada: OS encerrada" }); }); }} /></label>
                 </Button>
               </div>)}
-            <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />
+            <div id="visita-coleta" className="scroll-mt-4">
+              <ColetaOcorrencia scheduleId={s.id} orgId={s.organization_id} codigo={sx.ocorrencia_codigo} tipo={sx.ocorrencia_tipo} status={sx.coleta_status} rascunho={sx.coleta_rascunho} onChange={done} />
+            </div>
             {!tecnico && !comColeta && <LevantamentoComercial scheduleId={s.id} clientId={s.client_id} leadId={s.lead_id} initial={(s as any).levantamento ?? null} />}
             {tecnico && (s.client_id || s.lead_id) && <PointChecklist scheduleId={s.id} orgId={s.organization_id} clientId={s.client_id} leadId={s.lead_id} onPendingChange={onPts} />}
             {usaPlano && !registroAberto ? (
@@ -356,7 +377,22 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
                 <div className="grid grid-cols-2 gap-2">{([["trocou", "Sim, troquei"], ["nao_trocou", "Não precisou"]] as const).map(([k, l]) => (
                   <Button key={k} type="button" variant={substResultado === k ? "default" : "outline"} className="min-h-12" onClick={() => setSubstResultado(k)}>{l}</Button>))}</div>
                 <p className="text-xs text-muted-foreground">{substResultado === "nao_trocou" ? "O faturamento cancela a nota (até 24h) e o aparelho volta ao estoque." : substResultado === "trocou" ? "Registre o aparelho novo no ponto com foto. A nota de devolução será assinada na próxima visita da rota." : ""}</p></div>}
-              {exigeColeta(sx.ocorrencia_tipo) && sx.coleta_status !== "confirmada" && <p className="text-xs text-muted-foreground">Pode encerrar agora: a ocorrência fica "Realizada — informações pendentes" até você confirmar a coleta.</p>}
+              {sx.checkout_liberado_em && <p className="text-sm text-warning">Check-out fora do local liberado pelo gestor: {sx.checkout_liberacao_motivo}</p>}
+              {bloqueioCheckout && <div role="alert" className="rounded-md border border-destructive p-2 space-y-2 text-sm">
+                <p className="text-destructive">{bloqueioCheckout}</p>
+                {/WhatsApp da Flora/.test(bloqueioCheckout) && <Button asChild variant="outline" className="w-full min-h-11">
+                  <a href={waLink(waNumero(WHATSAPP_PADRAO) ?? "5522992668769", "Minha localização para o check-out")} target="_blank" rel="noopener noreferrer"><MapPin className="h-4 w-4" />Enviar localização pelo WhatsApp da Flora</a></Button>}
+                {gestor && !sx.checkout_liberado_em && <div className="flex flex-col sm:flex-row gap-2">
+                  <Input value={liberarCheckoutMotivo} onChange={(e) => setLiberarCheckoutMotivo(e.target.value)} placeholder="Motivo da liberação (mín. 5 caracteres)" maxLength={300} />
+                  <Button variant="outline" disabled={busy || liberarCheckoutMotivo.trim().length < 5} onClick={() => run(async () => {
+                    await visitAction({ id: s.id, action: "liberar_checkout", motivo: liberarCheckoutMotivo }); setBloqueioCheckout(null); done(); toast({ title: "Check-out fora do local liberado" }); })}>Liberar check-out</Button>
+                </div>}
+              </div>}
+              {gestor && !sx.checkout_liberado_em && !bloqueioCheckout && <div className="flex flex-col sm:flex-row gap-2">
+                <Input value={liberarCheckoutMotivo} onChange={(e) => setLiberarCheckoutMotivo(e.target.value)} placeholder="Liberar check-out fora do local: motivo (mín. 5 caract.)" maxLength={300} />
+                <Button variant="outline" disabled={busy || liberarCheckoutMotivo.trim().length < 5} onClick={() => run(async () => {
+                  await visitAction({ id: s.id, action: "liberar_checkout", motivo: liberarCheckoutMotivo }); done(); toast({ title: "Check-out fora do local liberado" }); })}>Liberar</Button>
+              </div>}
               <Textarea value={resumo} onChange={(e) => setResumo(e.target.value)} placeholder="Resumo (opcional)" maxLength={500} />
               {!comColeta && <div id="visita-proximo" className="space-y-2 scroll-mt-4">
                 <Label>Próximo passo</Label>
@@ -420,6 +456,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
             {s.resultado && <p><strong>Resultado:</strong> {RESULT_LABEL[s.resultado] ?? s.resultado}{s.duracao_min != null && ` · ${s.duracao_min} min`}</p>}
             {s.nao_realizado_motivo && <p><strong>Motivo:</strong> {NAO_REALIZADO_LABEL[s.nao_realizado_motivo] ?? s.nao_realizado_motivo}</p>}
             {s.resumo_execucao && <p><strong>Resumo:</strong> {s.resumo_execucao}</p>}
+            {sx.checkout_liberado_em && <p className="text-warning"><strong>Check-out fora do local liberado pelo gestor:</strong> {sx.checkout_liberacao_motivo} ({new Date(sx.checkout_liberado_em).toLocaleString("pt-BR")})</p>}
             {exec?.proximo && <p><strong>Próximo passo:</strong> {NEXT_LABEL[exec.proximo.tipo]}{exec.proximo.data_alvo && ` (${exec.proximo.data_alvo.split("-").reverse().join("/")})`}{exec.proximo.motivo_perda && ` — ${exec.proximo.motivo_perda}`}</p>}
             {exec?.proximo?.tipo === "proposta" && (exec.proximo.proposta_enviada_em
               ? <p className="text-muted-foreground">Proposta enviada em {new Date(exec.proximo.proposta_enviada_em).toLocaleDateString("pt-BR")}</p>

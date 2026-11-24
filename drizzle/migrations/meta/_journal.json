@@ -456,6 +456,13 @@
       "when": 1795534767305,
       "tag": "0064_comodato_etiquetas_vigencia",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1795536004272,
+      "tag": "0065_checkout_local_e_liberacao",
+      "breakpoints": true
     }
   ]
 }

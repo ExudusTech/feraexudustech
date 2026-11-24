@@ -8350,7 +8350,14 @@ export type Database = {
           checkin_liberacao_motivo: string | null
           checkin_liberado_em: string | null
           checkin_liberado_por: string | null
+          checkout_distancia_m: number | null
           checkout_em: string | null
+          checkout_latitude: number | null
+          checkout_liberacao_motivo: string | null
+          checkout_liberado_em: string | null
+          checkout_liberado_por: string | null
+          checkout_localizacao_origem: string | null
+          checkout_longitude: number | null
           client_id: string | null
           coleta_confirmada_em: string | null
           coleta_confirmada_por: string | null
@@ -8427,7 +8434,14 @@ export type Database = {
           checkin_liberacao_motivo?: string | null
           checkin_liberado_em?: string | null
           checkin_liberado_por?: string | null
+          checkout_distancia_m?: number | null
           checkout_em?: string | null
+          checkout_latitude?: number | null
+          checkout_liberacao_motivo?: string | null
+          checkout_liberado_em?: string | null
+          checkout_liberado_por?: string | null
+          checkout_localizacao_origem?: string | null
+          checkout_longitude?: number | null
           client_id?: string | null
           coleta_confirmada_em?: string | null
           coleta_confirmada_por?: string | null
@@ -8504,7 +8518,14 @@ export type Database = {
           checkin_liberacao_motivo?: string | null
           checkin_liberado_em?: string | null
           checkin_liberado_por?: string | null
+          checkout_distancia_m?: number | null
           checkout_em?: string | null
+          checkout_latitude?: number | null
+          checkout_liberacao_motivo?: string | null
+          checkout_liberado_em?: string | null
+          checkout_liberado_por?: string | null
+          checkout_localizacao_origem?: string | null
+          checkout_longitude?: number | null
           client_id?: string | null
           coleta_confirmada_em?: string | null
           coleta_confirmada_por?: string | null

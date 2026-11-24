@@ -2,9 +2,9 @@
 // The schedule is read with the caller's own access first; only the assigned consultant (or a manager) can act.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  checkinAlertMessage, checkinBloqueadoAlertMessage, checkinBloqueadoMensagem, checkoutMessage, durationMinutes, evaluateCheckin, formatDistancia, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
+  checkinAlertMessage, checkinBloqueadoAlertMessage, checkinBloqueadoMensagem, checkoutBloqueadoAlertMessage, checkoutBloqueadoMensagem, checkoutMessage, durationMinutes, evaluateCheckin, evaluateCheckoutLocation, formatDistancia, isTechnical, NAO_REALIZADO, NAO_REALIZADO_LABEL,
   permiteCheckinForaDoLocal, posicaoWhatsapp,
-  NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, GEOLOCATION_ERRORS,
+  NEXT_LABEL, nextMaintenance, duracaoComTermino, requiresPhoto, RESULT_LABEL, stageForCheckout, validateCheckout, visitaAbertaMensagem, GEOLOCATION_ERRORS,
 } from "../_shared/visit-exec.ts";
 import { areaDoCliente, cidadeChave, FREQ_RAPIDAS, parseDiaSemana, periodicidadeAtivacao, pontosPendentes, pontoEmUso, primeiroDiaRota, proximaVisitaPlano } from "../_shared/base-instalada.ts";
 import { teamAlert } from "../_shared/team-alert.ts";
@@ -180,9 +180,9 @@ Deno.serve(async (req) => {
 
   let b: Record<string, any>;
   try { b = await req.json(); } catch { return json({ error: "Requisição inválida" }, 400); }
-  if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada", "liberar_checkin", "audio", "devolucao_assinada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
+  if (!UUID.test(b.id ?? "") || !["checkin", "evidencia", "checkout", "nao_realizado", "foto_url", "proposta_enviada", "liberar_checkin", "liberar_checkout", "audio", "devolucao_assinada"].includes(b.action)) return json({ error: "Requisição inválida" }, 400);
 
-  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, aparelhos_previstos, wa_latitude, wa_longitude, wa_localizacao_em, wa_localizacao_por, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
+  const { data: s } = await caller.from("schedules").select("id, organization_id, title, status, assigned_to, created_by, lead_id, client_id, scheduled_date, start_time, schedule_type, schedule_subtype, latitude, longitude, checkin_em, location, exige_nota, nota_status, checkin_liberado_em, checkout_liberado_em, checkout_liberado_por, checkout_liberacao_motivo, operacao_material, ocorrencia_tipo, ocorrencia_codigo, coleta_status, coleta_rascunho, coleta_devolucao_tarefa_id, aparelhos_previstos, wa_latitude, wa_longitude, wa_localizacao_em, wa_localizacao_por, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude, pessoa_id, gptmaker_chat_id, canal_origem)")
     .eq("id", b.id).maybeSingle();
   if (!s) return json({ error: "Agendamento não encontrado" }, 404);
   // Headers let the history triggers record the app user behind service-role writes.
@@ -210,6 +210,16 @@ Deno.serve(async (req) => {
   switch (b.action) {
     case "checkin": {
       if (!["agendado", "confirmado"].includes(s.status)) return json({ error: "Esta visita não pode ser iniciada" }, 409);
+      // 24/11: one open visit at a time per user (any day).
+      const { data: aberta } = await admin.from("schedules")
+        .select("id, ocorrencia_codigo, title, clients(name), leads(empresa_nome, company)")
+        .eq("organization_id", s.organization_id).eq("assigned_to", user.id).eq("status", "em_atendimento").neq("id", s.id)
+        .order("checkin_em", { ascending: false }).limit(1).maybeSingle();
+      if (aberta) {
+        const cliAb = (aberta as any).clients?.name || (aberta as any).leads?.empresa_nome || (aberta as any).leads?.company || aberta.title || "cliente";
+        return json({ error: visitaAbertaMensagem({ ocorrencia_codigo: aberta.ocorrencia_codigo, cliente: cliAb }),
+          visita_aberta_id: aberta.id, visita_aberta_codigo: aberta.ocorrencia_codigo ?? null, visita_aberta_cliente: cliAb }, 409);
+      }
       const { data: org } = await admin.from("organizations").select("raio_checkin_m, bloquear_checkin_sem_nota").eq("id", s.organization_id).maybeSingle();
       // 05/11: material leaving the company needs the invoice attached; only a manager can release a registered exception.
       if (checkinBloqueadoPorNota(s as any, org?.bloquear_checkin_sem_nota)) {
@@ -278,6 +288,21 @@ Deno.serve(async (req) => {
         new_data: { motivo } }).then(() => undefined, () => undefined);
       await timeline("visita", `Check-in liberado sem nota por ${consultor}: ${motivo}`);
       bg(teamAlert(admin, s.organization_id, "prontidao_pendente", [`🔓 Check-in liberado sem nota`, `Cliente: ${cliente}`, `Liberado por: ${consultor}`, `Motivo: ${motivo}`,
+        `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"), { schedule_id: s.id, liberacao: true }, { immediate: true }));
+      return json({ ok: true });
+    }
+    case "liberar_checkout": {
+      if (!privileged) return json({ error: "Só o gestor pode liberar o check-out fora do local" }, 403);
+      const motivo = txt(b.motivo, 300);
+      if (motivo.length < 5) return json({ error: "Escreva o motivo da liberação (mínimo 5 caracteres)" }, 400);
+      if (s.status !== "em_atendimento") return json({ error: "Esta visita não está em atendimento" }, 409);
+      const now = new Date().toISOString();
+      const { error } = await admin.from("schedules").update({ checkout_liberado_por: user.id, checkout_liberado_em: now, checkout_liberacao_motivo: motivo }).eq("id", s.id);
+      if (error) { console.error("[visita-acoes] liberar_checkout", error.code); return json({ error: "Não foi possível liberar" }, 400); }
+      await admin.from("audit_logs").insert({ organization_id: s.organization_id, user_id: user.id, action: "CHECKOUT_LIBERADO_FORA_DO_LOCAL", entity_type: "schedules", entity_id: s.id,
+        new_data: { motivo } }).then(() => undefined, () => undefined);
+      await timeline("visita", `Check-out fora do local liberado por ${consultor}: ${motivo}`);
+      bg(teamAlert(admin, s.organization_id, "checkout_fora_do_local", [`🔓 Check-out fora do local liberado`, `Cliente: ${cliente}`, `Liberado por: ${consultor}`, `Motivo: ${motivo}`,
         `Ver no Fera: ${FERA_URL}/agenda?agendamento=${s.id}`].join("\n"), { schedule_id: s.id, liberacao: true }, { immediate: true }));
       return json({ ok: true });
     }
@@ -379,6 +404,42 @@ Deno.serve(async (req) => {
       if ((s as any).operacao_material === "substituicao" && !["nao_trocou", "trocou"].includes(b.substituicao_resultado)) {
         return json({ error: "Informe se o aparelho foi trocado ou não", precisa_substituicao: true }, 400);
       }
+      // 24/11: occurrences with collection (primeira_visita, venda_direta) require confirmed collection with no pendencies before check-out.
+      if (exigeColeta((s as any).ocorrencia_tipo)) {
+        const { data: catalogo } = await admin.from("products").select("id, name, is_dispenser, dispenser_family_id, compatible_dispenser_families")
+          .eq("organization_id", s.organization_id).eq("is_active", true).limit(3000);
+        const pend = pendenciasColeta((s as any).ocorrencia_tipo, (s as any).coleta_rascunho, { catalogo: catalogo ?? [] });
+        if ((s as any).coleta_status !== "confirmada" && !pend.length) pend.push("Confirmar o rascunho da coleta");
+        if (pend.length) {
+          return json({ error: `Complete e confirme a coleta antes de encerrar: ${pend.join(", ")}`, coleta_pendente: pend }, 400);
+        }
+      }
+      // 24/11: check-out requires location within org radius of client/lead address OR commercial off-site check-in position (or manager release).
+      const { data: orgOut } = await admin.from("organizations").select("raio_checkin_m").eq("id", s.organization_id).maybeSingle();
+      const raioOut = Number(orgOut?.raio_checkin_m ?? 300) || 300;
+      const { data: ckOut } = await admin.from("schedule_checkins").select("latitude, longitude, fora_do_raio, justificativa, distancia_m").eq("schedule_id", s.id).maybeSingle();
+      const cliOut: any = (s as any).clients;
+      let targetOut: { lat?: number | null; lng?: number | null } = s.latitude != null ? { lat: s.latitude, lng: s.longitude }
+        : cliOut?.latitude != null ? { lat: cliOut.latitude, lng: cliOut.longitude } : { lat: lead?.latitude, lng: lead?.longitude };
+      if (targetOut.lat == null) {
+        const g = (s.client_id ? await geocodeClient(admin, s.client_id) : null) ?? (s.lead_id ? await geocodeLead(admin, s.lead_id) : null) ?? await geocodeSchedule(admin, s.id);
+        if (g) { targetOut = g; await admin.from("schedules").update({ latitude: g.lat, longitude: g.lng }).eq("id", s.id).is("latitude", null); }
+      }
+      if (b.geolocation_error != null && !GEOLOCATION_ERRORS.includes(b.geolocation_error)) return json({ error: "Diagnóstico de localização inválido" }, 400);
+      const latOut = num(b.lat); const lngOut = num(b.lng);
+      const gpsOut = latOut !== null && lngOut !== null && Math.abs(latOut) <= 90 && Math.abs(lngOut) <= 180 ? { lat: latOut, lng: lngOut } : null;
+      const waOut = gpsOut ? null : posicaoWhatsapp(s as any, user.id);
+      const posOut = gpsOut ?? waOut;
+      const geoErrOut = b.geolocation_error ?? (posOut ? null : "UNKNOWN");
+      const ckForaJust = !!ckOut?.fora_do_raio && !!ckOut?.justificativa && permiteCheckinForaDoLocal(s.schedule_type, s.schedule_subtype, (s as any).ocorrencia_tipo);
+      const ckPos = ckOut?.latitude != null && ckOut?.longitude != null ? { lat: ckOut.latitude, lng: ckOut.longitude } : null;
+      const evOut = evaluateCheckoutLocation(posOut, targetOut, ckPos, ckForaJust, raioOut, !!(s as any).checkout_liberado_em);
+      if (!evOut.ok) {
+        bg(teamAlert(admin, s.organization_id, "checkout_fora_do_local", checkoutBloqueadoAlertMessage({ ...info, distancia: evOut.distancia_m, geolocation_error: posOut ? null : geoErrOut }),
+          { schedule_id: s.id, bloqueado: true }, { immediate: true, dedupeKey: "schedule_id", extraUserIds: await gestores(admin, s.organization_id) }));
+        await timeline("visita", `Check-out bloqueado (${consultor}): ${evOut.distancia_m !== null ? `a ${formatDistancia(evOut.distancia_m)} do local` : `sem localização (${geoErrOut})`}`);
+        return json({ error: checkoutBloqueadoMensagem(evOut.distancia_m), bloqueado_local: true, distancia_m: evOut.distancia_m, distancia: formatDistancia(evOut.distancia_m) || null }, 423);
+      }
       const { count } = await admin.from("schedule_evidencias").select("id", { count: "exact", head: true }).eq("schedule_id", s.id).not("foto_path", "is", null);
       // Maintenance with registered points: every active point must be evaluated; the checklist photos replace the generic photo rule.
       let checklist = false;
@@ -470,7 +531,11 @@ Deno.serve(async (req) => {
         data_alvo: /^\d{4}-\d{2}-\d{2}$/.test(b.data_alvo ?? "") ? b.data_alvo : null, motivo_perda: b.proximo === "perdido" ? txt(b.motivo_perda, 200) : null,
         descricao: txt(b.descricao, 300) || null, autor_id: user.id });
       if (pe && pe.code !== "23505") { console.error("[visita-acoes] proximo", pe.code); return json({ error: "Não foi possível encerrar" }, 400); }
-      const { error: ue } = await admin.from("schedules").update({ status: "concluido", checkout_em: now, duracao_min: duracao, resultado: b.resultado, resumo_execucao: resumo }).eq("id", s.id);
+      const { error: ue } = await admin.from("schedules").update({
+        status: "concluido", checkout_em: now, duracao_min: duracao, resultado: b.resultado, resumo_execucao: resumo,
+        checkout_latitude: posOut?.lat ?? null, checkout_longitude: posOut?.lng ?? null, checkout_distancia_m: evOut.distancia_m,
+        checkout_localizacao_origem: waOut ? "whatsapp" : gpsOut ? "gps" : evOut.liberado ? "liberado_gestor" : null,
+      }).eq("id", s.id);
       if (ue) { console.error("[visita-acoes] checkout", ue.code); return json({ error: "Não foi possível encerrar" }, 400); }
 
       // Loans touched during the visit get their maintenance dates moved forward.
@@ -483,15 +548,6 @@ Deno.serve(async (req) => {
       const proximaAtivacao = ativ ? await aplicarPeriodicidadeAtivacao(admin, s, ativ, user.id) : null;
       // Devices just got their new dates: book (or attach to an open visit) the client's single next revisit.
       const proximaRevisita = revisita && s.client_id ? await agendarRevisitaCliente(admin, { org: s.organization_id, clientId: s.client_id, userId: s.assigned_to ?? user.id }) : null;
-      // Lote 15: commercial occurrences may leave the client with "information pending" until the collection is confirmed.
-      let coletaPendente: string[] = [];
-      if (exigeColeta((s as any).ocorrencia_tipo) && (s as any).coleta_status !== "confirmada") {
-        const { data: catalogo } = await admin.from("products").select("id, name, is_dispenser, dispenser_family_id, compatible_dispenser_families")
-          .eq("organization_id", s.organization_id).eq("is_active", true).limit(3000);
-        coletaPendente = pendenciasColeta((s as any).ocorrencia_tipo, (s as any).coleta_rascunho, { catalogo: catalogo ?? [] });
-        if (!coletaPendente.length) coletaPendente = ["Confirmar o rascunho da coleta"];
-        await admin.from("schedules").update({ coleta_status: "pendente", coleta_pendencias: coletaPendente }).eq("id", s.id);
-      }
       // 05/11 replacement: not used → cancel the invoice within 24h; used → return invoice + signature on the next route visit.
       let substituicao: Record<string, unknown> | null = null;
       if ((s as any).operacao_material === "substituicao") substituicao = await fecharSubstituicao(admin, s, b.substituicao_resultado, user.id, timeline);
@@ -504,10 +560,9 @@ Deno.serve(async (req) => {
       }
       await timeline("visita", `Visita encerrada por ${consultor} (${RESULT_LABEL[b.resultado]}, ${duracao} min): ${resumo}`,
         `${NEXT_LABEL[b.proximo]}${detalhe ? ` (${detalhe})` : ""}`);
-      const { data: ck } = await admin.from("schedule_checkins").select("distancia_m").eq("schedule_id", s.id).maybeSingle();
       bg(teamAlert(admin, s.organization_id, "visita_concluida", checkoutMessage({ ...info, resultado: b.resultado, duracao,
-        distancia: ck?.distancia_m ?? null, proximo: b.proximo, detalhe }), { schedule_id: s.id }, { dedupeKey: "schedule_id" }));
-      return json({ ok: true, duracao_min: duracao, coleta_pendente: coletaPendente, substituicao, teste, proxima_manutencao: proximaAtivacao, revisita: proximaRevisita });
+        distancia: ckOut?.distancia_m ?? null, proximo: b.proximo, detalhe }), { schedule_id: s.id }, { dedupeKey: "schedule_id" }));
+      return json({ ok: true, duracao_min: duracao, substituicao, teste, proxima_manutencao: proximaAtivacao, revisita: proximaRevisita });
     }
   }
   return json({ error: "Requisição inválida" }, 400);

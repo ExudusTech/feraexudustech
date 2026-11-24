@@ -48,14 +48,22 @@ export function openVisitFromSession(): string | null {
 export interface ClosingState {
   finished: boolean; resultado: string; resumo: string; proximo: string; pendingPoints: number; totalPoints: number;
   fotoObrigatoria: boolean; fotos: number; dataAlvo?: string; motivoPerda?: string; confPerdido?: boolean; tecnico?: boolean;
+  comColeta?: boolean; coletaConfirmada?: boolean; coletaPendencias?: string[];
 }
 
-export type FaltaAlvo = "pontos" | "registro" | "resultado" | "proximo";
+export type FaltaAlvo = "pontos" | "registro" | "resultado" | "proximo" | "coleta";
 export interface Falta { label: string; alvo: FaltaAlvo }
 
 /** What is still missing to close the visit (plain Portuguese + the section to jump to). Empty = can close. Summary is optional. */
 export function faltasDetalhadas(c: ClosingState): Falta[] {
   const f: Falta[] = [];
+  if (c.comColeta) {
+    if (c.coletaPendencias?.length) {
+      for (const p of c.coletaPendencias) f.push({ label: p, alvo: "coleta" });
+    } else if (!c.coletaConfirmada) {
+      f.push({ label: "confirmar a coleta", alvo: "coleta" });
+    }
+  }
   if (c.pendingPoints > 0) f.push({ label: c.pendingPoints === 1 ? "avaliar 1 ponto" : `avaliar ${c.pendingPoints} pontos`, alvo: "pontos" });
   if (c.fotoObrigatoria && c.totalPoints === 0 && c.fotos < 1) f.push({ label: "cadastrar um ponto ou tirar uma foto do equipamento", alvo: c.tecnico ? "pontos" : "registro" });
   if (!c.resultado) f.push({ label: "resultado", alvo: "resultado" });

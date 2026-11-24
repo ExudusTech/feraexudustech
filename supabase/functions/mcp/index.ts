@@ -4737,12 +4737,20 @@ async function registrarLocalizacaoCheckin(params: Record<string, unknown>): Pro
     if (s) {
       const dest = destinoVisita(s);
       const distancia = dest ? metrosEntre([lat, lng], dest) : null;
-      const { error } = await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
-        fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
-        localizacao_origem: "whatsapp", localizacao_whatsapp_em: new Date().toISOString() }).eq("schedule_id", s.id).eq("user_id", u.user_id);
-      if (error) return fail(dbFail("registrar localização", error));
+      const now = new Date().toISOString();
+      // 24/11: save wa_* on the open schedule so check-out can use it for 30 min without overwriting an existing check-in position.
+      const { error: waErr } = await supabase.from("schedules").update({ wa_latitude: lat, wa_longitude: lng, wa_localizacao_em: now, wa_localizacao_por: u.user_id })
+        .eq("id", s.id).eq("organization_id", NITSCLEAN_ORG_ID);
+      if (waErr) return fail(dbFail("registrar localização", waErr));
+      const { data: ckCur } = await supabase.from("schedule_checkins").select("latitude").eq("schedule_id", s.id).eq("user_id", u.user_id).maybeSingle();
+      if (ckCur && ckCur.latitude == null) {
+        await supabase.from("schedule_checkins").update({ latitude: lat, longitude: lng, distancia_m: distancia,
+          fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest, sem_permissao: false,
+          localizacao_origem: "whatsapp", localizacao_whatsapp_em: now }).eq("schedule_id", s.id).eq("user_id", u.user_id);
+      }
       return ok({ codigo: visitCode(s.id), distancia_m: distancia, fora_do_raio: distancia !== null && distancia > raio, destino_sem_coordenadas: !dest,
-        link: feraLink(`/agenda?agendamento=${s.id}`) }, distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente` : "Localização registrada (cliente sem coordenadas)");
+        validade_minutos: WA_LOCALIZACAO_MIN, link: feraLink(`/agenda?agendamento=${s.id}`) },
+        distancia !== null ? `Localização registrada: ${distanciaTexto(distancia)} do cliente (válida por ${WA_LOCALIZACAO_MIN} min para check-out)` : `Localização registrada (cliente sem coordenadas; válida por ${WA_LOCALIZACAO_MIN} min)`);
     }
     // 11/11: no GPS in the app blocks technical check-ins; the WhatsApp location stands in for it on today's open visit nearest to the consultant.
     const { data: abertas } = await supabase.from("schedules").select("id, title, start_time, latitude, longitude, clients(name, latitude, longitude), leads(empresa_nome, company, latitude, longitude)")
