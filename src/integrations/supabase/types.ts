@@ -3593,6 +3593,24 @@ export type Database = {
         }
         Relationships: []
       }
+      backup_20261124_products_segmentos: {
+        Row: {
+          id: string | null
+          name: string | null
+          specifications: Json | null
+        }
+        Insert: {
+          id?: string | null
+          name?: string | null
+          specifications?: Json | null
+        }
+        Update: {
+          id?: string | null
+          name?: string | null
+          specifications?: Json | null
+        }
+        Relationships: []
+      }
       catalog_items: {
         Row: {
           catalog_id: string
