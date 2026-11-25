@@ -2398,6 +2398,7 @@ function normalizeProductVariant(fold: string): string {
     .replace(/\binterfol[hi]ad[oa]s?\b|\binterf\b/g, "interf")
     .replace(/\bfolha\s+dupla\b/g, "fd")
     .replace(/\bfolha\s+simples\b/g, "fs")
+    .replace(/\bhigienic[oa]s?\b|\bhig\b/g, "higienico")
     .replace(/\broloes\b/g, "rolao");
 }
 
@@ -2406,12 +2407,107 @@ function extractDescField(desc: unknown, pattern: RegExp): string | null {
   const m = desc.match(pattern);
   if (!m?.[1]) return null;
   const val = m[1].trim().replace(/[.;,]+$/, "").trim();
-  return val || null;
+  if (!val || /^[\s—–\-_/.,]+$/.test(val)) return null;
+  return val;
 }
 const extractFluxoIndicado = (p: Record<string, unknown>) =>
   extractDescField(p.description, /fluxo\s+de\s+pessoas\s+indicado\s*:\s*([^\n.;|]+)/i);
 const extractLinhaValor = (p: Record<string, unknown>) =>
   extractDescField(p.description, /linha\s+de\s+valor\s*:\s*([^\n.;|]+)/i);
+
+const SEGMENT_SUFFIX_RE = /\s+(?:para|pra|de)\s+(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(hote(?:l|is)\s+grande|lojas?\s+pequenas?|clinicas?|hospita(?:l|is|lar)|consultorios?|laboratorios?|restaurantes?|bares?|lanchonetes?|padarias?|hote(?:l|is)|hotelaria|pousadas?|escritorios?|condominios?|escolas?|academias?|shoppings?|rodoviarias?|industrias?|fabricas?|eventos?|lojas?)\s*$/;
+
+function splitSegmentSuffix(termFold: string): { base: string; segmento: string | null } {
+  const m = termFold.match(SEGMENT_SUFFIX_RE);
+  if (!m?.[1]) return { base: termFold, segmento: null };
+  const base = termFold.slice(0, m.index).trim();
+  return base ? { base, segmento: m[1].trim() } : { base: termFold, segmento: null };
+}
+
+function segmentoFluxoAlvo(segmento: string | null): "alto" | "medio" | "baixo" | null {
+  if (!segmento) return null;
+  if (/^(shoppings?|rodoviarias?|industrias?|fabricas?|hote(?:l|is)\s+grande|eventos?)$/.test(segmento)) return "alto";
+  if (/^(consultorios?|pousadas?|lojas?\s+pequenas?|lojas?)$/.test(segmento)) return "baixo";
+  if (/^(restaurantes?|bares?|lanchonetes?|padarias?|clinicas?|hospita(?:l|is|lar)|laboratorios?|escritorios?|academias?|escolas?|condominios?|hote(?:l|is)|hotelaria)$/.test(segmento)) return "medio";
+  return null;
+}
+
+function fluxoMatchScore(p: Record<string, unknown>, alvo: "alto" | "medio" | "baixo" | null): number {
+  if (!alvo) return 0;
+  const f = foldProductText(extractFluxoIndicado(p) ?? "");
+  if (!f) return 0;
+  if (alvo === "alto") return /\balto\b/.test(f) ? 2 : /\bmedio\b/.test(f) ? 1 : 0;
+  if (alvo === "baixo") return /\bbaixo\b/.test(f) ? 2 : /\bmedio\b/.test(f) ? 1 : 0;
+  // medio
+  if (/\bmedio\b/.test(f) && !/\balto\b/.test(f) && !/\bbaixo\b/.test(f)) return 3;
+  if (/\bmedio\b/.test(f)) return 2;
+  return 1;
+}
+
+const isRolinhoDomestico = (p: Record<string, unknown>) => {
+  const n = foldProductText(p.name);
+  return /\brolinhos?\b/.test(n) || /\b30\s*m\b/.test(n) || /\b\d+\s*x\s*30\b/.test(n);
+};
+const isPapelHigProfissional = (p: Record<string, unknown>) => {
+  const n = normalizeProductVariant(foldProductText(p.name));
+  return /\b(rolao|jumbo|interf|int)\b/.test(n) || /\b(250|300|400|500)\s*m\b/.test(n);
+};
+
+function titleCaseWords(text: string): string {
+  const lower = new Set(["de", "da", "do", "das", "dos", "e", "com", "para"]);
+  return text.split(/\s+/).filter(Boolean).map((w, i) => {
+    const lw = w.toLowerCase();
+    if (i > 0 && lower.has(lw)) return lw;
+    return lw.charAt(0).toUpperCase() + lw.slice(1);
+  }).join(" ");
+}
+
+function formatNomeCurto(p: Record<string, unknown>): string {
+  const raw = String(p.name ?? "").trim();
+  if (!raw) return "";
+  const folded = foldProductText(raw);
+  const isPapelHig = /\bpapel\s+hig/.test(folded) || /\bhigienic/.test(foldProductText(p.category));
+  const hasInterf = /\b(interfol[hi]ad[oa]s?|interf|int)\b/.test(folded);
+  const hasRolao = /\b(rolao|roloes|jumbo)\b/.test(folded);
+  const hasRolinho = /\brolinhos?\b/.test(folded);
+
+  // Extract unit size (sheets or meters) before stripping packaging codes
+  let sizeLabel = "";
+  const meterMatch = raw.match(/\b(\d{2,3})\s*m\b/i);
+  const packMatch = raw.match(/\b\d+\s*[xX]\s*(\d+)\b/);
+  const flsMatch = raw.match(/\b(\d+)\s*(?:fls?|folhas?)\b/i);
+  if (meterMatch) {
+    sizeLabel = `${meterMatch[1]}m`;
+  } else if (packMatch) {
+    const unit = (hasRolao || hasRolinho) ? "m" : " folhas";
+    sizeLabel = `${packMatch[1]}${unit}`;
+  } else if (flsMatch) {
+    sizeLabel = `${flsMatch[1]} folhas`;
+  }
+
+  let cleaned = raw
+    .replace(/-\s*[\d.]+\s*(?:fls?|folhas?|m)\b/gi, " ")
+    .replace(/\b\d+\s*[xX]\s*\d+\s*(?:fls?|folhas?|m)?\b/gi, " ")
+    .replace(/\b\d+\s*(?:fls?|folhas?|m)\b/gi, " ")
+    .replace(/\bpapel\s+higi[eê]nico\b/gi, " ")
+    .replace(/\bpapel\s+hig\.?\b/gi, " ")
+    .replace(/\bpapel\s+toalha\b/gi, " ")
+    .replace(/\btoalhas?\b/gi, " ")
+    .replace(/\binterfol[hi]ad[oa]s?\b/gi, " ")
+    .replace(/\binterf\.?\b/gi, " ")
+    .replace(/\bint\.?\b/gi, " ")
+    .replace(/\bfolha\s+(?:dupla|simples)\b/gi, " ")
+    .replace(/\b(?:fd|fs)\b/gi, " ")
+    .replace(/\brol[aã]o\b|\brol[oõ]es\b|\bjumbo\b|\brolinhos?\b/gi, " ")
+    .replace(/\bessent\.?\b/gi, "Essential")
+    .replace(/[-–—|/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const baseName = cleaned ? titleCaseWords(cleaned) : titleCaseWords([p.brand, p.linha_produto].filter(Boolean).join(" ") || raw);
+  const formatLabel = isPapelHig && hasInterf ? "interfolhado" : hasRolao ? "rolão" : hasRolinho ? "rolinho" : "";
+  return [baseName, formatLabel, sizeLabel].filter(Boolean).join(" ").trim();
+}
 
 const isGuardanapoProduct = (p: Record<string, unknown>) =>
   /\bguardanap\w*\b/.test(`${foldProductText(p.name)} ${foldProductText(p.category)}`);
@@ -2536,6 +2632,7 @@ const PRODUCT_NEEDS: { termo?: RegExp; frase?: RegExp; evitarFrase?: RegExp; alv
     alvo: [/\bclax\b|lavanderia/, /detergente|alvejante|amaciante/], assunto: "lavanderia profissional", linha: "linha Clax para lavanderia", marca: "diversey" },
   { termo: /^(hospital|hospitais|hospitalar|clinicas?|consultorios?|laboratorios?)$/,
     frase: /\bdesinfec\w* hospitalar\b/,
+    evitarFrase: /\b(papel|papeis|toalh\w*|higienic\w*|guardanap\w*|sabonet\w*)\b/,
     alvo: [/limpeza e desinfeccao hospitalar|desinfeccao hospitalar|\boxivir\b|\bvirex\b/, /desinfeccao|hospitalar/], assunto: "desinfecção hospitalar", linha: "linha hospitalar Diversey (Oxivir/Virex)", marca: "diversey" },
   { termo: /^(hortifruti|frutas?|legumes?|verduras?)$/,
     alvo: [/frutas legumes e verduras|hortifruti/], assunto: "higienização de frutas, legumes e verduras", linha: "linha Diversey para hortifrúti", marca: "diversey" },
@@ -2623,8 +2720,9 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     const desc = typeof p.description === "string" ? p.description.trim() : "";
     const fluxo = extractFluxoIndicado(p);
     const linhaValor = extractLinhaValor(p);
+    const nomeCurto = formatNomeCurto(p);
     return {
-      id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
+      id: p.id, nome: p.name ?? null, nome_curto: nomeCurto || (p.name ?? null), marca: p.brand ?? null, categoria: p.category ?? null,
       fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
       descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
       disponibilidade: p.disponibilidade ?? "estoque",
@@ -2673,10 +2771,16 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
 
   // 1b. Requested product type (e.g. "papel toalha interfolhado", "toalha interfolhada", "papel higiênico rolão", "sabonete espuma")
   // when all type words match in name/category of multiple products (never discontinued; dispensers excluded unless requested).
-  if (sigWords.length >= 2 && !genericTerm && !namesBrand) {
-    const asksDispenser = /\b(dispenser\w*|papeleira\w*|saboneteira\w*|suportes?|dosador\w*)\b/.test(termFold);
-    const hasToalha = sigWords.some((w) => /^toalh/.test(w));
-    const typeWords = hasToalha ? sigWords.filter((w) => w !== "papel" && w !== "papeis") : sigWords;
+  // Strip segment suffix ("para clínica", "para restaurante", etc.) first so it ranks by flow instead of marking the term generic.
+  const { base: tipoBaseFold, segmento: tipoSegmento } = splitSegmentSuffix(termFold);
+  const tipoBaseNorm = normalizeProductVariant(tipoBaseFold);
+  const tipoSigWords = tipoBaseNorm.split(" ").filter((w) => w.length >= 2 && !PRODUCT_GENERIC_WORDS.has(w));
+  const tipoGeneric = PRODUCT_GENERIC_TERM.test(tipoBaseFold);
+  const tipoSingleAllowed = Boolean(tipoSegmento) && tipoSigWords.length === 1 && /^(sabonet\w*|toalh\w*|guardanap\w*)$/.test(tipoSigWords[0]);
+  if ((tipoSigWords.length >= 2 || tipoSingleAllowed) && !tipoGeneric && !namesBrand) {
+    const asksDispenser = /\b(dispenser\w*|papeleira\w*|saboneteira\w*|suportes?|dosador\w*)\b/.test(tipoBaseFold);
+    const hasToalha = tipoSigWords.some((w) => /^toalh/.test(w));
+    const typeWords = hasToalha ? tipoSigWords.filter((w) => w !== "papel" && w !== "papeis") : tipoSigWords;
     if (typeWords.length >= 1) {
       const typePool = asksDispenser ? pool : pool.filter((p) => !isDispenserProduct(p));
       const byTipo = typePool.filter((p) => {
@@ -2684,14 +2788,41 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
         return typeWords.every((w) => hasWord(nc, w));
       });
       if (byTipo.length >= 2) {
-        const opcoes = pickVariedByBrandLine(rankByCategory(byTipo), 4);
+        const fluxoAlvo = segmentoFluxoAlvo(tipoSegmento);
+        const isPapelHigTipo = typeWords.includes("higienico");
+        const rankTipo = (list: Array<Record<string, unknown>>) => [...list].sort((a, b) => {
+          if (isPapelHigTipo) {
+            const rolDiff = Number(isRolinhoDomestico(a)) - Number(isRolinhoDomestico(b));
+            if (rolDiff !== 0) return rolDiff;
+            const profDiff = Number(isPapelHigProfissional(b)) - Number(isPapelHigProfissional(a));
+            if (profDiff !== 0) return profDiff;
+          }
+          const fDiff = fluxoMatchScore(b, fluxoAlvo) - fluxoMatchScore(a, fluxoAlvo);
+          if (fDiff !== 0) return fDiff;
+          return Number(matchesCategory(b)) - Number(matchesCategory(a));
+        });
+        let opcoes: Array<Record<string, unknown>>;
+        if (isPapelHigTipo) {
+          const profs = rankTipo(byTipo.filter((p) => !isRolinhoDomestico(p)));
+          const rolinhos = rankTipo(byTipo.filter((p) => isRolinhoDomestico(p)));
+          opcoes = pickVariedByBrandLine(profs, 4);
+          if (opcoes.length < 4 && rolinhos.length) {
+            opcoes = [...opcoes, ...pickVariedByBrandLine(rolinhos, 4 - opcoes.length)];
+          }
+        } else {
+          opcoes = pickVariedByBrandLine(rankTipo(byTipo), 4);
+        }
         const res = await respondFound("tipo", opcoes, true, 3);
         const prods = (res.data as Record<string, unknown>).produtos as Array<Record<string, unknown>>;
         const itens = prods.map((o) => {
-          const detalhes = [o.linha_valor, o.fluxo_indicado ? `fluxo ${String(o.fluxo_indicado).toLowerCase()}` : null].filter(Boolean);
-          return detalhes.length ? `${o.nome} (${detalhes.join(", ")})` : String(o.nome ?? "");
+          const fluxoLimpo = typeof o.fluxo_indicado === "string" && o.fluxo_indicado.trim() && !/^[\s—–\-_/.,]+$/.test(o.fluxo_indicado)
+            ? `fluxo ${o.fluxo_indicado.trim().toLowerCase()}`
+            : null;
+          const detalhes = [o.linha_valor, fluxoLimpo].filter(Boolean);
+          const label = String(o.nome_curto || o.nome || "");
+          return detalhes.length ? `${label} (${detalhes.join(", ")})` : label;
         });
-        const comodato = /\b(toalh\w*|higienic\w*|sabonet\w*|alcool|papel)\b/.test(termFold)
+        const comodato = /\b(toalh\w*|higienic\w*|sabonet\w*|alcool|papel)\b/.test(tipoBaseFold)
           ? " O consultor leva o dispenser certo em comodato."
           : "";
         (res.data as Record<string, unknown>).mensagem_para_lead =

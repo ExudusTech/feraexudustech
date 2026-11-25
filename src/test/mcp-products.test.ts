@@ -325,7 +325,9 @@ describe("consultar_produto — normalização e correspondência por tipo", () 
     const ks = r.data.produtos.find((p: any) => p.id === "ks");
     expect(ks.fluxo_indicado).toBe("Médio a baixo");
     expect(ks.linha_valor).toBe("Experiência");
-    expect(r.data.mensagem_para_lead).toContain("KLEENEX SUPREME");
+    expect(ks.nome_curto).toBe("Kleenex Supreme 150 folhas");
+    expect(r.data.mensagem_para_lead).toContain("Kleenex Supreme 150 folhas");
+    expect(r.data.mensagem_para_lead).not.toContain("TOALHA INTERFOLHADA KLEENEX");
     expect(r.data.mensagem_para_lead).toContain("comodato");
     expect(r.data.imagem_enviada).toBe(true);
     expect(r.data.imagens_enviadas).toBeLessThanOrEqual(3);
@@ -348,5 +350,48 @@ describe("consultar_produto — normalização e correspondência por tipo", () 
     const r = await harness({ products: paperCatalog }).route("consultar_produto", { termo: "papel toalha" });
     const all = [...(r.data.produtos ?? []), ...(r.data.similares ?? [])].map((p: any) => p.id);
     expect(all).not.toContain("gc");
+  });
+
+  const fullPaperCatalog = [
+    ...paperCatalog,
+    { id: "ph_neve_int", name: "PAPEL HIG FD NEVE INT 48X250", brand: "Neve", linha_produto: "Supreme", category: "Papel Higiênico", fornecedor: "Kimberly-Clark", unit: "CX", description: "Linha de valor: Experiência. Fluxo de pessoas indicado: Médio.", disponibilidade: "estoque" },
+    { id: "ph_scott_rolao", name: "PAPEL HIGIENICO ROLAO SCOTT 300M 8X300", brand: "Scott", linha_produto: "Essential", category: "Papel Higiênico", fornecedor: "Kimberly-Clark", unit: "CX", description: "Linha de valor: Essencial. Fluxo de pessoas indicado: Alto.", disponibilidade: "estoque" },
+    { id: "ph_rolinho", name: "PAPEL HIGIENICO ROLINHO NEVE 30M 64X30", brand: "Neve", linha_produto: "Doméstico", category: "Papel Higiênico", fornecedor: "Kimberly-Clark", unit: "CX", description: "Fluxo de pessoas indicado: —", disponibilidade: "estoque" },
+  ];
+
+  it("caso real: papel toalha interfolhado para clínica → tipo com toalhas interfolhadas, sem Oxivir/Virex e sem nome de cadastro", async () => {
+    const r = await harness({ products: fullPaperCatalog }).route("consultar_produto", { termo: "papel toalha interfolhado para clínica" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("tipo");
+    const ids = r.data.produtos.map((p: any) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["ks", "sb", "se"]));
+    expect(ids).not.toContain("ox");
+    expect(ids).not.toContain("vx");
+    const se = r.data.produtos.find((p: any) => p.id === "se");
+    expect(se.nome_curto).toBe("Scott Essential 200 folhas");
+    expect(r.data.mensagem_para_lead).toContain("Kleenex Supreme 150 folhas");
+    expect(r.data.mensagem_para_lead).toContain("Scott Essential 200 folhas");
+    expect(r.data.mensagem_para_lead).not.toMatch(/TOALHA (INTERFOLHADA|FD INTERF)/);
+    expect(r.data.mensagem_para_lead).not.toContain("fluxo —");
+  });
+
+  it("caso real: papel higiênico para restaurante → tipo com profissionais primeiro, rolinho por último, sem fluxo vazio", async () => {
+    const r = await harness({ products: fullPaperCatalog }).route("consultar_produto", { termo: "papel higiênico para restaurante" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("tipo");
+    const ids = r.data.produtos.map((p: any) => p.id);
+    expect(ids[ids.length - 1]).toBe("ph_rolinho");
+    expect(ids.slice(0, 2)).toEqual(expect.arrayContaining(["ph_neve_int", "ph_scott_rolao"]));
+    const neve = r.data.produtos.find((p: any) => p.id === "ph_neve_int");
+    expect(neve.nome_curto).toBe("Neve interfolhado 250 folhas");
+    expect(r.data.mensagem_para_lead).toContain("Neve interfolhado 250 folhas");
+    expect(r.data.mensagem_para_lead).not.toContain("PAPEL HIG FD NEVE");
+    expect(r.data.mensagem_para_lead).not.toContain("fluxo —");
+  });
+
+  it("produtos para hotel continua correspondencia segmento", async () => {
+    const r = await harness({ products: fullPaperCatalog }).route("consultar_produto", { termo: "produtos para hotel" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("segmento");
   });
 });
