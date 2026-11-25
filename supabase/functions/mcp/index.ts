@@ -2393,6 +2393,48 @@ function foldProductText(value: unknown): string {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function normalizeProductVariant(fold: string): string {
+  return fold
+    .replace(/\binterfol[hi]ad[oa]s?\b|\binterf\b/g, "interf")
+    .replace(/\bfolha\s+dupla\b/g, "fd")
+    .replace(/\bfolha\s+simples\b/g, "fs")
+    .replace(/\broloes\b/g, "rolao");
+}
+
+function extractDescField(desc: unknown, pattern: RegExp): string | null {
+  if (typeof desc !== "string" || !desc.trim()) return null;
+  const m = desc.match(pattern);
+  if (!m?.[1]) return null;
+  const val = m[1].trim().replace(/[.;,]+$/, "").trim();
+  return val || null;
+}
+const extractFluxoIndicado = (p: Record<string, unknown>) =>
+  extractDescField(p.description, /fluxo\s+de\s+pessoas\s+indicado\s*:\s*([^\n.;|]+)/i);
+const extractLinhaValor = (p: Record<string, unknown>) =>
+  extractDescField(p.description, /linha\s+de\s+valor\s*:\s*([^\n.;|]+)/i);
+
+const isGuardanapoProduct = (p: Record<string, unknown>) =>
+  /\bguardanap\w*\b/.test(`${foldProductText(p.name)} ${foldProductText(p.category)}`);
+const isDispenserProduct = (p: Record<string, unknown>) =>
+  /\b(dispenser\w*|papeleira\w*|saboneteira\w*|suporte\b|dosador\w*)\b/.test(`${foldProductText(p.name)} ${foldProductText(p.category)}`);
+
+function pickVariedByBrandLine(list: Array<Record<string, unknown>>, n: number): Array<Record<string, unknown>> {
+  const groups = new Map<string, Array<Record<string, unknown>>>();
+  for (const p of list) {
+    const brand = foldProductText(p.brand);
+    const line = foldProductText(p.linha_produto || extractLinhaValor(p) || "");
+    const k = `${brand}|${line}`;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(p);
+  }
+  const out: Array<Record<string, unknown>> = [];
+  const gs = [...groups.values()];
+  for (let i = 0; out.length < n && gs.some((g) => g.length > i); i++) {
+    for (const g of gs) { if (g[i] && out.length < n) out.push(g[i]); }
+  }
+  return out;
+}
+
 function productSearchText(value: unknown): string | null {
   const v = normalizeParamValue(value);
   if (typeof v !== "string") return null;
@@ -2570,43 +2612,98 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   // Category is a ranking hint only: never remove a term/brand/segment match.
   const rankByCategory = (list: Array<Record<string, unknown>>) => [...list].sort((a, b) => Number(matchesCategory(b)) - Number(matchesCategory(a)));
   const termFold = foldProductText(termo ?? "");
+  const termNorm = normalizeProductVariant(termFold);
   const words = termFold.split(" ").filter((w) => w.length >= 3);
+  // Guardanapo never responds to "papel toalha"/"toalha" (only when the term itself asks for guardanapo).
+  const excludeGuardanapo = /\btoalh\w*\b/.test(termFold) && !/\bguardanap\w*\b/.test(termFold);
+  const pool = excludeGuardanapo ? products.filter((p) => !isGuardanapoProduct(p)) : products;
   const haystack = (p: Record<string, unknown>) => PRODUCT_SEARCH_FIELDS.map((f) => foldProductText(p[f])).join(" ");
   const clientPhoto = (p: Record<string, unknown>) => typeof p.image_url === "string" && p.image_url.trim() !== "" && p.pode_enviar_foto_cliente === true;
   const fmt = (p: Record<string, unknown>, urls: Map<string, string>) => {
     const desc = typeof p.description === "string" ? p.description.trim() : "";
+    const fluxo = extractFluxoIndicado(p);
+    const linhaValor = extractLinhaValor(p);
     return {
       id: p.id, nome: p.name ?? null, marca: p.brand ?? null, categoria: p.category ?? null,
       fornecedor: p.fornecedor ?? null, unidade: p.unit ?? null,
       descricao: desc ? (desc.length > 200 ? desc.slice(0, 197) + "..." : desc) : null,
       disponibilidade: p.disponibilidade ?? "estoque",
+      ...(fluxo ? { fluxo_indicado: fluxo } : {}),
+      ...(linhaValor ? { linha_valor: linhaValor } : {}),
       // Internal-only photos (pode_enviar_foto_cliente=false) are never exposed to the client conversation.
       image_url: clientPhoto(p) ? (urls.get(p.image_url as string) ?? null) : null,
     };
   };
   const produtoCitado = termo ?? categoria ?? null;
-  const respondFound = async (corr: string, list: Array<Record<string, unknown>>, allowImage: boolean) => {
+  const respondFound = async (corr: string, list: Array<Record<string, unknown>>, allowImage: boolean, maxImages = 1) => {
     const urls = await resolveProductImageUrls(supabase, list.filter(clientPhoto).map((p) => p.image_url));
     const produtos = list.map((p) => fmt(p, urls));
     let imagemEnviada = false;
-    if (allowImage && chatId && list.length === 1 && produtos[0].image_url) {
-      imagemEnviada = await sendProductImage(supabase, chatId, list[0], produtos[0].image_url as string);
+    let imagensEnviadas = 0;
+    if (allowImage && chatId) {
+      if (maxImages === 1 && list.length === 1 && produtos[0].image_url) {
+        imagemEnviada = await sendProductImage(supabase, chatId, list[0], produtos[0].image_url as string);
+        if (imagemEnviada) imagensEnviadas = 1;
+      } else if (maxImages > 1) {
+        const withPhoto = list.map((p, i) => ({ p, url: produtos[i].image_url as string | null })).filter((x) => Boolean(x.url)).slice(0, maxImages);
+        for (const item of withPhoto) {
+          const ok = await sendProductImage(supabase, chatId, item.p, item.url!);
+          if (ok) imagensEnviadas++;
+        }
+        imagemEnviada = imagensEnviadas > 0;
+      }
     }
-    return { success: true, data: { encontrado: true, correspondencia: corr, produto_citado: produtoCitado, produtos, imagem_enviada: imagemEnviada } } as McpResponse;
+    const data: Record<string, unknown> = { encontrado: true, correspondencia: corr, produto_citado: produtoCitado, produtos, imagem_enviada: imagemEnviada };
+    if (maxImages > 1) data.imagens_enviadas = imagensEnviadas;
+    return { success: true, data } as McpResponse;
   };
 
   // 1. Brand / supplier name only
   if (termFold) {
-    const byBrand = products.filter((p) => foldProductText(p.brand) === termFold || foldProductText(p.fornecedor) === termFold);
+    const byBrand = pool.filter((p) => foldProductText(p.brand) === termFold || foldProductText(p.fornecedor) === termFold);
     if (byBrand.length) return respondFound("marca", pickVaried(rankByCategory(byBrand), 5), false);
   }
   // 2. Name match (only source of "total"): every significant term word in name (+brand/linha), at least one in the name.
-  const sigWords = termFold.split(" ").filter((w) => w.length >= 2 && !PRODUCT_GENERIC_WORDS.has(w));
+  const sigWords = termNorm.split(" ").filter((w) => w.length >= 2 && !PRODUCT_GENERIC_WORDS.has(w));
   const hasWord = (text: string, w: string) => ` ${text} `.includes(` ${w}`);
   const genericTerm = PRODUCT_GENERIC_TERM.test(termFold);
+  const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo?.test(w));
+  const namesBrand = sigWords.some(w => !isNeedWord(w) && pool.some(p =>
+    foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
+
+  // 1b. Requested product type (e.g. "papel toalha interfolhado", "toalha interfolhada", "papel higiênico rolão", "sabonete espuma")
+  // when all type words match in name/category of multiple products (never discontinued; dispensers excluded unless requested).
+  if (sigWords.length >= 2 && !genericTerm && !namesBrand) {
+    const asksDispenser = /\b(dispenser\w*|papeleira\w*|saboneteira\w*|suportes?|dosador\w*)\b/.test(termFold);
+    const hasToalha = sigWords.some((w) => /^toalh/.test(w));
+    const typeWords = hasToalha ? sigWords.filter((w) => w !== "papel" && w !== "papeis") : sigWords;
+    if (typeWords.length >= 1) {
+      const typePool = asksDispenser ? pool : pool.filter((p) => !isDispenserProduct(p));
+      const byTipo = typePool.filter((p) => {
+        const nc = normalizeProductVariant(`${foldProductText(p.name)} ${foldProductText(p.category)}`);
+        return typeWords.every((w) => hasWord(nc, w));
+      });
+      if (byTipo.length >= 2) {
+        const opcoes = pickVariedByBrandLine(rankByCategory(byTipo), 4);
+        const res = await respondFound("tipo", opcoes, true, 3);
+        const prods = (res.data as Record<string, unknown>).produtos as Array<Record<string, unknown>>;
+        const itens = prods.map((o) => {
+          const detalhes = [o.linha_valor, o.fluxo_indicado ? `fluxo ${String(o.fluxo_indicado).toLowerCase()}` : null].filter(Boolean);
+          return detalhes.length ? `${o.nome} (${detalhes.join(", ")})` : String(o.nome ?? "");
+        });
+        const comodato = /\b(toalh\w*|higienic\w*|sabonet\w*|alcool|papel)\b/.test(termFold)
+          ? " O consultor leva o dispenser certo em comodato."
+          : "";
+        (res.data as Record<string, unknown>).mensagem_para_lead =
+          `Temos estas opções de ${produtoCitado || termFold}: ${itens.join(", ")}. Qual combina mais com vocês?${comodato}`;
+        return res;
+      }
+    }
+  }
+
   if (sigWords.length && !genericTerm) {
-    const byName = products.filter((p) => {
-      const name = foldProductText(p.name);
+    const byName = pool.filter((p) => {
+      const name = normalizeProductVariant(foldProductText(p.name));
       const full = `${name} ${foldProductText(p.brand)} ${foldProductText(p.linha_produto)}`;
       return sigWords.every((w) => hasWord(full, w)) && sigWords.some((w) => hasWord(name, w));
     });
@@ -2617,10 +2714,10 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   if (odorWords.length) {
     const others = sigWords.filter((w) => !ODOR_WORD.test(w) && !ODOR_CONTEXT_WORDS.has(w));
     const isOdor = (p: Record<string, unknown>) => ODOR_CATEGORY.test(foldProductText(p.category));
-    const odorAll = products.filter(isOdor);
+    const odorAll = pool.filter(isOdor);
     // "cheiro de lavanda": odor products naming the other words first; "sabonete perfumado": another product line wins.
     const odorNamed = others.length ? odorAll.filter((p) => { const h = haystack(p); return others.every((w) => h.includes(w)); }) : [];
-    const namesOther = others.some((w) => products.some((p) => !isOdor(p) && haystack(p).includes(w)));
+    const namesOther = others.some((w) => pool.some((p) => !isOdor(p) && haystack(p).includes(w)));
     const odorProducts = odorNamed.length ? odorNamed : (namesOther ? [] : odorAll);
     if (odorProducts.length) {
       const ekkoaFirst = [...odorProducts].sort((a, b) => Number(foldProductText(b.brand) === "ekkoa") - Number(foldProductText(a.brand) === "ekkoa"));
@@ -2631,19 +2728,16 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
   }
   // 3. Description/category/segment matches are never "total" and never send images.
   let correspondencia: "parcial" | "nenhuma" | "necessidade" = "parcial";
-  let found = products;
+  let found = pool;
   if (words.length) {
     const wide = sigWords.filter((w) => w.length >= 3);
-    const descMatch = wide.length ? products.filter((p) => { const h = haystack(p); return wide.every((w) => h.includes(w)); }) : [];
+    const descMatch = wide.length ? pool.filter((p) => { const h = normalizeProductVariant(haystack(p)); return wide.every((w) => h.includes(w)); }) : [];
     if (descMatch.length) return respondFound("segmento", pickVaried(rankByCategory(descMatch), 5), false);
     found = [];
     if (!found.length) {
       // 3a. Need/ambiente words (máquinas/desengraxe, indústria, lavanderia/Clax, hospitalar, rejunte, gordura…) → up to 3 suggestions.
       // A brand word ("lysoform perfumado") keeps the partial brand match instead of a need suggestion.
-      const isNeedWord = (w: string) => PRODUCT_NEEDS.some(rule => rule.termo?.test(w));
-      const namesBrand = sigWords.some(w => !isNeedWord(w) && products.some(p =>
-        foldProductText(p.brand).split(" ").includes(w) || foldProductText(p.fornecedor).split(" ").includes(w)));
-      const need = namesBrand ? null : produtosPorNecessidade(products, sigWords, termFold);
+      const need = namesBrand ? null : produtosPorNecessidade(pool, sigWords, termFold);
       if (need?.produtos.length) {
         const urls = await resolveProductImageUrls(supabase, need.produtos.filter(clientPhoto).map((p) => p.image_url));
         return { success: true, data: { encontrado: false, correspondencia: "necessidade", produto_citado: produtoCitado, produtos: [],
@@ -2676,7 +2770,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       };
       const segTerm = sigWords.join(" ");
       if (segTerm.length >= 4) {
-        const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
+        const bySeg = pool.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
         if (bySeg.length) {
           const res = await respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
           const cats = categoriasDoSegmento(bySeg);
@@ -2689,7 +2783,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       // 3c. Segment synonyms (restaurante → Cozinhas, hotel → Hotelaria/Lavanderias/Cozinhas, etc.)
       const segSyn = SEGMENT_SYNONYMS.find((s) => s.padrao.test(termFold));
       if (segSyn) {
-        const bySyn = products.filter((p) => productSegments(p).some((seg) => segSyn.segmentos.some((t) => seg.includes(t) || t.includes(seg))));
+        const bySyn = pool.filter((p) => productSegments(p).some((seg) => segSyn.segmentos.some((t) => seg.includes(t) || t.includes(seg))));
         if (bySyn.length) {
           const res = await respondFound("segmento", pickVaried(rankByCategory(bySyn), 5), false);
           (res.data as Record<string, unknown>).linha_sugerida = segSyn.linha;
@@ -2703,9 +2797,9 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
       // 3d. Partial match: ignore generic words and match only in name, category or application (never description alone).
       const partialWords = words.filter((w) => !PARTIAL_GENERIC_WORDS.has(w));
       const partialHaystack = (p: Record<string, unknown>) =>
-        `${foldProductText(p.name)} ${foldProductText(p.category)} ${productApplication(p)}`;
+        normalizeProductVariant(`${foldProductText(p.name)} ${foldProductText(p.category)} ${productApplication(p)}`);
       found = partialWords.length
-        ? products.filter((p) => { const h = partialHaystack(p); return partialWords.some((w) => h.includes(w)); })
+        ? pool.filter((p) => { const h = partialHaystack(p); return partialWords.some((w) => h.includes(w)); })
         : [];
       correspondencia = "parcial";
     }
@@ -2713,7 +2807,7 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
     found = [];
   }
   if (!found.length) correspondencia = "nenhuma";
-  const alternatives = found.length ? found : products.filter(matchesCategory);
+  const alternatives = found.length ? found : pool.filter(matchesCategory);
   const sugestoes = rankByCategory(alternatives).slice(0, 3);
   const similares = sugestoes.map((p) => fmt(p, new Map()));
   // Never tell the lead we do not carry/work with something: always offer the professional solution.
@@ -4346,7 +4440,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: restaurante, clínica, hotel, condomínio, escola, supermercado, indústria, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match por segmento (direto ou sinônimo) retorna correspondencia=segmento, sem imagem, com categorias_do_segmento (até 5 categorias com exemplo e marca) e mensagem_para_lead pronta. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (desengraxe de máquinas/equipamentos/oficina, higiene industrial, lavanderia profissional/Clax, desinfecção hospitalar/clínica, lava-louças, hortifrúti, carpetes, banheiro, rejunte, limo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial ignora palavras genéricas (limpeza, geral, profissional, produto, equipamento sem necessidade) e só casa em nome, categoria ou aplicação (nunca só na descrição); se não sobrar nada, retorna correspondencia=nenhuma, similares=[] e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas; interfolhado/interfolhada/interf, folha dupla/FD e folha simples/FS equivalentes) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: restaurante, clínica, hotel, condomínio, escola, supermercado, indústria, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Tipo de produto pedido (ex.: papel toalha interfolhado, toalha interfolhada, papel toalha rolo, papel higiênico rolão, papel higiênico interfolhado, sabonete espuma) com vários produtos no catálogo retorna correspondencia=tipo, encontrado=true, até 4 opções variadas por marca/linha (sem dispensers, salvo quando pedidos) com fluxo_indicado e linha_valor quando existirem, mensagem_para_lead pronta e envia até 3 fotos liberadas ao chat (imagem_enviada e imagens_enviadas). Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match por segmento (direto ou sinônimo) retorna correspondencia=segmento, sem imagem, com categorias_do_segmento (até 5 categorias com exemplo e marca) e mensagem_para_lead pronta. TOTAL/tipo/segmento/marca retornam encontrado=true. Termo que descreve necessidade/ambiente (desengraxe de máquinas/equipamentos/oficina, higiene industrial, lavanderia profissional/Clax, desinfecção hospitalar/clínica, lava-louças, hortifrúti, carpetes, banheiro, rejunte, limo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial ignora palavras genéricas (limpeza, geral, profissional, produto, equipamento sem necessidade) e só casa em nome, categoria ou aplicação (nunca só na descrição); se não sobrar nada, retorna correspondencia=nenhuma, similares=[] e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {

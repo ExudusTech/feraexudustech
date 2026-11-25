@@ -32,7 +32,7 @@ const catalog = [
   { id: "vx", name: "VIREX II 256", brand: "DIVERSEY", category: "Limpeza e desinfecção hospitalar", fornecedor: "DIVERSEY", unit: "GL", description: "Desinfetante hospitalar", specifications: { segmentos: ["Saúde"] } },
   { id: "x1", name: "Clax Antigo Descontinuado", brand: "DIVERSEY", category: "Lavanderia", fornecedor: "DIVERSEY", unit: "GL", description: "Velho", disponibilidade: "descontinuado", specifications: { segmentos: ["Lavanderia"] } },
 ];
-function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
+function harness(opts: { sentBefore?: boolean; fetchOk?: boolean; products?: any[] } = {}) {
   const gte: string[] = [];
   const inserts: any[] = [];
   const fetchMock = vi.fn(async () => { if (opts.fetchOk === false) throw new Error("boom"); return new Response("{}", { status: 200 }); });
@@ -40,7 +40,7 @@ function harness(opts: { sentBefore?: boolean; fetchOk?: boolean } = {}) {
     const chain: any = { select: () => chain, eq: () => chain, in: () => chain, contains: () => chain, limit: () => chain, neq: () => chain,
       insert: (row: any) => { inserts.push({ table, row }); return Promise.resolve({ error: null }); },
       gte: (k: string) => { gte.push(`${table}.${k}`); return chain; },
-      then: (r: any) => Promise.resolve({ data: table === "products" ? catalog : (table === "product_image_sends" && opts.sentBefore ? [{ id: "s" }] : []), error: null }).then(r) };
+      then: (r: any) => Promise.resolve({ data: table === "products" ? (opts.products ?? catalog) : (table === "product_image_sends" && opts.sentBefore ? [{ id: "s" }] : []), error: null }).then(r) };
     return chain;
   } };
   (client as any).storage = { from: () => ({ createSignedUrls: async (paths: string[]) => ({ data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}` })) }) }) };
@@ -297,5 +297,56 @@ describe("consultar_produto — novas necessidades, segmentos e parcial restrito
     expect(r.data.encontrado).toBe(true);
     expect(r.data.correspondencia).toBe("segmento");
     expect(r.data.produtos.map((p: any) => p.id)).toContain("d1");
+  });
+});
+
+describe("consultar_produto — normalização e correspondência por tipo", () => {
+  const paperCatalog = [
+    ...catalog,
+    { id: "ks", name: "TOALHA INTERFOLHADA KLEENEX SUPREME 150FLS", brand: "Kleenex", linha_produto: "Supreme", category: "Toalhas Interfolhadas", fornecedor: "Kimberly-Clark", unit: "CX", description: "Linha de valor: Experiência. Fluxo de pessoas indicado: Médio a baixo.", disponibilidade: "estoque", image_url: "org/ks.jpg", pode_enviar_foto_cliente: true },
+    { id: "sb", name: "TOALHA INTERFOLHADA SCOTT BASIC 250FLS", brand: "Scott", linha_produto: "Basic", category: "Toalhas Interfolhadas", fornecedor: "Kimberly-Clark", unit: "CX", description: "Linha de valor: Economia. Fluxo de pessoas indicado: Médio a baixo.", disponibilidade: "estoque", image_url: "org/sb.jpg", pode_enviar_foto_cliente: true },
+    { id: "se", name: "TOALHA FD INTERF SCOTT ESSENT 12 X 200", brand: "Scott", linha_produto: "Essential", category: "Toalhas Interfolhadas", fornecedor: "Kimberly-Clark", unit: "CX", description: "Linha de valor: Essencial. Fluxo de pessoas indicado: Alto.", disponibilidade: "estoque", image_url: "org/se.jpg", pode_enviar_foto_cliente: true },
+    { id: "sf", name: "TOALHA FS INTERF SCOTT 24X250 -6.000 FL", brand: "Scott", linha_produto: "Basic", category: "Toalhas Interfolhadas", fornecedor: "Kimberly-Clark", unit: "CX", description: "Folha simples econômica.", disponibilidade: "estoque", image_url: "org/sf.jpg", pode_enviar_foto_cliente: true },
+    { id: "mp", name: "TOALHA MAX PURE INTERF FS 36X250", brand: "Max Pure", linha_produto: "Standard", category: "Toalhas Interfolhadas", fornecedor: "Max Pure", unit: "CX", description: "Folha simples.", disponibilidade: "estoque" },
+    { id: "gc", name: "GUARDANAPOS CIPAR", brand: "Cipar", category: "Guardanapos", fornecedor: "Cipar", unit: "CX", description: "Guardanapo de papel interfolhado", disponibilidade: "estoque" },
+    { id: "dt", name: "DISPENSER TOALHA INTERFOLHADA", brand: "Kimberly-Clark", category: "Dispensers", fornecedor: "Kimberly-Clark", unit: "UN", description: "Dispenser para toalha", disponibilidade: "estoque" },
+  ];
+
+  it("caso real: papel toalha interfolhado → correspondencia tipo com Kleenex/Scott, sem guardanapo nem dispenser, com fluxo_indicado e até 3 fotos", async () => {
+    const h = harness({ products: paperCatalog });
+    const r = await h.route("consultar_produto", { termo: "papel toalha interfolhado", chat_id: "chat-tipo-1" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.correspondencia).toBe("tipo");
+    expect(r.data.produtos.length).toBeLessThanOrEqual(4);
+    const ids = r.data.produtos.map((p: any) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["ks", "sb", "se"]));
+    expect(ids).not.toContain("gc");
+    expect(ids).not.toContain("dt");
+    const ks = r.data.produtos.find((p: any) => p.id === "ks");
+    expect(ks.fluxo_indicado).toBe("Médio a baixo");
+    expect(ks.linha_valor).toBe("Experiência");
+    expect(r.data.mensagem_para_lead).toContain("KLEENEX SUPREME");
+    expect(r.data.mensagem_para_lead).toContain("comodato");
+    expect(r.data.imagem_enviada).toBe(true);
+    expect(r.data.imagens_enviadas).toBeLessThanOrEqual(3);
+    expect(h.fetchMock).toHaveBeenCalledTimes(r.data.imagens_enviadas);
+  });
+
+  it("folha dupla / FD e folha simples / FS são equivalentes", async () => {
+    const r = await harness({ products: paperCatalog }).route("consultar_produto", { termo: "toalha folha dupla interfolhada" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.produtos.map((p: any) => p.id)).toContain("se");
+  });
+
+  it("guardanapo continua devolvendo guardanapos", async () => {
+    const r = await harness({ products: paperCatalog }).route("consultar_produto", { termo: "guardanapo" });
+    expect(r.data.encontrado).toBe(true);
+    expect(r.data.produtos.map((p: any) => p.id)).toContain("gc");
+  });
+
+  it("papel toalha sozinho não devolve guardanapo", async () => {
+    const r = await harness({ products: paperCatalog }).route("consultar_produto", { termo: "papel toalha" });
+    const all = [...(r.data.produtos ?? []), ...(r.data.similares ?? [])].map((p: any) => p.id);
+    expect(all).not.toContain("gc");
   });
 });
