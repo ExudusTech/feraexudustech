@@ -1017,6 +1017,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     if (mun?.tipo === "DISTRIBUIDORA") {
       const proxima = await areasSemRotaPropria(allAreas, cidade);
       const cobertura = coverageByRegion(proxima);
+      await upsertEarlyLead(getClient(), params, cidade);
       return ok({ coberto: true, vinculo: "DISTRIBUIDORA", sem_rota_propria: true, cidade: cidade ?? null,
         regiao_proxima: proxima[0]?.name ?? null, cobertura },
         `${cidade} é atendida pela Distribuidora${proxima[0] ? ` pela região ${proxima[0].name}. Visitas: ${cobertura.map(c => c.dia_visita).join(", ")}` : ""}`,
@@ -1034,6 +1035,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
 
   const cobertura = coverageByRegion(areas);
   if (!regiao && !cep && new Set(areas.map(a => a.name)).size > 1) {
+    await upsertEarlyLead(getClient(), params, cidade);
     return ok(
       { coberto: true, vinculo: "DISTRIBUIDORA", precisa_localizar: true, cobertura },
       `${cidade} está coberta, com dias diferentes por região`,
@@ -1041,6 +1043,7 @@ async function verificarCoberturaRegiao(params: Record<string, unknown>): Promis
     );
   }
 
+  await upsertEarlyLead(getClient(), params, cidade);
   return ok(
     { coberto: true, vinculo: "DISTRIBUIDORA", cobertura },
     `${cidade ?? cep} está coberta! Visitas: ${cobertura.map((c) => c.dia_visita).join(", ")}`,
@@ -1407,6 +1410,134 @@ async function currentEstablishment(supabase: ReturnType<typeof getClient>, para
   return current;
 }
 
+const PORTE_INDICIO_VALIDOS = new Set(["bom_porte", "a_confirmar", "pequeno"]);
+const USO_PRODUTO_VALIDOS = new Set(["uso_proprio", "revenda"]);
+
+/** Extracts optional lead size/usage fields, ignoring missing or "não informado" values. */
+function parsePorteFields(params: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const porteRaw = normalizeParamValue(params.porte_indicio);
+  if (typeof porteRaw === "string" && PORTE_INDICIO_VALIDOS.has(porteRaw.toLowerCase())) {
+    out.porte_indicio = porteRaw.toLowerCase();
+  }
+  const usoRaw = normalizeParamValue(params.uso_produto);
+  if (typeof usoRaw === "string" && USO_PRODUTO_VALIDOS.has(usoRaw.toLowerCase())) {
+    out.uso_produto = usoRaw.toLowerCase();
+  }
+  const obsRaw = normalizeParamValue(params.porte_obs);
+  if (typeof obsRaw === "string" && obsRaw.trim()) {
+    out.porte_obs = obsRaw.trim().slice(0, 500);
+  }
+  return out;
+}
+
+/** Finds the open, non-converted lead for the same gptmaker_chat_id. */
+async function findOpenLeadByChatId(supabase: ReturnType<typeof getClient>, chatId: unknown): Promise<Record<string, unknown> | null> {
+  const id = typeof chatId === "string" ? chatId.trim() : "";
+  if (!id) return null;
+  const { data, error } = await supabase.from("leads")
+    .select(`${BOOKING_LEAD_SELECT}, canal_origem, instagram_handle`)
+    .eq("organization_id", NITSCLEAN_ORG_ID)
+    .eq("gptmaker_chat_id", id)
+    .is("client_id", null)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error || !Array.isArray(data)) return null;
+  return data.find((l) => !["fechado_ganho", "fechado_perdido"].includes(String(l.stage))) ?? null;
+}
+
+/**
+ * Early lead creation: when coverage or consultant route is checked with chat_id
+ * and an establishment is already known (confirmed candidate in localizar_estabelecimento
+ * or empresa + cidade in params), upsert a "Novo" lead without duplicating per chat_id.
+ */
+async function upsertEarlyLead(
+  supabase: ReturnType<typeof getClient>,
+  params: Record<string, unknown>,
+  cidadeFallback?: string,
+): Promise<string | null> {
+  const chatId = typeof params.chat_id === "string" ? params.chat_id.trim() : "";
+  if (!chatId) return null;
+  try {
+    let enriched: Record<string, unknown> = { ...params };
+    let empresa = productSearchText(enriched.empresa ?? enriched.empresa_nome);
+    let cidade = productSearchText(enriched.cidade) ?? productSearchText(cidadeFallback);
+    if (!empresa) {
+      const { data } = await supabase.from("mcp_request_log").select("response")
+        .eq("method", "localizar_estabelecimento").eq("success", true)
+        .contains("params", { chat_id: chatId })
+        .gte("created_at", new Date(Date.now() - 86400000).toISOString())
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      let resp = data?.response;
+      if (typeof resp === "string") { try { resp = JSON.parse(resp); } catch { resp = null; } }
+      const candidatos = resp?.result?.data?.candidatos;
+      if (Array.isArray(candidatos) && candidatos.length === 1) {
+        const c = candidatos[0] as Record<string, unknown>;
+        if (typeof c.nome === "string" && c.nome.trim()) {
+          empresa = c.nome.trim();
+          enriched = {
+            ...enriched,
+            empresa,
+            cidade: cidade ?? (typeof c.cidade === "string" ? c.cidade : undefined),
+            endereco: enriched.endereco ?? c.endereco,
+            bairro: enriched.bairro ?? c.bairro,
+            cep: enriched.cep ?? c.cep,
+            maps_url: enriched.maps_url ?? c.maps_url,
+            place_id: enriched.place_id ?? c.place_id,
+            regiao: enriched.regiao ?? c.regiao,
+            latitude: enriched.latitude ?? c.latitude,
+            longitude: enriched.longitude ?? c.longitude,
+          };
+          cidade = productSearchText(enriched.cidade);
+        }
+      }
+    } else {
+      enriched = await currentEstablishment(supabase, { ...enriched, empresa, ...(cidade ? { cidade } : {}) });
+    }
+    if (!empresa || !cidade) return null;
+    const existing = await findOpenLeadByChatId(supabase, chatId);
+    const resolved = await resolveCurrentLead(supabase, { ...enriched, empresa, cidade }, existing);
+    return resolved?.lead?.id ? String(resolved.lead.id) : null;
+  } catch {
+    console.error("[upsertEarlyLead] failed");
+    return null;
+  }
+}
+
+/** Loads opcoes_horario offered by consultar_rota_consultor to this chat_id in the last 48h. */
+async function offeredRouteOptions(
+  supabase: ReturnType<typeof getClient>,
+  chatId: unknown,
+): Promise<Array<{ data: string; hora: string; texto?: string }>> {
+  const id = typeof chatId === "string" ? chatId.trim() : "";
+  if (!id) return [];
+  try {
+    const { data, error } = await supabase.from("mcp_request_log").select("response")
+      .eq("method", "consultar_rota_consultor").eq("success", true)
+      .contains("params", { chat_id: id })
+      .gte("created_at", new Date(Date.now() - 48 * 3600 * 1000).toISOString())
+      .order("created_at", { ascending: false }).limit(10);
+    if (error || !Array.isArray(data)) return [];
+    const seen = new Set<string>();
+    const out: Array<{ data: string; hora: string; texto?: string }> = [];
+    for (const row of data) {
+      let resp = row?.response;
+      if (typeof resp === "string") { try { resp = JSON.parse(resp); } catch { continue; } }
+      const list = resp?.result?.data?.opcoes_horario ?? resp?.data?.opcoes_horario;
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        if (item && typeof item.data === "string" && typeof item.hora === "string") {
+          const key = `${item.data}|${item.hora.slice(0, 5)}`;
+          if (!seen.has(key)) { seen.add(key); out.push({ data: item.data, hora: item.hora.slice(0, 5), texto: item.texto }); }
+        }
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function currentContactName(supplied: unknown, stored: unknown): string {
   const name = productSearchText(supplied);
   const full = productSearchText(stored);
@@ -1634,6 +1765,7 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
       pessoa = resolved.pessoa;
     }
     const channel = resolveChannelFromChatId(params.chat_id)?.canal ?? "WHATSAPP";
+    const porteFields = parsePorteFields(params);
     const { data, error } = await supabase.from("leads").insert({
       organization_id: NITSCLEAN_ORG_ID, pessoa_id: pessoa?.id ?? null,
       contact_name: name, contact_phone: params.telefone ?? pessoa?.whatsapp ?? pessoa?.telefone ?? null,
@@ -1646,12 +1778,14 @@ async function resolveCurrentLead(supabase: ReturnType<typeof getClient>, params
       assigned_to: await floraDefaultOwner(supabase), interaction_id: params.interaction_id ?? String(Date.now()),
       gptmaker_chat_id: params.chat_id ?? null, instagram_handle: pessoa?.instagram_handle ?? null,
       position: 0, created_by_flora: true,
+      ...porteFields,
     }).select(`${BOOKING_LEAD_SELECT}, canal_origem, instagram_handle`).single();
     if (error || !data) throw new Error(dbFail("registrar lead atual", error));
     lead = data; created = true;
   }
   if (!created) {
-    const updates: Record<string, unknown> = { contact_name: name, updated_at: new Date().toISOString() };
+    const porteFields = parsePorteFields(params);
+    const updates: Record<string, unknown> = { contact_name: name, updated_at: new Date().toISOString(), ...porteFields };
     if (company) { updates.company = company; updates.empresa_nome = company; }
     for (const [param, column] of [["cidade", "city"], ["produto_interesse", "category"], ["endereco", "endereco"],
       ["bairro", "bairro"], ["maps_url", "maps_url"], ["place_id", "place_id"], ["regiao", "regiao"]]) {
@@ -2138,6 +2272,7 @@ async function consultarRotaConsultor(params: Record<string, unknown>): Promise<
 
   const diasSemana = dowsList.map(diaSemanaLabel).join(" e ");
   const opcoes = await routeTimeOptions(supabase, candidates.filter(date => availableArea(date)), availableArea);
+  await upsertEarlyLead(supabase, params, areas[0]?.city ?? cidade);
   const mensagem = opcoes.length > 0
     ? `Tenho estas opções para a visita:\n${opcoes.map((o, i) => `${i + 1}. ${o.texto}`).join("\n")}\nQual opção fica melhor para você?`
     : null;
@@ -2516,10 +2651,40 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
           mensagem_para_lead: mensagemSolucao(need.assunto, need.linha), imagem_enviada: false } };
       }
       // 3b. Direct segment match
+      const categoriasDoSegmento = (list: Record<string, unknown>[]) => {
+        const seen = new Set<string>();
+        const cats: Array<{ categoria: string; exemplo_nome: string; exemplo_marca: string | null }> = [];
+        for (const p of list) {
+          const cat = typeof p.category === "string" ? p.category.trim() : "";
+          if (!cat) continue;
+          const key = foldProductText(cat);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          cats.push({
+            categoria: cat,
+            exemplo_nome: String(p.name ?? ""),
+            exemplo_marca: typeof p.brand === "string" && p.brand.trim() ? p.brand.trim() : null,
+          });
+          if (cats.length >= 5) break;
+        }
+        return cats;
+      };
+      const mensagemCestaSegmento = (segLabel: string, cats: Array<{ categoria: string; exemplo_nome: string; exemplo_marca: string | null }>) => {
+        if (!cats.length) return undefined;
+        const lista = cats.map((c) => `${c.categoria} (${c.exemplo_marca ? `${c.exemplo_nome} — ${c.exemplo_marca}` : c.exemplo_nome})`).join(", ");
+        return `Para ${segLabel}, as soluções mais pedidas são: ${lista}. Quer ver alguma dessas categorias?`;
+      };
       const segTerm = sigWords.join(" ");
       if (segTerm.length >= 4) {
         const bySeg = products.filter((p) => productSegments(p).some((s) => s.includes(segTerm) || segTerm.includes(s)));
-        if (bySeg.length) return respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
+        if (bySeg.length) {
+          const res = await respondFound("segmento", pickVaried(rankByCategory(bySeg), 5), false);
+          const cats = categoriasDoSegmento(bySeg);
+          (res.data as Record<string, unknown>).categorias_do_segmento = cats;
+          const msg = mensagemCestaSegmento(produtoCitado || segTerm, cats);
+          if (msg) (res.data as Record<string, unknown>).mensagem_para_lead = msg;
+          return res;
+        }
       }
       // 3c. Segment synonyms (restaurante → Cozinhas, hotel → Hotelaria/Lavanderias/Cozinhas, etc.)
       const segSyn = SEGMENT_SYNONYMS.find((s) => s.padrao.test(termFold));
@@ -2528,6 +2693,10 @@ async function consultarProduto(params: Record<string, unknown>): Promise<McpRes
         if (bySyn.length) {
           const res = await respondFound("segmento", pickVaried(rankByCategory(bySyn), 5), false);
           (res.data as Record<string, unknown>).linha_sugerida = segSyn.linha;
+          const cats = categoriasDoSegmento(bySyn);
+          (res.data as Record<string, unknown>).categorias_do_segmento = cats;
+          const msg = mensagemCestaSegmento(segSyn.linha, cats);
+          if (msg) (res.data as Record<string, unknown>).mensagem_para_lead = msg;
           return res;
         }
       }
@@ -2762,6 +2931,7 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
       created_by_flora:  true,
       assigned_to:       await floraDefaultOwner(supabase),
       ...(semLocal ? { flora_tags: [TAG_LOC_PENDENTE] } : {}),
+      ...parsePorteFields(params),
     })
     .select("id, contact_name, stage")
     .single();
@@ -3049,43 +3219,64 @@ async function agendarVisita(params: Record<string, unknown>): Promise<McpRespon
  * IMPORTANTE: Visita Técnica = consultor vai até o cliente.
  * Esta é a principal forma de venda da NitsClean — Flora DEVE estimular!
  */
+const MSG_AGENDAMENTO_NEUTRO = "Vou confirmar seu horário e já te retorno";
+const INSTRUCAO_NAO_CONFIRMAR = "NÃO diga ao cliente que a visita está confirmada.";
+
+function bookingFail(message: string, hint?: string, extraData?: Record<string, unknown>): McpResponse {
+  return {
+    success: false,
+    message,
+    data: { ...(extraData ?? {}), mensagem_para_lead: MSG_AGENDAMENTO_NEUTRO },
+    next_action_hint: [hint, INSTRUCAO_NAO_CONFIRMAR].filter(Boolean).join(" "),
+  };
+}
+
 async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<McpResponse> {
   const {
     lead_id, interaction_id, contato_id,
     nome_contato, empresa, telefone, cargo, email,
     data_visita, horario, cidade, produto_interesse, notas,
+    pedido_do_cliente,
   } = params as {
     lead_id?: string; interaction_id?: string; contato_id?: string;
     nome_contato: string; empresa?: string; telefone?: string; cargo?: string; email?: string;
     data_visita: string; horario: string; cidade: string;
     produto_interesse?: string; notas?: string;
+    pedido_do_cliente?: boolean;
   };
 
-  if (!data_visita || !horario) return fail("data_visita e horario são obrigatórios");
-  if (!cidade) return fail("cidade é obrigatória para validar a rota do consultor");
+  if (!data_visita || !horario) return bookingFail("data_visita e horario são obrigatórios");
+  if (!cidade) return bookingFail("cidade é obrigatória para validar a rota do consultor");
 
   const supabase = getClient();
   params = await currentEstablishment(supabase, params);
   let validatedLead: BookingLead | null = null;
   if (lead_id) {
     try { validatedLead = await loadBookingLead(supabase, lead_id); }
-    catch (error) { return fail(error instanceof Error ? error.message : "Erro ao validar lead"); }
-    if (!validatedLead) return fail("lead_id não encontrado nesta organização");
+    catch (error) { return bookingFail(error instanceof Error ? error.message : "Erro ao validar lead"); }
+    if (!validatedLead) return bookingFail("lead_id não encontrado nesta organização");
+  } else if (params.chat_id) {
+    validatedLead = (await findOpenLeadByChatId(supabase, params.chat_id)) as BookingLead | null;
   }
   // Explicit selectors cannot fall back to a broader city or an unrestricted booking.
   const areas = await selectCoverage(supabase, params, true);
-  if ((params.regiao || params.cep) && areas.length === 0) return fail("Região ou CEP sem cobertura ativa");
+  if ((params.regiao || params.cep) && areas.length === 0) return bookingFail("Região ou CEP sem cobertura ativa");
   if (areas.length === 0) {
     // Same check as verificar_cobertura_regiao: an out-of-area city is never booked nor offered times.
     const coverage = await verificarCoberturaRegiao({ cidade, estado: params.estado });
     if (coverage.success && (coverage.data as { vinculo?: string | null } | undefined)?.vinculo === "SEM_COBERTURA") {
-      return { success: false, message: MSG_SEM_COBERTURA,
-        data: { cobertura: "SEM_COBERTURA", vinculo: "SEM_COBERTURA", cidade, mensagem_para_lead: MSG_SEM_COBERTURA },
-        next_action_hint: `${HINT_SEM_COBERTURA}; nunca ofereça horários` };
+      return bookingFail(MSG_SEM_COBERTURA, `${HINT_SEM_COBERTURA}; nunca ofereça horários`,
+        { cobertura: "SEM_COBERTURA", vinculo: "SEM_COBERTURA", cidade });
     }
   }
   const holidayRejection = await rejectHolidayVisit(supabase, data_visita, cidade);
-  if (holidayRejection) return holidayRejection;
+  if (holidayRejection) {
+    return bookingFail(
+      holidayRejection.message ?? "Feriado na data solicitada",
+      holidayRejection.next_action_hint,
+      (holidayRejection.data as Record<string, unknown> | undefined),
+    );
+  }
   const validEmail = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     ? email.trim() : null;
 
@@ -3103,7 +3294,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     const holidays = candidates.length > 0
       ? await loadHolidays(supabase, candidates[0], candidates[candidates.length - 1]) : [];
     const proximas = candidates.filter(date => !holidayForDate(holidays, date, cidade)).slice(0, 3);
-    return fail(
+    return bookingFail(
       `${data_visita} não é dia de cobertura em ${cidade}. Dias válidos: ${validDays}`,
       `Próximas datas disponíveis: ${proximas.join(", ")}. Proponha uma dessas ao cliente.`
     );
@@ -3112,7 +3303,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   // Check only the windows belonging to this city and the requested weekday,
   // before any schedule, lead update, interaction or notification is written.
   const requestedMinutes = timeMinutes(horario);
-  if (!Number.isFinite(requestedMinutes)) return fail("horario deve ser um horário válido no formato HH:MM");
+  if (!Number.isFinite(requestedMinutes)) return bookingFail("horario deve ser um horário válido no formato HH:MM");
   const windows = (areas ?? [])
     .filter((area) => parseDiaSemana(area.dia_semana ?? "").includes(visitDow))
     .filter((area) => area.horario_inicio && area.horario_fim)
@@ -3122,20 +3313,38 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
   )) {
     const ranges = windows.map((window) => `das ${displayTime(window.inicio)} às ${displayTime(window.fim)}`).join(" ou ");
     const mensagemParaLead = `Nesse dia o consultor atende em ${cidade} ${ranges}. Qual horário dentro dessa faixa fica melhor?`;
-    return {
-      success: false,
-      message: mensagemParaLead,
-      data: { cidade, data_visita, janelas: windows, mensagem_para_lead: mensagemParaLead },
-      next_action_hint: `Envie ao lead: "${mensagemParaLead}"`,
-    };
+    return bookingFail(mensagemParaLead, `Envie ao lead: "${mensagemParaLead}"`, { cidade, data_visita, janelas: windows });
+  }
+
+  // Only accept a slot offered by consultar_rota_consultor to this chat in the last 48h,
+  // unless the client explicitly asked for another valid slot inside the route window.
+  if (params.chat_id && pedido_do_cliente !== true) {
+    const offered = await offeredRouteOptions(supabase, params.chat_id);
+    const reqHHMM = fromMin(requestedMinutes);
+    const wasOffered = offered.some((o) => o.data === data_visita && o.hora.slice(0, 5) === reqHHMM);
+    if (!wasOffered) {
+      const dowsList = Array.from(coveredDows).sort();
+      const cands = dowsList.length ? nextDatesForDows(dowsList, 60) : [];
+      const hols = cands.length ? await loadHolidays(supabase, cands[0], cands[cands.length - 1]) : [];
+      const availArea = (date: string) => {
+        const dow = new Date(date + "T12:00:00-03:00").getDay();
+        return areas.find(a => parseDiaSemana(a.dia_semana ?? "").includes(dow) && !holidayForDate(hols, date, a.sem_rota_propria ?? a.city ?? cidade));
+      };
+      const opcoes = cands.length ? await routeTimeOptions(supabase, cands.filter(d => availArea(d)), availArea) : [];
+      return bookingFail(
+        "Horário não está entre as opções oferecidas ao cliente.",
+        "Ofereça antes as opções de consultar_rota_consultor e deixe o cliente escolher",
+        { opcoes_horario: opcoes, cidade, data_visita, horario: reqHHMM },
+      );
+    }
   }
 
   // The Flora Google Calendar has a timed commitment at this time: reject before any write.
   if (googleClash(await googleBusy(supabase, data_visita, data_visita), data_visita, requestedMinutes, VISIT_DURATION_MIN)) {
     const mensagemParaLead = `Esse horário já está ocupado na nossa agenda. Posso te oferecer outro horário?`;
-    return { success: false, message: mensagemParaLead,
-      data: { data_visita, horario, ocupado_google: true, mensagem_para_lead: mensagemParaLead },
-      next_action_hint: "Chame consultar_rota_consultor para obter opcoes_horario livres e ofereça ao lead." };
+    return bookingFail(mensagemParaLead,
+      "Chame consultar_rota_consultor para obter opcoes_horario livres e ofereça ao lead.",
+      { data_visita, horario, ocupado_google: true });
   }
 
   // Resolve identity only after all route/window checks, before operational writes.
@@ -3171,7 +3380,7 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     .select("id, title, scheduled_date, start_time, status")
     .single();
 
-  if (error) return fail(dbFail("criar agendamento", error));
+  if (error) return bookingFail(dbFail("criar agendamento", error));
 
   // A visit the client asked to reschedule is cancelled by the database trigger in the same transaction as this insert.
 
@@ -3195,7 +3404,8 @@ async function agendarVisitaTecnica(params: Record<string, unknown>): Promise<Mc
     maps_url: bookingLead?.maps_url }, leadId, schedule?.id);
 
   const mensagemParaLead =
-    `Perfeito! Sua visita comercial está confirmada para ${dataFmt} às ${horario}h em ${cidade}. ` +
+    `Perfeito! Sua visita comercial está confirmada para ${dataFmt} às ${horario}h em ${cidade}.` +
+    (validEmail ? ` Enviaremos o convite para ${validEmail}. ` : " ") +
     (product
       ? `Nosso consultor vai apresentar ${product} para a sua empresa. `
       : `Nosso consultor vai apresentar as soluções ideais para a sua empresa. `) +
@@ -3452,7 +3662,8 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
   };
   const fields: Record<string, string | null> = {};
   for (const [key, max] of [["lead_id", 100], ["interaction_id", 200], ["chat_id", 300], ["nome_contato", 500],
-    ["empresa", 500], ["cidade", 500], ["produto_interesse", 500], ["resumo", 1000], ["motivo", 500], ["urgencia", 20]] as const) {
+    ["empresa", 500], ["cidade", 500], ["produto_interesse", 500], ["resumo", 1000], ["motivo", 500], ["urgencia", 20],
+    ["data_visita", 20], ["horario", 20]] as const) {
     const value = str(key, max);
     if (value === false) return fail(`${key} inválido`);
     fields[key] = value;
@@ -3474,13 +3685,70 @@ async function solicitarAtendimentoHumano(params: Record<string, unknown>): Prom
     if (error) throw new Error(dbFail("consultar lead da transferência", error));
     candidate = data;
   }
-  // Scheduling disguised as a handoff: no atendimento, alert or queue; Flora is told to book instead.
+  // Scheduling disguised as a handoff: if date+time came in, book directly; otherwise create/update lead,
+  // open a high-urgency atendimento and alert the team so the client is never left unrecorded.
   if (isSchedulingHandoff(fields.motivo, fields.resumo)) {
-    const candidateId = candidate && typeof candidate.id === "string" ? candidate.id : null;
-    if (candidateId) queueTimeline(supabase, { leadId: candidateId, pessoaId: candidate?.pessoa_id, tipo: "transferencia",
-      resumo: "Transferência barrada: era agendamento", params: { chat_id: fields.chat_id } });
-    const res: McpResponse = { success: false, data: { acao_correta: "agendar" }, message: SCHEDULING_HANDOFF_HINT, next_action_hint: SCHEDULING_HANDOFF_HINT };
-    await logInteraction(supabase, "solicitar_atendimento_humano", params, res, candidateId);
+    if (fields.data_visita && fields.horario) {
+      const booked = await agendarVisitaTecnica({
+        ...params,
+        lead_id: fields.lead_id ?? (candidate && typeof candidate.id === "string" ? candidate.id : undefined),
+        data_visita: fields.data_visita,
+        horario: fields.horario,
+        cidade: fields.cidade ?? (typeof params.cidade === "string" ? params.cidade : undefined) ?? (typeof candidate?.city === "string" ? candidate.city : undefined),
+        empresa: fields.empresa ?? (typeof params.empresa === "string" ? params.empresa : undefined) ?? (typeof candidate?.empresa_nome === "string" ? candidate.empresa_nome : typeof candidate?.company === "string" ? candidate.company : undefined),
+        nome_contato: fields.nome_contato ?? (typeof params.nome_contato === "string" ? params.nome_contato : undefined) ?? (typeof candidate?.contact_name === "string" ? candidate.contact_name : "Contato"),
+      });
+      if (booked.success) return booked;
+    }
+    const current = await resolveCurrentLead(supabase, params, candidate);
+    const lead = current.lead;
+    const pessoa = current.pessoa;
+    const leadId = String(lead.id);
+    const nowDate = new Date();
+    const service = await loadHumanService(supabase, nowDate);
+    const emHorario = estaEmHorario(nowDate, service.config, service.closed, service.city);
+    const proximo = proximoHorarioUtil(nowDate, service.config, service.closed, service.city);
+    const safetyTitle = "Agendamento não concluído pela Flora — confirmar com o cliente";
+    let atendimentoId: string | null = null;
+    try {
+      const { data: open } = await supabase.from("atendimentos").select("id, cobrancas").eq("organization_id", NITSCLEAN_ORG_ID)
+        .eq("lead_id", leadId).in("status", ["aberto", "em_atendimento"]).limit(1).maybeSingle();
+      if (open?.id) {
+        atendimentoId = String(open.id);
+        await supabase.from("atendimentos").update({
+          cobrancas: Number(open.cobrancas ?? 0) + 1, ultima_cobranca_em: nowDate.toISOString(),
+          urgencia: "alta", motivo: safetyTitle,
+        }).eq("id", atendimentoId).eq("organization_id", NITSCLEAN_ORG_ID);
+      } else {
+        const { data: created } = await supabase.from("atendimentos").insert({
+          organization_id: NITSCLEAN_ORG_ID, lead_id: leadId, pessoa_id: pessoa?.id ?? lead.pessoa_id ?? null,
+          empresa: productSearchText(current.params.empresa) ?? (lead.empresa_nome ?? lead.company ?? null),
+          contato_nome: productSearchText(current.params.nome_contato) ?? (lead.contact_name ?? null),
+          canal: channel?.canal ?? (typeof lead.canal_origem === "string" ? lead.canal_origem : null), chat_id: fields.chat_id,
+          tipo: "transferencia", motivo: safetyTitle, resumo: timelineText(fields.resumo ?? fields.motivo, 1000),
+          urgencia: "alta", responsavel_id: (typeof lead.assigned_to === "string" ? lead.assigned_to : null) ?? service.defaultOwner,
+          relogio_inicia_em: (emHorario ? nowDate : proximo.at).toISOString(), recebido_fora_horario: !emHorario,
+        }).select("id").maybeSingle();
+        if (created?.id) atendimentoId = String(created.id);
+      }
+    } catch { console.error("[solicitar_atendimento_humano] safety atendimento write failed"); }
+    queueTimeline(supabase, { leadId, pessoaId: pessoa?.id ?? lead.pessoa_id, tipo: "transferencia",
+      referenciaId: atendimentoId,
+      resumo: `${safetyTitle}${fields.resumo ? `. ${timelineText(fields.resumo, 300)}` : ""}`, params });
+    queueTeamNotification(supabase, "transferencia", {
+      ...current.params,
+      empresa: current.params.empresa, nome_contato: current.params.nome_contato,
+      cidade: current.params.cidade, produto_interesse: current.params.produto_interesse,
+      resumo: fields.resumo, motivo: safetyTitle, urgencia: "alta",
+      titulo: safetyTitle, atendimento_id: atendimentoId,
+    }, leadId);
+    const res: McpResponse = {
+      success: false,
+      data: { acao_correta: "agendar", lead_id: leadId, atendimento_id: atendimentoId, mensagem_para_lead: MSG_AGENDAMENTO_NEUTRO },
+      message: SCHEDULING_HANDOFF_HINT,
+      next_action_hint: `${SCHEDULING_HANDOFF_HINT} ${INSTRUCAO_NAO_CONFIRMAR}`,
+    };
+    await logInteraction(supabase, "solicitar_atendimento_humano", params, res, leadId);
     return res;
   }
   // Matriz leads are forwarded, never parked: no paused chat and no Distribuidora atendimento.
@@ -4035,7 +4303,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "verificar_cobertura_regiao",
-    description: "Define vinculo MATRIZ (só as cidades da Matriz: Rio, Niterói, São Gonçalo e Baixada), DISTRIBUIDORA (qualquer outra cidade do RJ, com região própria ou pela região mais próxima: sem_rota_propria) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. MATRIZ: chame transferir_para_humano com motivo MATRIZ. Estado desconhecido exige confirmação. Para datas use consultar_rota_consultor.",
+    description: "Define vinculo MATRIZ (só as cidades da Matriz: Rio, Niterói, São Gonçalo e Baixada), DISTRIBUIDORA (qualquer outra cidade do RJ, com região própria ou pela região mais próxima: sem_rota_propria) ou SEM_COBERTURA (outro estado), mensagem e próxima ação. Quando coberto com chat_id e estabelecimento conhecido (ou empresa+cidade), já cria/atualiza o lead em Novo. Aceita porte_indicio, uso_produto e porte_obs opcionais. Para datas use consultar_rota_consultor.",
     parameters: {
       type: "object",
       properties: {
@@ -4044,12 +4312,17 @@ const TOOLS_MANIFEST_CLIENTE = [
         estado: { type: "string", description: "UF ou nome do estado" },
         regiao: { type: "string", description: "Nome exato de uma área ativa; prioridade sobre CEP e cidade" },
         chat_id: { type: "string", description: "chat_id do GPT Maker; liga o resultado MATRIZ à transferência seguinte" },
+        empresa: { type: "string", description: "Nome do estabelecimento (opcional; cria/atualiza lead cedo em Novo)" },
+        nome_contato: { type: "string", description: "Nome do contato (opcional)" },
+        porte_indicio: { type: "string", enum: ["bom_porte", "a_confirmar", "pequeno"], description: "Indício de porte da visita (opcional)" },
+        uso_produto: { type: "string", enum: ["uso_proprio", "revenda"], description: "Uso próprio ou revenda (opcional)" },
+        porte_obs: { type: "string", description: "Observação curta sobre porte/estrutura (opcional)" },
       },
     },
   },
   {
     name: "consultar_rota_consultor",
-    description: "Retorna as próximas datas em que o consultor estará na cidade. Usar para propor visita técnica proativamente. Retorna datas formatadas para Flora apresentar ao lead.",
+    description: "Retorna as próximas datas e opcoes_horario livres em que o consultor estará na cidade. Sempre chame antes de agendar_visita_tecnica para oferecer opções ao cliente. Quando coberto com chat_id e estabelecimento conhecido (ou empresa+cidade), já cria/atualiza o lead em Novo. Aceita porte_indicio, uso_produto e porte_obs opcionais.",
     parameters: {
       type: "object",
       properties: {
@@ -4057,6 +4330,12 @@ const TOOLS_MANIFEST_CLIENTE = [
         cep:                  { type: "string" },
         regiao:               { type: "string", description: "Nome exato da área; prioridade sobre CEP e cidade" },
         proximas_datas_count: { type: "number", description: "Quantas próximas datas retornar (padrão: 3, máximo: 6)" },
+        chat_id:              { type: "string", description: "chat_id do GPT Maker; grava opções oferecidas e cria/atualiza lead cedo" },
+        empresa:              { type: "string", description: "Nome do estabelecimento (opcional)" },
+        nome_contato:         { type: "string", description: "Nome do contato (opcional)" },
+        porte_indicio:        { type: "string", enum: ["bom_porte", "a_confirmar", "pequeno"] },
+        uso_produto:          { type: "string", enum: ["uso_proprio", "revenda"] },
+        porte_obs:            { type: "string" },
       },
     },
   },
@@ -4067,7 +4346,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "consultar_produto",
-    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: restaurante, clínica, hotel, condomínio, escola, supermercado, indústria, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match só na descrição/categoria/segmento retorna correspondencia=segmento, sem imagem. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (desengraxe de máquinas/equipamentos/oficina, higiene industrial, lavanderia profissional/Clax, desinfecção hospitalar/clínica, lava-louças, hortifrúti, carpetes, banheiro, rejunte, limo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial ignora palavras genéricas (limpeza, geral, profissional, produto, equipamento sem necessidade) e só casa em nome, categoria ou aplicação (nunca só na descrição); se não sobrar nada, retorna correspondencia=nenhuma, similares=[] e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
+    description: "Consulte ANTES de responder sobre qualquer produto. Busca tolerante (sem acento/maiúsculas) por nome, marca, linha, categoria, fornecedor, descrição ou segmento (ex.: restaurante, clínica, hotel, condomínio, escola, supermercado, indústria, lavanderia). Nunca retorna preço nem produtos descontinuados; cada produto traz disponibilidade (estoque/sob_encomenda) e image_url (null quando não há foto liberada para o cliente — nesse caso não prometa foto). Nome de marca sozinho retorna correspondencia=marca com exemplos. Retorna imagem_enviada quando a imagem de um produto exato foi enviada ao chat. Correspondência TOTAL só quando todas as palavras significativas do termo estão no NOME do produto (envia imagem se for 1 produto); match por segmento (direto ou sinônimo) retorna correspondencia=segmento, sem imagem, com categorias_do_segmento (até 5 categorias com exemplo e marca) e mensagem_para_lead pronta. TOTAL/segmento/marca retornam encontrado=true com até 5 produtos. Termo que descreve necessidade/ambiente (desengraxe de máquinas/equipamentos/oficina, higiene industrial, lavanderia profissional/Clax, desinfecção hospitalar/clínica, lava-louças, hortifrúti, carpetes, banheiro, rejunte, limo, piso, cozinha, gordura, odor, papel) sem produto nomeado retorna correspondencia=necessidade, encontrado=false e até 3 similares indicados. Parcial ignora palavras genéricas (limpeza, geral, profissional, produto, equipamento sem necessidade) e só casa em nome, categoria ou aplicação (nunca só na descrição); se não sobrar nada, retorna correspondencia=nenhuma, similares=[] e mensagem_para_lead de solução (o consultor avalia no local e indica o produto certo) — use-a; nunca diga que a NitsClean não trabalha com ou não tem o produto, e nunca prometa apresentar o produto citado.",
     parameters: {
       type: "object",
       properties: {
@@ -4113,6 +4392,9 @@ const TOOLS_MANIFEST_CLIENTE = [
         post_titulo:       { type: "string", description: "Título/descrição do post IG" },
         vinculo:           { type: "string", enum: ["DISTRIBUIDORA", "MATRIZ", "SEM_COBERTURA"] },
         client_contact_id: { type: "string", description: "UUID do contato já identificado em client_contacts" },
+        porte_indicio:     { type: "string", enum: ["bom_porte", "a_confirmar", "pequeno"], description: "Indício de porte da visita (opcional)" },
+        uso_produto:       { type: "string", enum: ["uso_proprio", "revenda"], description: "Uso próprio ou revenda (opcional)" },
+        porte_obs:         { type: "string", description: "Observação curta sobre porte/estrutura (opcional)" },
       },
     },
   },
@@ -4186,7 +4468,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "agendar_visita_tecnica",
-    description: "Agenda visita técnica do consultor NitsClean ao cliente. PRINCIPAL FORMA DE VENDA — Flora deve estimular proativamente após confirmar cidade com cobertura. Valida que a data é dia de cobertura. Retorna mensagem_para_lead pronta.",
+    description: "Agenda visita comercial do consultor NitsClean ao cliente. Só aceita data/hora entre as opcoes_horario oferecidas por consultar_rota_consultor ao chat_id nas últimas 48h (ou outra data/hora válida dentro da faixa quando pedido_do_cliente=true). E-mail é opcional. Só confirme ao cliente quando success=true; se success=false, use mensagem_para_lead neutra e NÃO diga que a visita está confirmada.",
     parameters: {
       type: "object",
       required: ["nome_contato", "data_visita", "horario", "cidade"],
@@ -4211,6 +4493,10 @@ const TOOLS_MANIFEST_CLIENTE = [
         cep:               { type: "string" },
         produto_interesse: { type: "string" },
         notas:             { type: "string" },
+        pedido_do_cliente: { type: "boolean", description: "true apenas quando o próprio cliente pediu explicitamente outra data/hora válida dentro da faixa da rota" },
+        porte_indicio:     { type: "string", enum: ["bom_porte", "a_confirmar", "pequeno"] },
+        uso_produto:       { type: "string", enum: ["uso_proprio", "revenda"] },
+        porte_obs:         { type: "string" },
       },
     },
   },
@@ -4304,7 +4590,7 @@ const TOOLS_MANIFEST_CLIENTE = [
   },
   {
     name: "solicitar_atendimento_humano",
-    description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta). Com motivo MATRIZ (ou cidade da Matriz) não pausa a Flora nem abre atendimento: registra o lead como Encaminhado à Matriz, avisa a gestão e devolve mensagem_para_lead.",
+    description: "Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta). Não use para agendar visita; se chamado por engano para agendamento com data_visita e horario, agenda direto; sem data/hora, registra lead e abre atendimento de alta gravidade para a equipe confirmar. Com motivo MATRIZ (ou cidade da Matriz) encaminha à Matriz.",
     parameters: {
       type: "object",
       properties: {
@@ -4323,12 +4609,14 @@ const TOOLS_MANIFEST_CLIENTE = [
         resumo:            { type: "string", description: "O que o cliente pediu, em uma ou duas frases" },
         motivo:            { type: "string", description: "Motivo da transferência; contenha MATRIZ para leads da Matriz" },
         urgencia:          { type: "string", enum: ["baixa", "media", "alta"] },
+        data_visita:       { type: "string", description: "Opcional (YYYY-MM-DD): se for agendamento, agenda direto" },
+        horario:           { type: "string", description: "Opcional (HH:MM): se for agendamento, agenda direto" },
       },
     },
   },
   {
     name: "transferir_para_humano",
-    description: "Mesmo que solicitar_atendimento_humano. Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe (sem repetir em 30 min, exceto urgência alta). Com motivo MATRIZ (ou cidade da Matriz) não pausa a Flora nem abre atendimento: registra o lead como Encaminhado à Matriz, avisa a gestão e devolve mensagem_para_lead.",
+    description: "Mesmo que solicitar_atendimento_humano. Transfere o cliente para atendimento humano: garante um lead no Fera (cria se necessário), registra nota no histórico e notifica a equipe. Não use para agendar visita; se chamado por engano com data_visita e horario, agenda direto; sem data/hora, registra lead e abre atendimento de alta gravidade para a equipe confirmar.",
     parameters: {
       type: "object",
       properties: {
@@ -4347,6 +4635,8 @@ const TOOLS_MANIFEST_CLIENTE = [
         resumo:            { type: "string", description: "O que o cliente pediu, em uma ou duas frases" },
         motivo:            { type: "string", description: "Motivo da transferência; contenha MATRIZ para leads da Matriz" },
         urgencia:          { type: "string", enum: ["baixa", "media", "alta"] },
+        data_visita:       { type: "string", description: "Opcional (YYYY-MM-DD): se for agendamento, agenda direto" },
+        horario:           { type: "string", description: "Opcional (HH:MM): se for agendamento, agenda direto" },
       },
     },
   },

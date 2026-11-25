@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Schedule } from "@/hooks/use-schedules";
 import { fromNotes, mapsLink, normalizePhoneBR } from "@/lib/service-kind";
-import { OcorrenciaTipoBadge } from "@/components/agenda/OcorrenciaCores";
+import { OcorrenciaTipoBadge, PorteBadge, isVisitaComercialDeLead } from "@/components/agenda/OcorrenciaCores";
 import { corInfo } from "@/lib/ocorrencia-cores";
 import { isAtrasada } from "@/lib/hoje";
 
-interface LeadInfo { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }
+interface LeadInfo { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null; porte_indicio?: string | null }
 
 interface Props {
   schedules: Schedule[];
@@ -70,6 +70,7 @@ export default function MobileAgendaList({ schedules, leads, onOpen, onExecute, 
                 <span className="text-2xl font-bold text-primary">{noDateFilter && <span className="text-base mr-2">{format(parseISO(s.scheduled_date), "dd/MM")}</span>}{s.start_time?.slice(0, 5) || "--:--"}</span>
                 <div className="flex gap-1 flex-wrap justify-end">
                   <OcorrenciaTipoBadge s={s as any} />
+                  {isVisitaComercialDeLead(s as any) && <PorteBadge porte={lead?.porte_indicio} compact />}
                   {isAtrasada(s, todayStr, nowHHMM) && <Badge variant="destructive">Atrasada</Badge>}
                   {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                   {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />}

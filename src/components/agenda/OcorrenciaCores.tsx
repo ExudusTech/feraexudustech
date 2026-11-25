@@ -43,3 +43,28 @@ export function OcorrenciaTipoBadge({ s, className }: { s: OcorrenciaLike; class
     </span>
   );
 }
+
+export type PorteIndicio = "bom_porte" | "a_confirmar" | "pequeno";
+
+export const PORTE_INFO: Record<PorteIndicio, { label: string; className: string }> = {
+  bom_porte:   { label: "Bom porte",   className: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40" },
+  a_confirmar: { label: "A confirmar", className: "bg-muted text-muted-foreground border-border" },
+  pequeno:     { label: "Pequeno",     className: "bg-orange-400/15 text-orange-700 dark:text-orange-300 border-orange-400/40" },
+};
+
+/** True when the schedule is a commercial visit linked to a lead. */
+export function isVisitaComercialDeLead(s: { lead_id?: string | null; schedule_type?: string | null; ocorrencia_tipo?: string | null }): boolean {
+  if (!s.lead_id) return false;
+  return s.schedule_type === "visita_comercial" || s.ocorrencia_tipo === "primeira_visita" || s.ocorrencia_tipo === "venda_direta";
+}
+
+/** Small size indicator badge shown on commercial lead visits. */
+export function PorteBadge({ porte, compact, className }: { porte?: string | null; compact?: boolean; className?: string }) {
+  const key: PorteIndicio = porte === "bom_porte" || porte === "pequeno" ? porte : "a_confirmar";
+  const info = PORTE_INFO[key];
+  return (
+    <span className={cn("inline-flex items-center rounded-full border font-medium shrink-0", compact ? "px-1.5 py-0 text-[10px]" : "px-2 py-0.5 text-xs", info.className, className)}>
+      {info.label}
+    </span>
+  );
+}

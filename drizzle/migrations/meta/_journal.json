@@ -463,6 +463,13 @@
       "when": 1795536004272,
       "tag": "0065_checkout_local_e_liberacao",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1795614657443,
+      "tag": "0066_leads_porte_indicio",
+      "breakpoints": true
     }
   ]
 }

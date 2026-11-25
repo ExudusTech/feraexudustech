@@ -35,8 +35,9 @@ import { OCORRENCIA_LABEL, exigeColeta, pendenciasColeta, type OcorrenciaTipo } 
 import { usePermissions } from "@/hooks/use-permissions";
 import { useNavigate } from "react-router-dom";
 import { precisaResultadoTeste, RESULTADO_TESTE_LABEL, RESULTADOS_TESTE, type ResultadoTeste } from "@/lib/teste-notas";
+import { PorteBadge, isVisitaComercialDeLead } from "@/components/agenda/OcorrenciaCores";
 
-interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string }
+interface Props { schedule: Schedule | null; open: boolean; onOpenChange: (o: boolean) => void; clientName?: string; porteIndicio?: string | null }
 
 /** Shrinks a phone photo to at most 1600px JPEG so it stays well under the storage limit. */
 async function compress(file: File): Promise<Blob> {
@@ -49,7 +50,7 @@ async function compress(file: File): Promise<Blob> {
   return await new Promise<Blob>((res) => canvas.toBlob((b) => res(b ?? file), "image/jpeg", 0.8));
 }
 
-export default function VisitExecutionDialog({ schedule, open, onOpenChange, clientName }: Props) {
+export default function VisitExecutionDialog({ schedule, open, onOpenChange, clientName, porteIndicio }: Props) {
   const qc = useQueryClient();
   const s = schedule;
   const tecnico = isTechnical(s?.schedule_type, s?.schedule_subtype);
@@ -247,6 +248,7 @@ export default function VisitExecutionDialog({ schedule, open, onOpenChange, cli
         <div className="flex flex-wrap gap-2">
           {sx.ocorrencia_codigo && <Badge variant="outline">#{sx.ocorrencia_codigo}</Badge>}
           {sx.ocorrencia_tipo && <Badge variant="secondary">{OCORRENCIA_LABEL[sx.ocorrencia_tipo as OcorrenciaTipo] ?? sx.ocorrencia_tipo}</Badge>}
+          {isVisitaComercialDeLead(s as any) && <PorteBadge porte={porteIndicio} />}
           <Badge>{status === "concluido" && sx.coleta_status === "pendente" ? "Realizada — informações pendentes" : STATUS_LABEL[status] ?? status}</Badge>
           {(status === "agendado" || status === "confirmado") && s.confirmacao_status && CONFIRMACAO_LABEL[s.confirmacao_status] && <Badge variant="outline">{CONFIRMACAO_LABEL[s.confirmacao_status]}</Badge>}
         </div>

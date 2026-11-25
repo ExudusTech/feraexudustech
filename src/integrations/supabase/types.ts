@@ -6383,6 +6383,8 @@ export type Database = {
           origem_especifica: string | null
           pessoa_id: string | null
           place_id: string | null
+          porte_indicio: string
+          porte_obs: string | null
           position: number
           post_id: string | null
           post_titulo: string | null
@@ -6396,6 +6398,7 @@ export type Database = {
           teste_instalado_em: string | null
           title: string
           updated_at: string | null
+          uso_produto: string | null
           value: number | null
           vinculo: string | null
           zip_code: string | null
@@ -6443,6 +6446,8 @@ export type Database = {
           origem_especifica?: string | null
           pessoa_id?: string | null
           place_id?: string | null
+          porte_indicio?: string
+          porte_obs?: string | null
           position?: number
           post_id?: string | null
           post_titulo?: string | null
@@ -6456,6 +6461,7 @@ export type Database = {
           teste_instalado_em?: string | null
           title: string
           updated_at?: string | null
+          uso_produto?: string | null
           value?: number | null
           vinculo?: string | null
           zip_code?: string | null
@@ -6503,6 +6509,8 @@ export type Database = {
           origem_especifica?: string | null
           pessoa_id?: string | null
           place_id?: string | null
+          porte_indicio?: string
+          porte_obs?: string | null
           position?: number
           post_id?: string | null
           post_titulo?: string | null
@@ -6516,6 +6524,7 @@ export type Database = {
           teste_instalado_em?: string | null
           title?: string
           updated_at?: string | null
+          uso_produto?: string | null
           value?: number | null
           vinculo?: string | null
           zip_code?: string | null

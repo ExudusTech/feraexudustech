@@ -49,6 +49,7 @@ const empty = {
   source: "", contact_name: "", contact_email: "", contact_phone: "",
   categories: [] as string[], zip_code: "",
   cnpj: "", endereco: "", city: "", latitude: null as number | null, longitude: null as number | null, place_id: "",
+  porte_indicio: "a_confirmar", uso_produto: "", porte_obs: "",
 };
 
 const emptyTestForm = {
@@ -86,6 +87,7 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
   const [contatoErrors, setContatoErrors] = useState<Record<string, string>>({});
   const [convertOpen, setConvertOpen] = useState(false);
   const { user: authUser } = useAuth();
+  const canEditPorte = Boolean(authUser?.roles?.some((r) => ["super_admin", "admin", "gestor"].includes(r)));
   const invalidateContatos = useInvalidateContatos();
   const { data: savedContatos } = useEmpresaContatos(open && lead ? { lead_id: lead.id } : null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -200,6 +202,9 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
         zip_code: lead.zip_code || "",
         cnpj: (lead as any).cnpj || "", endereco: (lead as any).endereco || "", city: (lead as any).city || "",
         latitude: (lead as any).latitude ?? null, longitude: (lead as any).longitude ?? null, place_id: (lead as any).place_id || "",
+        porte_indicio: lead.porte_indicio || "a_confirmar",
+        uso_produto: lead.uso_produto || "",
+        porte_obs: lead.porte_obs || "",
       });
     } else {
       setForm({ ...empty, stage: defaultStage || "novo" });
@@ -347,6 +352,11 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
       latitude: form.latitude,
       longitude: form.longitude,
       place_id: form.place_id || null,
+      ...(canEditPorte ? {
+        porte_indicio: form.porte_indicio || "a_confirmar",
+        uso_produto: form.uso_produto || null,
+        porte_obs: form.porte_obs.trim() || null,
+      } : {}),
     };
 
     const orgId = authUser?.organization_id;
@@ -766,6 +776,36 @@ export default function LeadFormDialog({ open, onOpenChange, lead, defaultStage,
             <div className="sm:col-span-2">
               <ContatosEditor value={contatos} onChange={(v) => { setContatos(v); setContatoErrors({}); }} errors={contatoErrors} required />
             </div>
+            {canEditPorte && (
+              <>
+                <div>
+                  <Label>Porte da visita</Label>
+                  <Select value={form.porte_indicio} onValueChange={(v) => set("porte_indicio", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bom_porte">Bom porte</SelectItem>
+                      <SelectItem value="a_confirmar">A confirmar</SelectItem>
+                      <SelectItem value="pequeno">Pequeno</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Uso do produto</Label>
+                  <Select value={form.uso_produto || "__none__"} onValueChange={(v) => set("uso_produto", v === "__none__" ? "" : v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Não informado</SelectItem>
+                      <SelectItem value="uso_proprio">Uso próprio</SelectItem>
+                      <SelectItem value="revenda">Revenda</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label>Observação de porte</Label>
+                  <Input value={form.porte_obs} onChange={(e) => set("porte_obs", e.target.value)} placeholder="Ex.: 40 funcionários, 6 banheiros..." />
+                </div>
+              </>
+            )}
             <div className="sm:col-span-2">
               <Label>Descrição</Label>
               <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} />

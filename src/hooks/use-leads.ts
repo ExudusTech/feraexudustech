@@ -49,6 +49,9 @@ export interface Lead {
   city?: string | null;
   maps_url?: string | null;
   empresa_nome?: string | null;
+  porte_indicio?: string | null;
+  uso_produto?: string | null;
+  porte_obs?: string | null;
   created_at: string;
   updated_at: string | null;
 }

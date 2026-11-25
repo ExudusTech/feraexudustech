@@ -29,6 +29,7 @@ import PainelAgora from "@/components/atendimentos/PainelAgora";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SERVICE_KINDS, serviceKind } from "@/lib/service-kind";
 import { OcorrenciaDots, OcorrenciaLegenda, OcorrenciaTipoBadge, tipoDaOcorrenciaLabel } from "@/components/agenda/OcorrenciaCores";
+import { PorteBadge, isVisitaComercialDeLead } from "@/components/agenda/OcorrenciaCores";
 import MapaRotas from "@/components/agenda/MapaRotas";
 import { corInfo } from "@/lib/ocorrencia-cores";
 import { SCHEDULE_SUBTYPE_VALUES, scheduleSubtypeLabel, scheduleSubtypeBadgeClass } from "@/lib/linha-produto";
@@ -92,8 +93,8 @@ export default function Agenda() {
     return map;
   }, [leads]);
   const leadInfo = useMemo(() => {
-    const map = new Map<string, { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null }>();
-    leads.forEach((l: any) => map.set(l.id, { title: l.company_name || l.title, contact_phone: l.contact_phone, maps_url: l.maps_url, whatsapp: l.pessoa?.whatsapp }));
+    const map = new Map<string, { title: string; contact_phone?: string | null; maps_url?: string | null; whatsapp?: string | null; porte_indicio?: string | null }>();
+    leads.forEach((l: any) => map.set(l.id, { title: l.company_name || l.title, contact_phone: l.contact_phone, maps_url: l.maps_url, whatsapp: l.pessoa?.whatsapp, porte_indicio: l.porte_indicio ?? "a_confirmar" }));
     return map;
   }, [leads]);
 
@@ -212,6 +213,7 @@ export default function Agenda() {
                     <div key={s.id} className={cn("flex items-center gap-1 text-[10px] bg-muted/50 text-foreground border-l-4 rounded px-1 py-0.5 cursor-pointer hover:bg-accent transition-colors", corInfo(s as any).borda)} title={`${serviceKind(s.schedule_type, s.schedule_subtype)} — ${s.title}`} onClick={() => { setEditItem(s); setDialogOpen(true); }}>
                       {s.start_time && <span className="font-medium shrink-0">{s.start_time.slice(0, 5)}</span>}
                       <span className="min-w-0 truncate">{s.title}</span>
+                      {isVisitaComercialDeLead(s as any) && <PorteBadge porte={leadInfo.get(s.lead_id!)?.porte_indicio} compact />}
                       {s.source === "flora" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline" className="shrink-0 px-1 text-[9px]">Relatada pela Flora</Badge>}
                     </div>
                   ))}
@@ -249,6 +251,7 @@ export default function Agenda() {
                       <div className="font-medium">{s.start_time?.slice(0, 5) || "—"}</div>
                       <div className="truncate">{s.title}</div>
                       <div className="truncate text-[10px] text-muted-foreground">{tipoDaOcorrenciaLabel(s as any)}</div>
+                      {isVisitaComercialDeLead(s as any) && <PorteBadge porte={leadInfo.get(s.lead_id!)?.porte_indicio} compact className="mr-1" />}
                       {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>}
                       <div className="text-muted-foreground truncate">{userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                     </div>
@@ -275,7 +278,7 @@ export default function Agenda() {
               <div key={s.id} className={cn("flex flex-wrap sm:flex-nowrap items-start gap-3 p-3 border border-l-4 rounded-lg cursor-pointer hover:bg-accent transition-colors", corInfo(s as any).borda)} onClick={() => setExecId(s.id)}>
                 <div className="text-sm font-medium text-primary min-w-[50px]">{s.start_time?.slice(0, 5) || "—"}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium">{s.title} <OcorrenciaTipoBadge s={s as any} /> {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></div>
+                  <div className="font-medium flex flex-wrap items-center gap-1">{s.title} <OcorrenciaTipoBadge s={s as any} /> {isVisitaComercialDeLead(s as any) && <PorteBadge porte={leadInfo.get(s.lead_id!)?.porte_indicio} compact />} {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></div>
                   <div className="text-sm text-muted-foreground">Responsável: {userMap.get(s.assigned_to || "") || "Sem responsável"}</div>
                   {s.location && <div className="text-sm text-muted-foreground">Local: {s.location}</div>}
                 </div>
@@ -466,7 +469,7 @@ export default function Agenda() {
                 ) : (
                   filtered.map((s) => (
                     <TableRow key={s.id} className={cn("cursor-pointer border-l-4", corInfo(s as any).borda)} onClick={() => setExecId(s.id)}>
-                      <TableCell className="font-medium">{s.title} {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></TableCell>
+                      <TableCell className="font-medium">{s.title} {isVisitaComercialDeLead(s as any) && <PorteBadge porte={leadInfo.get(s.lead_id!)?.porte_indicio} compact className="ml-1" />} {s.source === "flora" && <Badge variant="outline">Flora</Badge>} {s.source === "flora_relatada" && <Badge variant="outline">Relatada pela Flora</Badge>} {!["concluido", "cancelado", "nao_realizado"].includes(s.status) && <ProntidaoBadge prontidao={s.prontidao} compact />} <OcorrenciaTag s={s as any} /></TableCell>
                       <TableCell>
                         <OcorrenciaTipoBadge s={s as any} className="mr-1" />
                         {s.schedule_subtype ? (
@@ -530,7 +533,8 @@ export default function Agenda() {
         </AlertDialogContent>
       </AlertDialog>
       <VisitExecutionDialog open={!!execItem} onOpenChange={(o) => !o && setExecId(null)} schedule={execItem}
-        clientName={execItem?.lead_id ? leadInfo.get(execItem.lead_id)?.title : undefined} />
+        clientName={execItem?.lead_id ? leadInfo.get(execItem.lead_id)?.title : undefined}
+        porteIndicio={execItem?.lead_id ? leadInfo.get(execItem.lead_id)?.porte_indicio : undefined} />
     </AppLayout>
   );
 }
