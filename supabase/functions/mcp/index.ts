@@ -98,9 +98,15 @@ const EMPTY_PARAM_VALUES = new Set([
   "nenhum", "nenhuma", "null", "undefined", "desconhecido", "indefinido", "sem", "",
 ]);
 
+const PLACEHOLDER_EMAILS = new Set(["agenda@nitscleandistribuidora.com.br"]);
+function isPlaceholderEmail(value: unknown): boolean {
+  return typeof value === "string" && PLACEHOLDER_EMAILS.has(value.trim().toLowerCase());
+}
+
 function normalizeParamValue(value: unknown): unknown {
   if (typeof value === "string") {
     const trimmed = value.trim();
+    if (isPlaceholderEmail(trimmed)) return null;
     // Trailing dots/spaces are ignored ("Não informado." is still absent).
     const comparable = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/(?<=\S)[.\s]+$/, "");
     return EMPTY_PARAM_VALUES.has(comparable) || /^\{\{[^{}]*\}\}$/.test(trimmed) ? null : value;
@@ -169,6 +175,13 @@ function digits(value: unknown): string | null {
   return normalized || null;
 }
 
+function normalizeBrazilPhone(value: unknown): string | null {
+  const d = digits(value);
+  if (!d) return null;
+  if ((d.length === 10 || d.length === 11) && !d.startsWith("55")) return `55${d}`;
+  return d;
+}
+
 function normalizedEstablishment(value: unknown): string {
   return typeof value === "string"
     ? value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
@@ -178,8 +191,9 @@ function normalizedEstablishment(value: unknown): string {
 function pessoaChannelFields(params: Record<string, unknown>): Partial<PessoaRecord> {
   const resolved = resolveChannelFromChatId(params.chat_id);
   const fields: Partial<PessoaRecord> = {};
-  const email = typeof params.email === "string" ? params.email.trim().toLowerCase() : "";
-  const phone = digits(params.telefone);
+  const rawEmail = typeof params.email === "string" ? params.email.trim().toLowerCase() : "";
+  const email = rawEmail && !isPlaceholderEmail(rawEmail) ? rawEmail : "";
+  const phone = normalizeBrazilPhone(params.telefone);
   if (email) fields.email = email;
   if (phone) fields.telefone = phone;
   if (typeof params.instagram_handle === "string" && params.instagram_handle.trim()) {
@@ -1844,7 +1858,7 @@ function bookingProduct(lead: BookingLead | null, supplied: unknown): string | n
 }
 
 async function fillBookingEmail(supabase: ReturnType<typeof getClient>, lead: BookingLead | null, email: string | null): Promise<void> {
-  if (!lead || !email) return;
+  if (!lead || !email || isPlaceholderEmail(email)) return;
   const { error: leadError } = await supabase.from("leads").update({ contact_email: email })
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", lead.id).or("contact_email.is.null,contact_email.eq.");
   if (leadError) throw new Error(dbFail("atualizar e-mail do lead", leadError));
@@ -3065,19 +3079,63 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   // No city/CEP yet (lead stopped answering before saying where): save it anyway, tagged, and keep asking.
   const semLocal = !productSearchText(cidade) && !locationFields.zip_code;
   const localNovo: Record<string, unknown> = { ...locationFields, ...(productSearchText(cidade) ? { city: cidade } : {}) };
+  const phoneNorm = normalizeBrazilPhone(telefone);
+  const emailNorm = typeof email === "string" && email.trim() && !isPlaceholderEmail(email) ? email.trim().toLowerCase() : null;
+  const cargoNorm = typeof cargo_contato === "string" && cargo_contato.trim() ? cargo_contato.trim() : null;
+
+  /** Fills only missing/new fields on an existing open lead without erasing existing values. */
+  const fillOpenLead = async (target: Record<string, unknown>, pessoaId?: string | null): Promise<Record<string, unknown>> => {
+    const patch: Record<string, unknown> = {};
+    if (phoneNorm && !productSearchText(target.contact_phone)) patch.contact_phone = phoneNorm;
+    if (emailNorm && !productSearchText(target.contact_email)) patch.contact_email = emailNorm;
+    if (cargoNorm && !productSearchText(target.cargo_contato)) patch.cargo_contato = cargoNorm;
+    if (empresaInformada && !productSearchText(target.empresa_nome ?? target.company)) {
+      patch.company = empresaInformada;
+      patch.empresa_nome = empresaInformada;
+    }
+    if (productSearchText(produto_interesse) && !productSearchText(target.category)) patch.category = produto_interesse;
+    if (productSearchText(cidade) && !productSearchText(target.city)) patch.city = cidade;
+    for (const [k, v] of Object.entries(locationFields)) {
+      if (v != null && (target[k] == null || target[k] === "")) patch[k] = v;
+    }
+    if (typeof instagram_handle === "string" && instagram_handle.trim() && !productSearchText(target.instagram_handle)) {
+      patch.instagram_handle = instagram_handle.trim();
+    }
+    if (!semLocal && tagsDe(target).includes(TAG_LOC_PENDENTE)) {
+      patch.flora_tags = tagsDe(target).filter((t) => t !== TAG_LOC_PENDENTE);
+    }
+    if (Object.keys(patch).length > 0) {
+      patch.updated_at = new Date().toISOString();
+      const { data: updated } = await supabase.from("leads").update(patch)
+        .eq("organization_id", NITSCLEAN_ORG_ID).eq("id", target.id)
+        .select("id, contact_name, stage, contact_phone, contact_email, cargo_contato").maybeSingle();
+      if (updated) Object.assign(target, updated);
+    }
+    const pid = pessoaId ?? (typeof target.pessoa_id === "string" ? target.pessoa_id : null);
+    if (pid && (phoneNorm || emailNorm)) {
+      const pPatch: Record<string, unknown> = {};
+      if (phoneNorm) pPatch.telefone = phoneNorm;
+      if (emailNorm) pPatch.email = emailNorm;
+      await supabase.from("pessoas").update(pPatch).eq("organization_id", NITSCLEAN_ORG_ID).eq("id", pid)
+        .then(() => undefined, () => undefined);
+    }
+    return target;
+  };
 
   // Idempotência
   const { data: existing } = await supabase
     .from("leads")
-    .select("id, contact_name, stage, flora_tags, pessoa_id, empresa_nome, company, category")
+    .select("id, contact_name, stage, flora_tags, pessoa_id, empresa_nome, company, category, contact_phone, contact_email, cargo_contato, city, zip_code, instagram_handle")
     .eq("organization_id", NITSCLEAN_ORG_ID)
     .eq("interaction_id", interactionFinal)
     .single();
 
   if (existing && !semLocal && tagsDe(existing).includes(TAG_LOC_PENDENTE)) {
+    await fillOpenLead(existing);
     return completarLocalizacaoPendente(supabase, existing, localNovo, empresa_nome ?? empresa ?? null, produto_interesse ?? null, params);
   }
   if (existing) {
+    await fillOpenLead(existing);
     if (semLocal && tagsDe(existing).includes(TAG_LOC_PENDENTE)) return localizacaoPendenteResposta(existing, false);
     return ok(
       { lead: existing, criado: false },
@@ -3094,8 +3152,37 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
     return fail(personResult.error ?? "Erro ao resolver pessoa: pessoa não identificada");
   }
 
+  // Same chat_id open lead: update in place (fill missing fields like phone/email/cargo) without duplicating.
+  if (chatId) {
+    const { data: chatLeads } = await supabase.from("leads")
+      .select("id, contact_name, stage, place_id, empresa_nome, company, city, flora_tags, gptmaker_chat_id, pessoa_id, category, contact_phone, contact_email, cargo_contato, zip_code, instagram_handle")
+      .eq("organization_id", NITSCLEAN_ORG_ID).eq("gptmaker_chat_id", chatId)
+      .not("stage", "in", "(fechado_ganho,fechado_perdido)")
+      .order("created_at", { ascending: false }).limit(5);
+    const chatOpen = (chatLeads ?? []).find((l: Record<string, unknown>) => !["fechado_ganho", "fechado_perdido"].includes(String(l.stage)));
+    if (chatOpen) {
+      const hadPendingLoc = tagsDe(chatOpen).includes(TAG_LOC_PENDENTE);
+      await fillOpenLead(chatOpen, personResult.pessoa.id);
+      if (hadPendingLoc && !semLocal) {
+        const onde = [localNovo.city, localNovo.zip_code ? `CEP ${localNovo.zip_code}` : null].filter(Boolean).join(", ");
+        queueTimeline(supabase, { leadId: String(chatOpen.id), pessoaId: personResult.pessoa.id, tipo: "resumo", resumo: `Localização informada: ${onde}`, params });
+        return ok(
+          { lead: chatOpen, lead_id: chatOpen.id, criado: false, atualizado: true, localizacao_atualizada: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
+          `Lead atualizado com a localização: ${onde}`,
+          "Use consultar_rota_consultor para verificar cobertura e propor visita técnica"
+        );
+      }
+      if (semLocal && hadPendingLoc) return localizacaoPendenteResposta(chatOpen, false, { id: personResult.pessoa.id, nome: personResult.pessoa.nome });
+      return ok(
+        { lead: chatOpen, lead_id: chatOpen.id, criado: false, atualizado: true, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
+        `Lead atualizado: ${chatOpen.contact_name}`,
+        "Lead já registrado neste chat — use consultar_rota_consultor ou agendar_visita_tecnica"
+      );
+    }
+  }
+
   const { data: openLeads, error: openLeadError } = await supabase.from("leads")
-    .select("id, contact_name, stage, place_id, empresa_nome, company, city, flora_tags, gptmaker_chat_id, pessoa_id, category")
+    .select("id, contact_name, stage, place_id, empresa_nome, company, city, flora_tags, gptmaker_chat_id, pessoa_id, category, contact_phone, contact_email, cargo_contato, zip_code, instagram_handle")
     .eq("organization_id", NITSCLEAN_ORG_ID).eq("pessoa_id", personResult.pessoa.id)
     .order("created_at", { ascending: false }).limit(20);
   if (openLeadError) return fail(dbFail("consultar leads da pessoa", openLeadError));
@@ -3119,19 +3206,22 @@ async function criarLead(params: Record<string, unknown>): Promise<McpResponse> 
   });
   if (matchingLead && productSearchText(params.resumo_conversa)) queueTimeline(supabase, { leadId: String(matchingLead.id),
     pessoaId: personResult.pessoa.id, tipo: "resumo", resumo: `Conversa — ${empresaFinal ?? nome}`, params });
-  if (matchingLead) return ok(
-    { lead: matchingLead, criado: false, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
-    `Lead já existe para ${empresaFinal}`,
-    "Lead aberto do mesmo estabelecimento — use atualizar_lead ou agendar_visita_tecnica"
-  );
+  if (matchingLead) {
+    await fillOpenLead(matchingLead, personResult.pessoa.id);
+    return ok(
+      { lead: matchingLead, criado: false, pessoa: { id: personResult.pessoa.id, nome: personResult.pessoa.nome } },
+      `Lead já existe para ${empresaFinal}`,
+      "Lead aberto do mesmo estabelecimento — use atualizar_lead ou agendar_visita_tecnica"
+    );
+  }
 
   const { data: lead, error } = await supabase
     .from("leads")
     .insert({
       organization_id:   NITSCLEAN_ORG_ID,
       contact_name:      nomeContato,
-      contact_phone:     telefone && telefone.trim() !== "" ? telefone : null,
-      contact_email:     email    && email.trim()    !== "" ? email    : null,
+      contact_phone:     phoneNorm,
+      contact_email:     emailNorm,
       title:             empresaFinal && empresaFinal !== nomeContato ? `${nomeContato} — ${empresaFinal}` : nomeContato,
       company:           empresaFinal,
       empresa_nome:      empresaFinal,

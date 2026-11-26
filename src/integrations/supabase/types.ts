@@ -7337,6 +7337,7 @@ export type Database = {
           created_at: string
           email: string
           flora_default_lead_owner: string | null
+          flora_whatsapp_channel_id: string
           has_ekkoa_access: boolean
           heading_font: string | null
           human_hours: Json
@@ -7381,6 +7382,7 @@ export type Database = {
           created_at?: string
           email: string
           flora_default_lead_owner?: string | null
+          flora_whatsapp_channel_id?: string
           has_ekkoa_access?: boolean
           heading_font?: string | null
           human_hours?: Json
@@ -7425,6 +7427,7 @@ export type Database = {
           created_at?: string
           email?: string
           flora_default_lead_owner?: string | null
+          flora_whatsapp_channel_id?: string
           has_ekkoa_access?: boolean
           heading_font?: string | null
           human_hours?: Json

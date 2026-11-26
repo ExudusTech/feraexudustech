@@ -258,6 +258,75 @@ export function confirmationMessage(kind: "d1" | "dia", date: string, time: stri
     `Pode confirmar? Responda "confirmo" ou "preciso remarcar".`;
 }
 
+export const DEFAULT_FLORA_WA_CHANNEL_ID = "3DF9D839DDCF463A3A350ADF91C40B89";
+
+/** Digits only, adding Brazil country code 55 when a 10–11 digit local number is given. */
+export function normalizeBrazilPhone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const d = value.replace(/\D/g, "");
+  if (!d) return null;
+  if ((d.length === 10 || d.length === 11) && !d.startsWith("55")) return `55${d}`;
+  return d;
+}
+
+export interface ConfirmationLeadInput {
+  gptmaker_chat_id?: string | null;
+  canal_origem?: string | null;
+  contact_phone?: string | null;
+  pessoas?: { telefone?: string | null; whatsapp?: string | null } | null;
+}
+
+export interface ConfirmationTarget {
+  chatId: string;
+  canal: string;
+  viaWhatsappFallback: boolean;
+}
+
+function chatIdPhone(chatId: string | null | undefined): string | null {
+  const i = (chatId ?? "").indexOf("-");
+  return i > 0 ? chatId!.slice(i + 1).replace(/\D/g, "") || null : null;
+}
+
+/**
+ * Picks the chat_id for D-1 / same-day visit confirmation:
+ * - Non-WhatsApp leads (Instagram, Messenger, Widget, Telegram) with a phone get confirmed on Flora's WhatsApp.
+ * - Without a phone, or for WhatsApp leads, uses the original gptmaker_chat_id.
+ * - Never targets a team phone.
+ */
+export function resolveConfirmationTarget(
+  lead: ConfirmationLeadInput | null | undefined,
+  orgWaChannelId: string | null | undefined,
+  teamPhones: Set<string> = new Set(),
+): ConfirmationTarget | null {
+  if (!lead) return null;
+  const origin = String(lead.canal_origem ?? "").trim().toUpperCase();
+  const nonWhatsapp = Boolean(origin && origin !== "WHATSAPP");
+  const rawPhone = lead.contact_phone || lead.pessoas?.whatsapp || lead.pessoas?.telefone || null;
+  const phone = normalizeBrazilPhone(rawPhone);
+  if (nonWhatsapp && phone && phone.length >= 10) {
+    if (teamPhones.has(phone)) return null;
+    const prefix = (orgWaChannelId ?? "").trim() || DEFAULT_FLORA_WA_CHANNEL_ID;
+    return { chatId: `${prefix}-${phone}`, canal: "whatsapp", viaWhatsappFallback: true };
+  }
+  const rawChat = typeof lead.gptmaker_chat_id === "string" && lead.gptmaker_chat_id.trim() ? lead.gptmaker_chat_id.trim() : null;
+  if (!rawChat) return null;
+  const cp = chatIdPhone(rawChat);
+  if (cp && teamPhones.has(cp)) return null;
+  const canal = origin ? origin.toLowerCase() : "whatsapp";
+  return { chatId: rawChat, canal, viaWhatsappFallback: false };
+}
+
+export function confirmationFailedMessage(cliente: string, date: string, time: string): string {
+  const [, mm, dd] = date.split("-");
+  return `Não consegui confirmar a visita de ${clean(cliente) || "cliente"} em ${dd}/${mm} às ${hourLabel(time)} — confirme por telefone`;
+}
+
+export function confirmationTimelineResumo(kind: "d1" | "dia", canal: string): string {
+  const label = kind === "d1" ? "Confirmação D-1" : "Confirmação do dia";
+  const via = canal === "whatsapp" ? "WhatsApp" : `chat de origem (${canal})`;
+  return `${label} enviada ao cliente via ${via}`;
+}
+
 /** Wall-clock (America/Sao_Paulo is UTC-3, no DST since 2019) → UTC instant. */
 export function spInstant(date: string, time: string): Date {
   const [h, m] = time.split(":").map(Number);

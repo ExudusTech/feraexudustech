@@ -470,6 +470,13 @@
       "when": 1795614657443,
       "tag": "0066_leads_porte_indicio",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1795652645239,
+      "tag": "0067_organizations_flora_whatsapp_channel_id",
+      "breakpoints": true
     }
   ]
 }
